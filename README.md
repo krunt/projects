@@ -3,10 +3,10 @@ projects
 
 misc projects code
 
-myisamlib - direct fast myisam read
-perlrelib - regular expression in pure perl
-berkeley-wrapper - c++-wrapper (adding predicates in cmp-notation) around berkeley-db
-misccode - ssh in pure perl
-xslib - xs-c++-wrapper
-qemu-http - virtual-machine internal state exporter via http
-and others ...
+myisamlib - direct fast myisam read<br>
+perlrelib - regular expression in pure perl<br>
+berkeley-wrapper - c++-wrapper (adding predicates in cmp-notation) around berkeley-db<br>
+misccode - ssh in pure perl<br>
+xslib - xs-c++-wrapper<br>
+qemu-http - virtual-machine internal state exporter via http<br>
+and others ...<br>
