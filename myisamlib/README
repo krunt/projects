@@ -1,9 +1,15 @@
 
-myisamlib
+myisamlib (direct myisam read)
 
-very fast read from myisam tables (140MB/s)
 especially useful when not all fields are needed
 and table is very big.
+
+features:
+- fast read (up to >140MB/s)
+  tests showed from 3x to >25x select advantage 
+  in comparison with perl-DBI or mysqldump.
+- memory usage comparable with max size of one table row
+- ability to specify what fields are needed for select
 
 look in tests/*.cc for examples
 
