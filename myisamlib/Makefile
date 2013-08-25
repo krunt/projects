@@ -1,7 +1,7 @@
 BASEDIR=$(PWD)
 BUILDDIR=$(BASEDIR)/build
 MYSQLDIR=$(BUILDDIR)/mysql-5.1.65
-MYSQLTARGZ=$(BASEDIR)/../stuff/experiments/mysql-5.1.65.tar.gz
+MYSQLTARGZ=$(BASEDIR)/mysql-5.1.65.tar.gz
 MYSQLINSTALLDIR=/usr/share/myisamlib
 
 CC=g++
@@ -16,13 +16,14 @@ myisamlib:
 	$(CC) $(CCFLAGS) -I$(BASEDIR)/include -c $(BASEDIR)/src/myisamlib_init.cc  \
 		-o $(BUILDDIR)/myisamlib_init.o
 	$(CC) $(CCFLAGS) -shared -o $(BUILDDIR)/lib/libmyisamlib.so \
-		$(BUILDDIR)/table_iterator.o $(BUILDDIR)/table.o $(BUILDDIR)/myisamlib_init.o $(LDFLAGS)
+		$(BUILDDIR)/table_iterator.o $(BUILDDIR)/table.o $(BUILDDIR)/myisamlib_init.o \
+		$(LDFLAGS) -lboost_filesystem
 
 myisamtests: myisamlib
 	$(CC) $(CCFLAGS) -o $(BUILDDIR)/test $(BASEDIR)/tests/test.cc \
-		-I$(BASEDIR)/include $(LDFLAGS) -lmyisamlib -lboost_filesystem
+		-I$(BASEDIR)/include $(LDFLAGS) -lmyisamlib 
 	$(CC) $(CCFLAGS) -o $(BUILDDIR)/filtered_test $(BASEDIR)/tests/filtered_test.cc \
-		-I$(BASEDIR)/include $(LDFLAGS) -lmyisamlib -lboost_filesystem
+		-I$(BASEDIR)/include $(LDFLAGS) -lmyisamlib
 
 mysql:
 	/bin/bash $(BASEDIR)/build_mysql.sh $(BASEDIR) $(BUILDDIR) $(MYSQLDIR) $(MYSQLTARGZ) 

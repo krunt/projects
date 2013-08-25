@@ -1,0 +1,21 @@
+
+myisamlib
+
+very fast read from myisam tables (140MB/s)
+especially useful when not all fields are needed
+and table is very big.
+
+look in tests/*.cc for examples
+
+was built and tested on mysqld-5.1.65/linux x64,
+don't know if patches are appropriate for any 
+other versions
+
+BUILD:
+1. download mysqld-5.1.65.tar.gz
+2. MYSQLTARGZ=<absolute path to mysqld-5.1.65.tar.gz>
+3. make myisamlib
+4. make install
+
+USAGE:
+1. g++ -o example example.cc -lmyisamlib 
