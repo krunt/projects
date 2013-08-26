@@ -1,0 +1,10 @@
+Changes
+Makefile.PL
+MANIFEST
+MCrypto.xs
+ppport.h
+README
+t/MCrypto.t
+fallback/const-c.inc
+fallback/const-xs.inc
+lib/MCrypto.pm
