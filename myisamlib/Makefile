@@ -8,27 +8,39 @@ CC=g++
 CCFLAGS= -g -O3 -fPIC
 LDFLAGS=-L$(BUILDDIR)/lib -lmysqldlib -lmyisamreader
 
-myisamlib: 
-	$(CC) $(CCFLAGS) -I$(BASEDIR)/include -c $(BASEDIR)/src/table_iterator.cc \
-		-o $(BUILDDIR)/table_iterator.o
-	$(CC) $(CCFLAGS) -I$(BASEDIR)/include -c $(BASEDIR)/src/table.cc \
-		-o $(BUILDDIR)/table.o
-	$(CC) $(CCFLAGS) -I$(BASEDIR)/include -c $(BASEDIR)/src/myisamlib_init.cc  \
-		-o $(BUILDDIR)/myisamlib_init.o
-	$(CC) $(CCFLAGS) -shared -o $(BUILDDIR)/lib/libmyisamlib.so \
-		$(BUILDDIR)/table_iterator.o $(BUILDDIR)/table.o $(BUILDDIR)/myisamlib_init.o \
-		$(LDFLAGS) -lboost_filesystem
+O_FILES=$(BUILDDIR)/table_iterator.o \
+		$(BUILDDIR)/myisamlib_init.o $(BUILDDIR)/table.o
 
-myisamtests: myisamlib
+$(BUILDDIR)/%.o: $(BASEDIR)/src/%.cc
+	$(CC) $(CCFLAGS) -I$(BASEDIR)/include -c $^ -o $@
+
+myisamlib: $(O_FILES) mysql
+	@mkdir -p $(BUILDDIR)/lib
+	$(CC) $(CCFLAGS) -shared -o $(BUILDDIR)/lib/libmyisamlib.so \
+		$(O_FILES) -lboost_filesystem
+
+myisamtests: mysamlib
 	$(CC) $(CCFLAGS) -o $(BUILDDIR)/test $(BASEDIR)/tests/test.cc \
-		-I$(BASEDIR)/include $(LDFLAGS) -lmyisamlib 
+		-I$(BASEDIR)/include $(LDFLAGS) -lmyisamlib
 	$(CC) $(CCFLAGS) -o $(BUILDDIR)/filtered_test $(BASEDIR)/tests/filtered_test.cc \
 		-I$(BASEDIR)/include $(LDFLAGS) -lmyisamlib
 
 mysql:
-	/bin/bash $(BASEDIR)/build_mysql.sh $(BASEDIR) $(BUILDDIR) $(MYSQLDIR) $(MYSQLTARGZ) 
+	@mkdir -p $(BUILDDIR)/lib
+	/bin/bash $(BASEDIR)/build_mysql.sh \
+		$(BASEDIR) $(BUILDDIR) \
+		$(MYSQLDIR) $(MYSQLTARGZ) 
+	@touch mysql
 
-install: 
+mysql_install: mysql
+	/bin/bash $(BASEDIR)/build_mysql.sh \
+		$(BASEDIR)    \
+		$(BUILDDIR)   \
+		$(MYSQLDIR)   \
+		$(MYSQLTARGZ) \
+		1 # install-only flag
+
+install: myisamlib
 	/usr/bin/install -m 0755 $(BUILDDIR)/lib/libmyisamlib.so /usr/lib
 	/usr/bin/install -m 0755 $(BUILDDIR)/lib/libmyisamreader.so /usr/lib
 	/usr/bin/install -m 0755 $(BUILDDIR)/lib/libmyisamreader.so.0 /usr/lib
@@ -52,4 +64,4 @@ uninstall:
 
 clean:
 	rm -f $(BUILDDIR)/*.o $(BUILDDIR)/test $(BUILDDIR)/filtered_test 
-	rm -rf $(MYSQLDIR) $(BUILDDIR)/lib
+	rm -rf $(MYSQLDIR) $(BUILDDIR)/lib mysql
