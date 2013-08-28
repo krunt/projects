@@ -16,14 +16,14 @@ $(BUILDDIR)/%.o: $(BASEDIR)/src/%.cc
 
 myisamlib: $(O_FILES) mysql
 	@mkdir -p $(BUILDDIR)/lib
-	$(CC) $(CCFLAGS) -shared -o $(BUILDDIR)/lib/libmyisamlib.so \
-		$(O_FILES) -lboost_filesystem
+	$(CC) $(CCFLAGS) -shared -o $(BUILDDIR)/lib/libmyisamlib.so $(O_FILES) 
+	@touch myisamlib
 
-myisamtests: mysamlib
+myisamtests: myisamlib
 	$(CC) $(CCFLAGS) -o $(BUILDDIR)/test $(BASEDIR)/tests/test.cc \
-		-I$(BASEDIR)/include $(LDFLAGS) -lmyisamlib
+		-I$(BASEDIR)/include  -lmyisamlib $(LDFLAGS) -lboost_filesystem
 	$(CC) $(CCFLAGS) -o $(BUILDDIR)/filtered_test $(BASEDIR)/tests/filtered_test.cc \
-		-I$(BASEDIR)/include $(LDFLAGS) -lmyisamlib
+		-I$(BASEDIR)/include  -lmyisamlib $(LDFLAGS) -lboost_filesystem
 
 mysql:
 	@mkdir -p $(BUILDDIR)/lib
@@ -64,4 +64,4 @@ uninstall:
 
 clean:
 	rm -f $(BUILDDIR)/*.o $(BUILDDIR)/test $(BUILDDIR)/filtered_test 
-	rm -rf $(MYSQLDIR) $(BUILDDIR)/lib mysql
+	rm -rf $(MYSQLDIR) $(BUILDDIR)/lib mysql myisamlib
