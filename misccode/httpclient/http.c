@@ -62,22 +62,20 @@ static int process_request_internal(request_t *request, response_t *response) {
 
 int retrieve_response(request_t *request, response_t *response) {
     int size, err, read_bytes, size_left;
-    char buf[4096], buf_end;
+    const int bufsize = 4096;
+    char buf[bufsize+1], buf_end;
 
     err = 0;
     while (!err) {
         err = connection_poll(response->conn, 1 /* poll for read */);
 
         while (!err) {
-            if ((err = connection_read(response->conn, buf, sizeof(buf), 
-                            &size)) == CONNECTION_READ_NOT_READY)
-            { break; }
-            else if (err) {
+            err = connection_read(response->conn, buf, bufsize);
+            if (err == CONNECTION_READ_ERROR)
                 goto error;
-            }
 
             buf_end = buf;
-            size_left = size;
+            size_left = size = err;
             while (buf_begin != buf + size) {
                  switch (response->state) {
                  case STATE_STATUS_LINE:
@@ -117,7 +115,7 @@ static int enlarge_string_if_needed(response_t *response,
         return 0;
     }
     do { *capacity <<= 1; } while (*capacity < needed);
-    *buf = response->req.aops.realloc(response->req.pool, *capacity);
+    *buf = response->req.aops.realloc(response->req.pool, *buf, *capacity);
     return 0;
 }
 
@@ -130,14 +128,16 @@ static int parse_num(const char *numstr, int *num, int base) {
 
 static int parse_response_status_line(response_t *response) {
     int code;
-    char *p;
-    p = response->status_line_buf;
+    char *p = response->status_line_buf;
+
+    /* skipping whitespace */
+    while (*p && *p == ' ') { p++; }
 
     /* skipping http-version */
     while (*p && *p != ' ') { p++; }
 
     /* skipping whitespace */
-    while (*p && *p != ' ') { p++; }
+    while (*p && *p == ' ') { p++; }
 
     if (parse_num(response->status_line_buf, &code, 10)
             || code < 100 || code > 599)
@@ -147,9 +147,11 @@ static int parse_response_status_line(response_t *response) {
     return 0;
 }
 
-static int response_process_status_line(response_t *response, char **buf, int *size) {
+static int response_process_status_line(response_t *response, 
+        char **buf, int *size) 
+{
     int err = 0;
-    char *end, end_this_state, to_copy;
+    char *end, end_this_state = 0, to_copy;
     assert(*size > 0);
 
     (*buf)[*size] = 0;
@@ -166,7 +168,7 @@ static int response_process_status_line(response_t *response, char **buf, int *s
     enlarge_string_if_needed(response, &response->status_line_buf, 
             &response->status_line_capacity, 
             to_copy + response->status_line_size);
-    strncpy(response->status_line_buf + response->status_line_size, *buf, to_copy);
+    memcpy(response->status_line_buf + response->status_line_size, *buf, to_copy);
     response->status_line_size += to_copy;
 
     if (end_this_state) {
@@ -208,15 +210,14 @@ static int parse_response_headers(response_t *response) {
     char *header_key_begin, *header_value_begin;
     while (p < end) {
         /* skipping possible whitespace */
-        while (p < end && *p == ' ' || *p == '\t') { ++p; }
-
-        while (p < end && *p == ' ' || *p == '\t') { ++p; }
+        while (p < end && (*p == ' ' || *p == '\t')) { ++p; }
         header_key_begin = p;
 
         /* reading token */
         while (p < end && !notoken_symbols[(int)(unsigned char)*p]) { ++p; }
 
         if (p == end || *p != ':') {
+            set_request_error_message(request, RESPONSE_HEADER_IS_INVALID);
             return 1;
         }
         *p++ = 0;
@@ -231,21 +232,34 @@ static int parse_response_headers(response_t *response) {
             && !strcasecmp(header_value_begin, "chunked"))
         { response->chunked_transfer_encoding = 1; }
         else if (!strcasecmp(header_key_begin, "Content-Length")) {
-            if (parse_num(header_value_begin, &response->content_length, 10))
-            { return 1; }
+            if (parse_num(header_value_begin, &response->content_length, 10)) { 
+                set_request_error_message(request, CONTENT_LENGTH_IS_INVALID);
+                return 1; 
+            }
+        } else if (!strcasecmp(header_key_begin, "Location")) {
+            response->location = header_value_begin;
         }
     }
 
     if (response->chunked_transfer_encoding && repose->content_length) {
+        set_request_error_message(request, RESPONSE_LENGTH_CLASH);
         return 1;
     }
 
     return 0;
 }
 
+static int is_redirect(response_t *response) {
+    return (response->code == 301 
+        || response->code == 302
+        || response->code == 303
+        || response->code == 307)
+        && response->location;
+}
+
 int response_process_headers(response_t *response, char **buf, int *size) {
     int err;
-    char *end, end_this_state, to_copy;
+    char *end, end_this_state = 0, to_copy;
     assert(*size > 0);
 
     (*buf)[*size] = 0;
@@ -262,13 +276,17 @@ int response_process_headers(response_t *response, char **buf, int *size) {
     enlarge_string_if_needed(response, &response->headers_buf, 
             &response->headers_buf_capacity, 
             to_copy + response->headers_buf_size);
-    strncpy(response->headers_buf + response->headers_buf_size, *buf, to_copy);
+    memcpy(response->headers_buf + response->headers_buf_size, *buf, to_copy);
     response->headers_buf_size += to_copy;
 
     if (end_this_state) {
         if ((err = parse_response_headers(response))) {
             return err;
         }
+
+        if (is_redirect(response))
+            return REQUEST_NEED_REDIRECT;
+
         response->state 
             = response->chunked_transfer_encoding ? RESPONSE_GET_BODY_CHUNKED
                     : RESPONSE_GET_BODY;
@@ -290,7 +308,7 @@ int response_process_body(response_t *response, char **buf, int *size) {
         enlarge_string_if_needed(response, &response->body_buf, 
             &response->body_capacity, 
             *size + response->body_size);
-        memcpy(response->body_buf, *buf, *size);
+        memcpy(response->body_buf + response->body_size, *buf, *size);
     }
 
     response->body_written_bytes += *size;
@@ -305,7 +323,7 @@ int response_process_body(response_t *response, char **buf, int *size) {
 }
 
 int response_process_body_chunked(response_t *response, char **buf, int *size) {
-    int err = 0, to_copy, end_this_state;
+    int err = 0, to_copy, end_this_state = 0;
     char *p, *end;
     assert(*size > 0);
 
@@ -324,7 +342,8 @@ int response_process_body_chunked(response_t *response, char **buf, int *size) {
         enlarge_string_if_needed(response, &response->chunked_size_buf, 
             &response->chunked_size_buf_capacity, 
             to_copy + response->chunked_size_buf_size);
-        memcpy(response->chunked_size_buf + to_copy, *buf, to_copy);
+        memcpy(response->chunked_size_buf + response->chunked_size_buf_size, 
+                *buf, to_copy);
 
         if (end_this_state) {
             response->chunked_read_state = CHUNKED_READ_BODY;
@@ -345,8 +364,7 @@ int response_process_body_chunked(response_t *response, char **buf, int *size) {
 
         *buf += to_copy;
         *size += to_copy;
-        return 0;
-    }
+    },
 
     case CHUNKED_READ_BODY: {
         to_copy = MIN(response->chunked_bytes_left, *size);
@@ -416,6 +434,13 @@ int init_request(request_t *request, const char *url,
 
     request->aops.free(request->pool, url_copy);
     return 0;
+}
+
+int reinit_request(request_t *request, response_t *response) {
+    assert(is_redirect(response))
+    close_request(request);
+    return init_request(request, response->location, request->proxy, 
+            request->output_filename);
 }
 
 int init_response(request_t *request, response_t *response) {
@@ -499,7 +524,7 @@ int process_request(request_t *request, response_t *response) {
             break;
 
         err = process_request_internal(request, response);
-        if (err != REQUEST_NEED_REDIRECT) {
+        if (err == REQUEST_NEED_REDIRECT) {
             reinit_request(request, response);
             close_response(response);
         }

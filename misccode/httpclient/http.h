@@ -4,7 +4,8 @@
 #include "connection.h"
 
 const int REQUEST_NEED_REDIRECT = -1;
-const int CONNECTION_READ_NOT_READY = -2;
+const int CONNECTION_READ_ERROR = -2;
+const int CONNECTION_READ_NOT_READY = -3;
 
 /* response states */
 const int RESPONSE_STATUS_LINE = 0;
@@ -64,6 +65,8 @@ typedef struct response_s {
     int status_code;
     int chunked_transfer_encoding;
     int content_length;
+    char *location;
+
 } response_t;
 
 int init_request(request_t *request);

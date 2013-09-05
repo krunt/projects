@@ -47,19 +47,22 @@ error:
 }
 
 int connection_read(connection_t *conn, char *buf, int size) {
+    char *original_buf = buf;
     int left = size;
     while (left > 0) {
         int read_bytes = read(fd, buf, left);
         if (read_bytes <= 0) {
-            if (errno == EINTR)
+            if (read_bytes < 0 && errno == EINTR)
                 continue;
+            if (read_bytes < 0 && errno == EAGAIN)
+                break;
             strerror_r(errno, conn->error_message, sizeof(conn->error_message));
-            return 1;
+            return CONNECTION_READ_ERROR;
         }
         buf += read_bytes;
         left -= read_bytes;
     }
-    return 0;
+    return original_buf - buf;
 }
 
 int connection_write(connection_t *conn, char *buf, int size) {
