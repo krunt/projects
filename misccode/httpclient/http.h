@@ -2,21 +2,36 @@
 #define HTTP_DEF_
 
 #include "connection.h"
+#include "operations.h"
 
-const int REQUEST_NEED_REDIRECT = -1;
-const int CONNECTION_READ_ERROR = -2;
-const int CONNECTION_READ_NOT_READY = -3;
+#define CR '\r'
+#define LF '\n'
+#define CRLF "\r\n"
+#define REQUEST_FORMAT_STR \
+    "GET %s HTTP/1.1" CRLF \
+    "Host: %s" CRLF \
+    "User-Agent: tiny_krunt_client" CRLF \
+    CRLF
+
+#define set_request_error_message_noarg(request, error_code) \
+    strcpy((request)->error_message, error_messages_formats[(error_code)]);
+
+#define set_request_error_message(request, error_code, ...) \
+    snprintf((request)->error_message, sizeof(request->error_message), \
+            error_messages_formats[(error_code)], __VA_ARGS__);
+
+#define REQUEST_NEED_REDIRECT -1
 
 /* response states */
-const int RESPONSE_STATUS_LINE = 0;
-const int RESPONSE_PARSE_HEADERS = 1;
-const int RESPONSE_GET_BODY = 2;
-const int RESPONSE_GET_BODY_CHUNKED = 3;
-const int RESPONSE_PARSE_SUCCESSFUL = 4;
+#define RESPONSE_STATUS_LINE 0
+#define RESPONSE_PARSE_HEADERS 1
+#define RESPONSE_GET_BODY 2
+#define RESPONSE_GET_BODY_CHUNKED 3
+#define RESPONSE_PARSE_SUCCESSFUL 4
 
 /* chunked fetch states */
-const int CHUNKED_READ_SIZE = 1;
-const int CHUNKED_READ_BODY = 2;
+#define CHUNKED_READ_SIZE 1
+#define CHUNKED_READ_BODY 2
 
 typedef struct request_s {
     const char *url;
@@ -56,7 +71,7 @@ typedef struct response_s {
     int chunked_bytes_left;
 
     file_operations_t *fops;
-    response_parse_callbacks_t cb;
+    response_parse_callbacks_t *cb;
 
     const char *body_filename;
     int body_fd;
@@ -67,9 +82,12 @@ typedef struct response_s {
     int content_length;
     char *location;
 
+    int timeout; /* seconds */
+
 } response_t;
 
-int init_request(request_t *request);
+int init_request(request_t *request, const char *url, 
+        const char *proxy, const char *output_filename);
 int close_request(request_t *request);
 int close_response(response_t *response);
 int process_request(request_t *request, response_t *response);

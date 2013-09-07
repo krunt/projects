@@ -15,11 +15,15 @@ typedef struct alloc_operations_s {
     void (*free)(void *pool, void *p);
 } alloc_operations_t;
 
+struct response_s;
 typedef struct response_parse_callbacks_s {
-    int (*process_status_line)(response_t *response, char *buf, int size);
-    int (*process_headers)(response_t *response, char *buf, int size);
-    int (*process_body)(response_t *response, char *buf, int size);
-    int (*process_body_chunked)(response_t *response, char *buf, int size);
+    int (*process_status_line)(struct response_s *response, char **buf, int *size);
+    int (*process_headers)(struct response_s *response, char **buf, int *size);
+    int (*process_body)(struct response_s *response, char **buf, int *size);
+    int (*process_body_chunked)(struct response_s *response, char **buf, int *size);
 } response_parse_callbacks_t;
+
+extern alloc_operations_t malloc_ops;
+extern file_operations_t general_file_operations;
 
 #endif /* HTTP_OPERATIONS_DEF__ */

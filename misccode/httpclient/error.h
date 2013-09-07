@@ -1,11 +1,17 @@
+#ifndef ERROR_DEF_
+#define ERROR_DEF_
 
 #define MAX_ERROR_MESSAGE_LEN 4096
 
 extern const char *error_messages_formats[];
 
-const int URI_IS_INVALID = 0;
-const int SCHEME_IS_NOT_SUPPORTED = 1;
-const int HOSTPORT_IS_INVALID = 2;
-const int RESPONSE_HEADER_IS_INVALID = 3;
-const int CONTENT_LENGTH_IS_INVALID = 4;
-const int RESPONSE_LENGTH_CLASH = 5;
+#define URI_IS_INVALID 0
+#define SCHEME_IS_NOT_SUPPORTED 1
+#define HOSTPORT_IS_INVALID 2
+#define RESPONSE_HEADER_IS_INVALID 3
+#define CONTENT_LENGTH_IS_INVALID 4
+#define RESPONSE_LENGTH_CLASH 5
+#define RESPONSE_HTTP_PORT_IS_INVALID 6
+#define RESPONSE_BAD_STATUS_CODE 7
+
+#endif /* ERROR_DEF_ */
