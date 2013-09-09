@@ -1,0 +1,344 @@
+default
+{
+	castShadows 1
+	receiveShadows 1
+	sampleSize 16
+	longestCurve 0.000000
+}
+
+0 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 1.000000 0.000000 0.000000 )
+}
+
+1 // SURFACE_META V: 5 I: 9 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 1.000000 0.000000 0.000000 )
+}
+
+2 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 1.000000 0.000000 )
+}
+
+3 // SURFACE_META V: 36 I: 102 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 0.000000 1.000000 )
+}
+
+4 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 -1.000000 0.000000 )
+}
+
+5 // SURFACE_META V: 5 I: 9 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 1.000000 0.000000 0.000000 )
+}
+
+6 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 -1.000000 0.000000 )
+}
+
+7 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( -1.000000 0.000000 0.000000 )
+}
+
+8 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 1.000000 0.000000 )
+}
+
+9 // SURFACE_META V: 12 I: 30 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 0.000000 -1.000000 )
+}
+
+10 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( -1.000000 0.000000 0.000000 )
+}
+
+11 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 1.000000 0.000000 0.000000 )
+}
+
+12 // SURFACE_META V: 5 I: 9 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 1.000000 0.000000 )
+}
+
+13 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 -1.000000 0.000000 )
+}
+
+14 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( -1.000000 0.000000 0.000000 )
+}
+
+15 // SURFACE_META V: 12 I: 33 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 1.000000 0.000000 0.000000 )
+}
+
+16 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 1.000000 0.000000 )
+}
+
+17 // SURFACE_META V: 5 I: 9 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 -1.000000 0.000000 )
+}
+
+18 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( -1.000000 0.000000 0.000000 )
+}
+
+19 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 1.000000 0.000000 )
+}
+
+20 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 1.000000 0.000000 0.000000 )
+}
+
+21 // SURFACE_META V: 12 I: 33 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( -1.000000 0.000000 0.000000 )
+}
+
+22 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 1.000000 0.000000 0.000000 )
+}
+
+23 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 -1.000000 0.000000 )
+}
+
+24 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 -1.000000 0.000000 )
+}
+
+25 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 1.000000 0.000000 0.000000 )
+}
+
+26 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 1.000000 0.000000 0.000000 )
+}
+
+27 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 1.000000 0.000000 )
+}
+
+28 // SURFACE_META V: 5 I: 9 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 1.000000 0.000000 )
+}
+
+29 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 -1.000000 0.000000 )
+}
+
+30 // SURFACE_META V: 5 I: 9 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( -1.000000 0.000000 0.000000 )
+}
+
+31 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 1.000000 0.000000 )
+}
+
+32 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 0.000000 1.000000 )
+}
+
+33 // SURFACE_META V: 5 I: 9 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( -1.000000 0.000000 0.000000 )
+}
+
+34 // SURFACE_META V: 5 I: 9 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 -1.000000 0.000000 )
+}
+
+35 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 1.000000 0.000000 )
+}
+
+36 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 0.000000 1.000000 )
+}
+
+37 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 -1.000000 0.000000 )
+}
+
+38 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( -1.000000 0.000000 0.000000 )
+}
+
+39 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 1.000000 0.000000 )
+}
+
+40 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( 0.000000 -1.000000 0.000000 )
+}
+
+41 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/streetbricks
+	lightmapAxis ( -1.000000 0.000000 0.000000 )
+}
+
+42 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/iron1_brickrust
+	lightmapAxis ( -1.000000 0.000000 0.000000 )
+}
+
+43 // SURFACE_META V: 12 I: 24 planar
+{
+	shader textures/gothic_wall/iron1_brickrust
+	lightmapAxis ( 1.000000 0.000000 0.000000 )
+}
+
+44 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/iron1_brickrust
+	lightmapAxis ( 0.000000 0.000000 1.000000 )
+}
+
+45 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/iron1_brickrust
+	lightmapAxis ( 0.000000 -1.000000 0.000000 )
+}
+
+46 // SURFACE_META V: 12 I: 24 planar
+{
+	shader textures/gothic_wall/iron1_brickrust
+	lightmapAxis ( -1.000000 0.000000 0.000000 )
+}
+
+47 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/iron1_brickrust
+	lightmapAxis ( 0.000000 0.000000 1.000000 )
+}
+
+48 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/iron1_brickrust
+	lightmapAxis ( 0.000000 -1.000000 0.000000 )
+}
+
+49 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/iron1_brickrust
+	lightmapAxis ( 0.000000 0.000000 1.000000 )
+}
+
+50 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/iron1_brickrust
+	lightmapAxis ( 0.000000 -1.000000 0.000000 )
+}
+
+51 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/iron1_brickrust
+	lightmapAxis ( 0.000000 -1.000000 0.000000 )
+}
+
+52 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/iron1_brickrust
+	lightmapAxis ( 0.000000 0.000000 -1.000000 )
+}
+
+53 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/iron1_brickrust
+	lightmapAxis ( 1.000000 0.000000 0.000000 )
+}
+
+54 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/iron1_brickrust
+	lightmapAxis ( 0.000000 1.000000 0.000000 )
+}
+
+55 // SURFACE_META V: 4 I: 6 planar
+{
+	shader textures/gothic_wall/iron01_e
+	lightmapAxis ( 0.000000 0.000000 1.000000 )
+}
+

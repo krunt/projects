@@ -1,0 +1,14 @@
+mod for ioquake3 1.36
+
+simple level
+with bot in center
+special ai patrolling in building
+and attacking player if visible
+
+HOWTO
+1) patch to code/code
+2) copy test3* to build/<release or debug>/baseq3/maps
+2) run, 
+    and in console 
+    `sv_pure = 0`
+    `devmap test3`
