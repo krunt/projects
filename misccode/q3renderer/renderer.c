@@ -9,6 +9,10 @@
 #define LittleLong(x) x
 #define LittleFloat(x) x
 
+#ifndef M_PI
+#define M_PI           3.14159265358979323846  /* pi */
+#endif
+
 typedef unsigned char 		byte;
 typedef enum {qfalse, qtrue}	qboolean;
 
@@ -1571,6 +1575,609 @@ void RE_LoadWorldMap( const char *name ) {
 	R_LoadSurfaces( &header->lumps[LUMP_SURFACES], &header->lumps[LUMP_DRAWVERTS], &header->lumps[LUMP_DRAWINDEXES] );
 
     HunkFree(bsp);
+}
+
+static void myGlMultMatrix( const float *a, const float *b, float *out ) {
+	int		i, j;
+
+	for ( i = 0 ; i < 4 ; i++ ) {
+		for ( j = 0 ; j < 4 ; j++ ) {
+			out[ i * 4 + j ] =
+				a [ i * 4 + 0 ] * b [ 0 * 4 + j ]
+				+ a [ i * 4 + 1 ] * b [ 1 * 4 + j ]
+				+ a [ i * 4 + 2 ] * b [ 2 * 4 + j ]
+				+ a [ i * 4 + 3 ] * b [ 3 * 4 + j ];
+		}
+	}
+}
+
+static void R_RotateForViewer (void) 
+{
+	float	viewerMatrix[16];
+	vec3_t	origin;
+
+	Com_Memset (&tr.or, 0, sizeof(tr.or));
+	tr.or.axis[0][0] = 1;
+	tr.or.axis[1][1] = 1;
+	tr.or.axis[2][2] = 1;
+	VectorCopy (tr.viewParms.or.origin, tr.or.viewOrigin);
+
+	// transform by the camera placement
+	VectorCopy( tr.viewParms.or.origin, origin );
+
+	viewerMatrix[0] = tr.viewParms.or.axis[0][0];
+	viewerMatrix[4] = tr.viewParms.or.axis[0][1];
+	viewerMatrix[8] = tr.viewParms.or.axis[0][2];
+	viewerMatrix[12] = -origin[0] * viewerMatrix[0] + -origin[1] * viewerMatrix[4] + -origin[2] * viewerMatrix[8];
+
+	viewerMatrix[1] = tr.viewParms.or.axis[1][0];
+	viewerMatrix[5] = tr.viewParms.or.axis[1][1];
+	viewerMatrix[9] = tr.viewParms.or.axis[1][2];
+	viewerMatrix[13] = -origin[0] * viewerMatrix[1] + -origin[1] * viewerMatrix[5] + -origin[2] * viewerMatrix[9];
+
+	viewerMatrix[2] = tr.viewParms.or.axis[2][0];
+	viewerMatrix[6] = tr.viewParms.or.axis[2][1];
+	viewerMatrix[10] = tr.viewParms.or.axis[2][2];
+	viewerMatrix[14] = -origin[0] * viewerMatrix[2] + -origin[1] * viewerMatrix[6] + -origin[2] * viewerMatrix[10];
+
+	viewerMatrix[3] = 0;
+	viewerMatrix[7] = 0;
+	viewerMatrix[11] = 0;
+	viewerMatrix[15] = 1;
+
+	myGlMultMatrix( viewerMatrix, s_flipMatrix, tr.or.modelMatrix );
+	tr.viewParms.world = tr.or;
+}
+
+static void R_SetupFrustum (viewParms_t *dest, float xmin, float xmax, float ymax, 
+        float zProj, float stereoSep)
+{
+	vec3_t ofsorigin;
+	float oppleg, adjleg, length;
+	int i;
+	
+	if(stereoSep == 0 && xmin == -xmax)
+	{
+		// symmetric case can be simplified
+		VectorCopy(dest->or.origin, ofsorigin);
+
+		length = sqrt(xmax * xmax + zProj * zProj);
+		oppleg = xmax / length;
+		adjleg = zProj / length;
+
+		VectorScale(dest->or.axis[0], oppleg, dest->frustum[0].normal);
+		VectorMA(dest->frustum[0].normal, adjleg, dest->or.axis[1], dest->frustum[0].normal);
+
+		VectorScale(dest->or.axis[0], oppleg, dest->frustum[1].normal);
+		VectorMA(dest->frustum[1].normal, -adjleg, dest->or.axis[1], dest->frustum[1].normal);
+	}
+	else
+	{
+		// In stereo rendering, due to the modification of the projection matrix, dest->or.origin is not the
+		// actual origin that we're rendering so offset the tip of the view pyramid.
+		VectorMA(dest->or.origin, stereoSep, dest->or.axis[1], ofsorigin);
+	
+		oppleg = xmax + stereoSep;
+		length = sqrt(oppleg * oppleg + zProj * zProj);
+		VectorScale(dest->or.axis[0], oppleg / length, dest->frustum[0].normal);
+		VectorMA(dest->frustum[0].normal, zProj / length, dest->or.axis[1], dest->frustum[0].normal);
+
+		oppleg = xmin + stereoSep;
+		length = sqrt(oppleg * oppleg + zProj * zProj);
+		VectorScale(dest->or.axis[0], -oppleg / length, dest->frustum[1].normal);
+		VectorMA(dest->frustum[1].normal, -zProj / length, dest->or.axis[1], dest->frustum[1].normal);
+	}
+
+	length = sqrt(ymax * ymax + zProj * zProj);
+	oppleg = ymax / length;
+	adjleg = zProj / length;
+
+	VectorScale(dest->or.axis[0], oppleg, dest->frustum[2].normal);
+	VectorMA(dest->frustum[2].normal, adjleg, dest->or.axis[2], dest->frustum[2].normal);
+
+	VectorScale(dest->or.axis[0], oppleg, dest->frustum[3].normal);
+	VectorMA(dest->frustum[3].normal, -adjleg, dest->or.axis[2], dest->frustum[3].normal);
+	
+	for (i=0 ; i<4 ; i++) {
+		dest->frustum[i].type = PLANE_NON_AXIAL;
+		dest->frustum[i].dist = DotProduct (ofsorigin, dest->frustum[i].normal);
+		SetPlaneSignbits( &dest->frustum[i] );
+	}
+}
+
+static void R_SetupProjection(viewParms_t *dest, float zProj, qboolean computeFrustum)
+{
+	float	xmin, xmax, ymin, ymax;
+	float	width, height;
+
+	ymax = zProj * tan(dest->fovY * M_PI / 360.0f);
+	ymin = -ymax;
+
+	xmax = zProj * tan(dest->fovX * M_PI / 360.0f);
+	xmin = -xmax;
+
+	width = xmax - xmin;
+	height = ymax - ymin;
+	
+	dest->projectionMatrix[0] = 2 * zProj / width;
+	dest->projectionMatrix[4] = 0;
+	dest->projectionMatrix[8] = (xmax + xmin + 2 * stereoSep) / width;
+	dest->projectionMatrix[12] = 2 * zProj * stereoSep / width;
+
+	dest->projectionMatrix[1] = 0;
+	dest->projectionMatrix[5] = 2 * zProj / height;
+	dest->projectionMatrix[9] = ( ymax + ymin ) / height;	// normally 0
+	dest->projectionMatrix[13] = 0;
+
+	dest->projectionMatrix[3] = 0;
+	dest->projectionMatrix[7] = 0;
+	dest->projectionMatrix[11] = -1;
+	dest->projectionMatrix[15] = 0;
+	
+	if(computeFrustum)
+		R_SetupFrustum(dest, xmin, xmax, ymax, zProj, stereoSep);
+}
+
+static void R_SetFarClip( void )
+{
+	float	farthestCornerDistance = 0;
+	int		i;
+
+	// if not rendering the world (icons, menus, etc)
+	// set a 2k far clip plane
+	if ( tr.refdef.rdflags & RDF_NOWORLDMODEL ) {
+		tr.viewParms.zFar = 2048;
+		return;
+	}
+
+	//
+	// set far clipping planes dynamically
+	//
+	farthestCornerDistance = 0;
+	for ( i = 0; i < 8; i++ )
+	{
+		vec3_t v;
+		vec3_t vecTo;
+		float distance;
+
+		if ( i & 1 )
+		{
+			v[0] = tr.viewParms.visBounds[0][0];
+		}
+		else
+		{
+			v[0] = tr.viewParms.visBounds[1][0];
+		}
+
+		if ( i & 2 )
+		{
+			v[1] = tr.viewParms.visBounds[0][1];
+		}
+		else
+		{
+			v[1] = tr.viewParms.visBounds[1][1];
+		}
+
+		if ( i & 4 )
+		{
+			v[2] = tr.viewParms.visBounds[0][2];
+		}
+		else
+		{
+			v[2] = tr.viewParms.visBounds[1][2];
+		}
+
+		VectorSubtract( v, tr.viewParms.or.origin, vecTo );
+
+		distance = vecTo[0] * vecTo[0] + vecTo[1] * vecTo[1] + vecTo[2] * vecTo[2];
+
+		if ( distance > farthestCornerDistance )
+		{
+			farthestCornerDistance = distance;
+		}
+	}
+	tr.viewParms.zFar = sqrt( farthestCornerDistance );
+}
+
+static void R_SetupProjectionZ(viewParms_t *dest)
+{
+	float zNear, zFar, depth;
+	
+	zNear	= r_znear->value;
+	zFar	= dest->zFar;	
+	depth	= zFar - zNear;
+
+	dest->projectionMatrix[2] = 0;
+	dest->projectionMatrix[6] = 0;
+	dest->projectionMatrix[10] = -( zFar + zNear ) / depth;
+	dest->projectionMatrix[14] = -2 * zFar * zNear / depth;
+}
+
+static mnode_t *R_PointInLeaf( const vec3_t p ) {
+	mnode_t		*node;
+	float		d;
+	cplane_t	*plane;
+	
+	if ( !tr.world ) {
+		Ferror("R_PointInLeaf: bad model");
+	}
+
+	node = tr.world->nodes;
+	while( 1 ) {
+		if (node->contents != -1) {
+			break;
+		}
+		plane = node->plane;
+		d = DotProduct (p,plane->normal) - plane->dist;
+		if (d > 0) {
+			node = node->children[0];
+		} else {
+			node = node->children[1];
+		}
+	}
+	
+	return node;
+}
+
+static const byte *R_ClusterPVS (int cluster) {
+	if (!tr.world->vis || cluster < 0 || cluster >= tr.world->numClusters ) {
+		return tr.world->novis;
+	}
+
+	return tr.world->vis + cluster * tr.world->clusterBytes;
+}
+
+static void R_MarkLeaves (void) {
+	const byte	*vis;
+	mnode_t	*leaf, *parent;
+	int		i;
+	int		cluster;
+
+	// current viewcluster
+	leaf = R_PointInLeaf( tr.viewParms.pvsOrigin );
+	cluster = leaf->cluster;
+
+	// if the cluster is the same and the area visibility matrix
+	// hasn't changed, we don't need to mark everything again
+
+	tr.visCount++;
+	tr.viewCluster = cluster;
+
+	vis = R_ClusterPVS (tr.viewCluster);
+	
+	for (i=0,leaf=tr.world->nodes ; i<tr.world->numnodes ; i++, leaf++) {
+		cluster = leaf->cluster;
+		if ( cluster < 0 || cluster >= tr.world->numClusters ) {
+			continue;
+		}
+
+		// check general pvs
+		if ( !(vis[cluster>>3] & (1<<(cluster&7))) ) {
+			continue;
+		}
+
+		// check for door connection
+		if ( (tr.refdef.areamask[leaf->area>>3] & (1<<(leaf->area&7)) ) ) {
+			continue;		// not visible
+		}
+
+		parent = leaf;
+		do {
+			if (parent->visframe == tr.visCount)
+				break;
+			parent->visframe = tr.visCount;
+			parent = parent->parent;
+		} while (parent);
+	}
+}
+
+static
+int BoxOnPlaneSide(vec3_t emins, vec3_t emaxs, struct cplane_s *p)
+{
+	float	dist[2];
+	int		sides, b, i;
+
+	// fast axial cases
+	if (p->type < 3)
+	{
+		if (p->dist <= emins[p->type])
+			return 1;
+		if (p->dist >= emaxs[p->type])
+			return 2;
+		return 3;
+	}
+
+	// general case
+	dist[0] = dist[1] = 0;
+	if (p->signbits < 8) // >= 8: default case is original code (dist[0]=dist[1]=0)
+	{
+		for (i=0 ; i<3 ; i++)
+		{
+			b = (p->signbits >> i) & 1;
+			dist[ b] += p->normal[i]*emaxs[i];
+			dist[!b] += p->normal[i]*emins[i];
+		}
+	}
+
+	sides = 0;
+	if (dist[0] >= p->dist)
+		sides = 1;
+	if (dist[1] < p->dist)
+		sides |= 2;
+
+	return sides;
+}
+
+static qboolean	R_CullSurface( surfaceType_t *surface, shader_t *shader ) {
+	srfSurfaceFace_t *sface;
+	float			d;
+
+	if ( *surface == SF_GRID ) {
+		return R_CullGrid( (srfGridMesh_t *)surface );
+	}
+
+	if ( *surface == SF_TRIANGLES ) {
+		return R_CullTriSurf( (srfTriangles_t *)surface );
+	}
+
+	if ( *surface != SF_FACE ) {
+		return qfalse;
+	}
+
+	if ( shader->cullType == CT_TWO_SIDED ) {
+		return qfalse;
+	}
+
+	sface = ( srfSurfaceFace_t * ) surface;
+	d = DotProduct (tr.or.viewOrigin, sface->plane.normal);
+
+	// don't cull exactly on the plane, because there are levels of rounding
+	// through the BSP, ICD, and hardware that may cause pixel gaps if an
+	// epsilon isn't allowed here 
+	if ( shader->cullType == CT_FRONT_SIDED ) {
+		if ( d < sface->plane.dist - 8 ) {
+			return qtrue;
+		}
+	} else {
+		if ( d > sface->plane.dist + 8 ) {
+			return qtrue;
+		}
+	}
+
+	return qfalse;
+}
+
+static
+void R_AddDrawSurf( surfaceType_t *surface, shader_t *shader, 
+				   int fogIndex, int dlightMap ) {
+	int			index;
+
+	// instead of checking for overflow, we just mask the index
+	// so it wraps around
+	index = tr.refdef.numDrawSurfs & DRAWSURF_MASK;
+	// the sort data is packed into a single 32 bit value so it can be
+	// compared quickly during the qsorting process
+	tr.refdef.drawSurfs[index].sort = (shader->sortedIndex << QSORT_SHADERNUM_SHIFT) 
+		| tr.shiftedEntityNum | ( fogIndex << QSORT_FOGNUM_SHIFT ) | (int)dlightMap;
+	tr.refdef.drawSurfs[index].surface = surface;
+	tr.refdef.numDrawSurfs++;
+}
+
+static void R_AddWorldSurface( msurface_t *surf, int dlightBits ) {
+	if ( surf->viewCount == tr.viewCount ) {
+		return;		// already in this view
+	}
+
+	surf->viewCount = tr.viewCount;
+	// FIXME: bmodel fog?
+
+	// try to cull before dlighting or adding
+	if ( R_CullSurface( surf->data, surf->shader ) ) {
+		return;
+	}
+
+	// check for dlighting
+	if ( dlightBits ) {
+		dlightBits = R_DlightSurface( surf, dlightBits );
+		dlightBits = ( dlightBits != 0 );
+	}
+
+	R_AddDrawSurf( surf->data, surf->shader, surf->fogIndex, dlightBits );
+}
+
+static void R_RecursiveWorldNode( mnode_t *node, int planeBits, int dlightBits ) {
+
+	do {
+		int			newDlights[2];
+
+		// if the node wasn't marked as potentially visible, exit
+		if (node->visframe != tr.visCount) {
+			return;
+		}
+
+		// if the bounding volume is outside the frustum, nothing
+		// inside can be visible OPTIMIZE: don't do this all the way to leafs?
+
+		if ( 1 ) {
+			int		r;
+
+			if ( planeBits & 1 ) {
+				r = BoxOnPlaneSide(node->mins, node->maxs, &tr.viewParms.frustum[0]);
+				if (r == 2) {
+					return;						// culled
+				}
+				if ( r == 1 ) {
+					planeBits &= ~1;			// all descendants will also be in front
+				}
+			}
+
+			if ( planeBits & 2 ) {
+				r = BoxOnPlaneSide(node->mins, node->maxs, &tr.viewParms.frustum[1]);
+				if (r == 2) {
+					return;						// culled
+				}
+				if ( r == 1 ) {
+					planeBits &= ~2;			// all descendants will also be in front
+				}
+			}
+
+			if ( planeBits & 4 ) {
+				r = BoxOnPlaneSide(node->mins, node->maxs, &tr.viewParms.frustum[2]);
+				if (r == 2) {
+					return;						// culled
+				}
+				if ( r == 1 ) {
+					planeBits &= ~4;			// all descendants will also be in front
+				}
+			}
+
+			if ( planeBits & 8 ) {
+				r = BoxOnPlaneSide(node->mins, node->maxs, &tr.viewParms.frustum[3]);
+				if (r == 2) {
+					return;						// culled
+				}
+				if ( r == 1 ) {
+					planeBits &= ~8;			// all descendants will also be in front
+				}
+			}
+
+		}
+
+		if ( node->contents != -1 ) {
+			break;
+		}
+
+		// node is just a decision point, so go down both sides
+		// since we don't care about sort orders, just go positive to negative
+
+		// determine which dlights are needed
+		newDlights[0] = 0;
+		newDlights[1] = 0;
+		if ( dlightBits ) {
+			int	i;
+
+			for ( i = 0 ; i < tr.refdef.num_dlights ; i++ ) {
+				dlight_t	*dl;
+				float		dist;
+
+				if ( dlightBits & ( 1 << i ) ) {
+					dl = &tr.refdef.dlights[i];
+					dist = DotProduct( dl->origin, node->plane->normal ) - node->plane->dist;
+					
+					if ( dist > -dl->radius ) {
+						newDlights[0] |= ( 1 << i );
+					}
+					if ( dist < dl->radius ) {
+						newDlights[1] |= ( 1 << i );
+					}
+				}
+			}
+		}
+
+		// recurse down the children, front side first
+		R_RecursiveWorldNode (node->children[0], planeBits, newDlights[0] );
+
+		// tail recurse
+		node = node->children[1];
+		dlightBits = newDlights[1];
+	} while ( 1 );
+
+	{
+		// leaf node, so add mark surfaces
+		int			c;
+		msurface_t	*surf, **mark;
+
+		tr.pc.c_leafs++;
+
+		// add to z buffer bounds
+		if ( node->mins[0] < tr.viewParms.visBounds[0][0] ) {
+			tr.viewParms.visBounds[0][0] = node->mins[0];
+		}
+		if ( node->mins[1] < tr.viewParms.visBounds[0][1] ) {
+			tr.viewParms.visBounds[0][1] = node->mins[1];
+		}
+		if ( node->mins[2] < tr.viewParms.visBounds[0][2] ) {
+			tr.viewParms.visBounds[0][2] = node->mins[2];
+		}
+
+		if ( node->maxs[0] > tr.viewParms.visBounds[1][0] ) {
+			tr.viewParms.visBounds[1][0] = node->maxs[0];
+		}
+		if ( node->maxs[1] > tr.viewParms.visBounds[1][1] ) {
+			tr.viewParms.visBounds[1][1] = node->maxs[1];
+		}
+		if ( node->maxs[2] > tr.viewParms.visBounds[1][2] ) {
+			tr.viewParms.visBounds[1][2] = node->maxs[2];
+		}
+
+		// add the individual surfaces
+		mark = node->firstmarksurface;
+		c = node->nummarksurfaces;
+		while (c--) {
+			// the surface may have already been added if it
+			// spans multiple leafs
+			surf = *mark;
+			R_AddWorldSurface( surf, dlightBits );
+			mark++;
+		}
+	}
+
+}
+
+void R_AddWorldSurfaces (void) {
+	if ( tr.refdef.rdflags & RDF_NOWORLDMODEL ) {
+		return;
+	}
+
+	tr.currentEntityNum = REFENTITYNUM_WORLD;
+	tr.shiftedEntityNum = tr.currentEntityNum << QSORT_REFENTITYNUM_SHIFT;
+
+	// determine which leaves are in the PVS / areamask
+	R_MarkLeaves ();
+
+	// clear out the visible min/max
+	ClearBounds( tr.viewParms.visBounds[0], tr.viewParms.visBounds[1] );
+
+	// perform frustum culling and add all the potentially visible surfaces
+	if ( tr.refdef.num_dlights > 32 ) {
+		tr.refdef.num_dlights = 32 ;
+	}
+	R_RecursiveWorldNode( tr.world->nodes, 15, ( 1 << tr.refdef.num_dlights ) - 1 );
+}
+
+static void R_GenerateDrawSurfs( void ) {
+	R_AddWorldSurfaces ();
+
+	R_SetFarClip();
+
+	R_SetupProjectionZ (&tr.viewParms);
+}
+
+void R_RenderView (viewParms_t *parms) {
+	int		firstDrawSurf;
+
+	if ( parms->viewportWidth <= 0 || parms->viewportHeight <= 0 ) {
+		return;
+	}
+
+	tr.viewCount++;
+
+	tr.viewParms = *parms;
+	tr.viewParms.frameSceneNum = tr.frameSceneNum;
+	tr.viewParms.frameCount = tr.frameCount;
+
+	firstDrawSurf = tr.refdef.numDrawSurfs;
+
+	tr.viewCount++;
+
+	// set viewParms.world
+	R_RotateForViewer ();
+
+	R_SetupProjection(&tr.viewParms, r_zproj->value, qtrue);
+
+	R_GenerateDrawSurfs();
+
+	R_SortDrawSurfs( tr.refdef.drawSurfs + firstDrawSurf, tr.refdef.numDrawSurfs - firstDrawSurf );
 }
 
 int main(int argc, char **argv) {
