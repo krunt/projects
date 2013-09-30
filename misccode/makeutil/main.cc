@@ -1,3 +1,18 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <assert.h>
+#include <sys/wait.h>
+
+#include <string>
+#include <vector>
+#include <map>
+#include <fstream>
+
 typedef struct allocation_pool_s {
     char *base;
     char *top;
@@ -8,7 +23,7 @@ allocation_pool_t standard_pool;
 
 static void
 init_pool(allocation_pool_t *pool, int size = 1<<20) {
-    pool->base = malloc(size);
+    pool->base = (char*)malloc(size);
     pool->top = pool->base;
     pool->size = size;
 }
@@ -16,10 +31,10 @@ init_pool(allocation_pool_t *pool, int size = 1<<20) {
 static char*
 allocate_from_pool(allocation_pool_t *pool, size_t size) {
     char *old_top;
-    size_t remaining = pool->top - pool->base;
+    size_t remaining = pool->size - (pool->top - pool->base);
     if (remaining < size) {
-        pool->base = realloc(pool->base, pool->size + size - remaining); 
-        pool->top = pool->base + remaining;
+        pool->base = (char*)realloc(pool->base, pool->size + (size - remaining)); 
+        pool->top = pool->base + (pool->size - remaining);
         pool->size += size - remaining;
     }
     old_top = pool->top;
@@ -43,22 +58,23 @@ typedef struct target_execute_info_s {
     int incount;
 } target_execute_info_t;
 
+struct node_s;
 typedef struct target_s {
     char *name;
     char *cmdline;
     target_execute_info_t exec_info;
 
-    node_t *parents;
-    node_t *children;
+    struct node_s *parents;
+    struct node_s *children;
 } target_t;
 
 typedef struct node_s {
     target_t *value;
-    node_t *next;
+    struct node_s *next;
 } node_t;
 
 typedef struct target_graph_s {
-    std::map<std::string, target_t*> target_map;
+    std::map<std::string, target_t*> *target_map;
     node_t *targets;
 } target_graph_t;
 
@@ -101,7 +117,7 @@ free_parsing_context(parsing_context_t *cn) {
 
 static node_t*
 alloc_node(target_t *target) {
-    node_t *node = allocate_from_pool(&standard_pool, sizeof(node_t));
+    node_t *node = (node_t *)allocate_from_pool(&standard_pool, sizeof(node_t));
     node->value = target;
     node->next = NULL;
     return node;
@@ -114,12 +130,11 @@ free_node(node_t *node) {
 
 static target_t*
 alloc_target() {
-    target_t *target = (target_t *)allocate_from_pool(&standard_pool, 
-            sizeof(target_t));
+    target_t *target = (target_t *)allocate_from_pool(&standard_pool, sizeof(target_t));
     target->name = NULL;
     target->cmdline = NULL;
-    target->exec_info.marker = 0;
-    target->incount = 0;
+    target->exec_info.marker = NOT_TO_EXECUTE;
+    target->exec_info.incount = 0;
     target->parents = NULL;
     target->children = NULL;
     return target;
@@ -132,21 +147,14 @@ free_target(target_t *target) {
 
 static node_t*
 link_after(node_t *after_this, node_t *node) {
+    node->next = after_this->next;
     after_this->next = node;
-    node->next = NULL;
     return after_this;
 }
 
 static node_t*
-link_before(node_t *before_this, node_t *node) {
-    node->next = before_this;
-    before_this->next = NULL;
-    return node;
-}
-
-static node_t*
 list_insert(node_t **head, node_t *node) {
-    if (!head) {
+    if (!*head) {
         *head = node;
     } else {
         link_after(*head, node);
@@ -163,8 +171,9 @@ parse_error(parsing_context_t *cn, const char *message) {
 static void
 logic_error(const char *format, ...) {
     va_list ap;
-    va_start(format, ap);
+    va_start(ap, format);
     vfprintf(stderr, format, ap);
+    fprintf(stderr, "\n");
     va_end(ap);
     exit(2);
 }
@@ -176,7 +185,23 @@ system_error(const char *message) {
 }
 
 static char*
-parse_file_bloat() {
+parse_file_bloat(const char *filename) {
+    struct stat stat;
+    FILE *fd = fopen(filename, "rb");
+    if (!fd || fstat(fileno(fd), &stat)) {
+        system_error("fopen failed:");
+    }
+    char *result = (char *)allocate_from_pool(&standard_pool, stat.st_size + 2); 
+    if (!result) {
+        system_error("realloc failed:");
+    }
+    if (fread(result, 1, stat.st_size, fd) != stat.st_size) {
+        system_error("fread failed:");
+    }
+    /* adding for successful parse */
+    result[stat.st_size] = '\n'; 
+    result[stat.st_size + 1] = 0;
+    return result;
 }
 
 static int
@@ -190,20 +215,41 @@ parse_skip_whitespace(parsing_context_t *cn) {
     char **p = &cn->curr;
     while (*p != cn->end && parse_isspace(**p)) {
         (*p)++;
-        cn->rownum++;
+        cn->colnum++;
         skipped++;
     }
     return skipped;
 }
 
-static int target_symbols_table[256] = {};
+static int target_symbols_table[256] = {
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 
+    0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 
+    0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+};
 
 static char*
 parse_target_name(parsing_context_t *cn) {
     char **p = &cn->curr;
     char *str = *p;
-    while (*p != cn->end && target_symbols_table[(**p) & 0xFF])
-    { (*p)++; cn->colnum++; }
+
+    /* reading target name */
+    while (*p != cn->end && target_symbols_table[(**p) & 0xFF]) {
+        (*p)++; 
+        cn->colnum++; 
+    }
 
     if (*p == cn->end || (parse_isspace(**p) || **p == '\n' || **p == ':')) {
         if (**p == '\n') {
@@ -213,19 +259,17 @@ parse_target_name(parsing_context_t *cn) {
             cn->colnum++;
         }
 
-        if (**p == ':' && cn->state == TARGET_PART) {
+        if ((*p == cn->end || **p == '\n') && cn->state == PARENT_TARGETS_PART) {
+            cn->state = PRECOMMAND_PART;
+        } else if (**p == ':' && cn->state == TARGET_PART) {
             cn->state = PARENT_TARGETS_PART;
         } else {
             cn->state = AFTER_TARGET_PART;
         }
 
-        if ((*p == cn->end || **p == '\n') && cn->state == PARENT_TARGETS_PART) {
-            cn->state = PRECOMMAND_PART;
-        }
-
         **p = 0;
         (*p)++;
-        return str;
+        return !*str ? NULL : str;
     }
     return NULL;
 }
@@ -235,8 +279,11 @@ parse_flush_target(parsing_context_t *cn, target_t *target, node_t *parents) {
     target->parents = parents;
     list_insert(&cn->graph->targets, alloc_node(target));
     cn->state = TARGET_PART;
-    cn->graph->target_map[target->name] = target;
+    (*cn->graph->target_map)[std::string(target->name)] = target;
 }
+
+static void
+parse_postprocess(parsing_context_t *cn);
 
 static target_graph_t*
 parse_makefile(char *makefile_body) {
@@ -251,10 +298,19 @@ parse_makefile(char *makefile_body) {
 
     cn->graph = (target_graph_t *)allocate_from_pool(
             &standard_pool, sizeof(target_graph_t));
+    cn->graph->target_map = new std::map<std::string, target_t*>();
     cn->graph->targets = NULL;
 
-    while (*p != cn->end) {
+    while (*p < cn->end) {
         skipped_whitespaces = parse_skip_whitespace(cn);
+
+        /* skipping empty lines */
+        if (cn->state == TARGET_PART && **p == '\n') {
+            (*p)++;
+            prev_pnode = NULL;
+            continue;
+        }
+
         switch (cn->state) {
         case TARGET_PART: { 
             curtarget = alloc_target();
@@ -296,7 +352,7 @@ parse_makefile(char *makefile_body) {
     
         /* fall through */
         case PRECOMMAND_PART: {
-            if (skipped_whitespace) {
+            if (skipped_whitespaces) {
                 cn->state = COMMAND_PART; 
             } else {
                 /* there is no command */
@@ -310,7 +366,7 @@ parse_makefile(char *makefile_body) {
             char **p = &cn->curr;
             target_command = *p;
             while (*p != cn->end && **p != '\n') {
-                cn->rownum++;
+                cn->colnum++;
                 (*p)++;
             }
             **p = 0;
@@ -337,8 +393,8 @@ parse_postprocess(parsing_context_t *cn) {
         node_t *parent = target_value->parents;
         target_value->parents = NULL;
         while (parent) {
-            if ((it = cn->graph->target_map.find(parent->value))
-                    == cn->graph->target_map.end()) 
+            if ((it = cn->graph->target_map->find(std::string((char*)parent->value)))
+                    == cn->graph->target_map->end()) 
             { logic_error("unknown target `%s`", parent->value); }
 
             target_t *to_insert = (*it).second;
@@ -358,20 +414,21 @@ parse_postprocess(parsing_context_t *cn) {
 static void 
 mark_build_nodes(target_t *target) {
     node_t *child = target->children;
+    target->exec_info.marker = PENDING_TO_EXECUTE;
     while (child) {
-        child->value->exec_info.marker = PENDING_TO_EXECUTE;
+        mark_build_nodes(child->value);
         child = child->next;
     }
 }
 
 static void 
 mark_updated_nodes(target_t *target) {
+    if (target->exec_info.marker == PENDING_TO_EXECUTE) {
+        target->exec_info.marker = TO_EXECUTE;
+    }
     node_t *parent = target->parents;
     while (parent) {
         mark_updated_nodes(parent->value);
-        if (child->value->exec_info.marker == PENDING_TO_EXECUTE) {
-            child->value->exec_info.marker = TO_EXECUTE;
-        }
         parent = parent->next;
     }
 }
@@ -379,10 +436,10 @@ mark_updated_nodes(target_t *target) {
 static node_t*
 find_ready_node_with_zero_incount(node_t *node) {
     while (node) {
-        if (node->value->marker == TO_EXECUTE
-            && (!node->value->exec_info->incount))
+        if (node->value->exec_info.marker == TO_EXECUTE
+            && (!node->value->exec_info.incount))
         {
-            return node->value;
+            return alloc_node(node->value);
         }
         node = node->next;
     }
@@ -392,10 +449,10 @@ find_ready_node_with_zero_incount(node_t *node) {
 static node_t*
 find_ready_node_with_non_zero_incount(node_t *node) {
     while (node) {
-        if (node->value->marker == TO_EXECUTE
-            && (node->value->exec_info->incount > 0))
+        if (node->value->exec_info.marker == TO_EXECUTE
+            && (node->value->exec_info.incount > 0))
         {
-            return node->value;
+            return alloc_node(node->value);
         }
         node = node->next;
     }
@@ -405,33 +462,74 @@ find_ready_node_with_non_zero_incount(node_t *node) {
 static void
 reduce_incount_value(node_t *node) {
     while (node) {
-        if (node->value->marker == TO_EXECUTE) {
-            --node->value->exec_info->incount;
+        if (node->value->exec_info.marker == TO_EXECUTE) {
+            --node->value->exec_info.incount;
         }
         node = node->next;
     }
 }
 
+static void
+print_dependency_node(node_t *node, int indent) {
+    if (node->value->exec_info.marker == TO_EXECUTE) {
+        for (int i = 0; i < indent; ++i) { printf(" "); }
+        printf("%s: (in=%d)\n", node->value->name, node->value->exec_info.incount);
+    } 
+    node = node->value->children;
+    while (node) {
+        print_dependency_node(node, indent + 2);
+        node = node->next;
+    }
+}
+
+static void
+print_dependency_graph(target_graph_t *graph) {
+    printf("---Schedule graph---\n");
+    node_t *node = graph->targets;
+    while (node) {
+        print_dependency_node(node, 0);
+        printf("\n");
+        node = node->next;
+    }
+    printf("--------------------\n");
+}
 
 static node_t*
 generate_schedule_queue(target_graph_t *graph,
     const std::vector<std::string> &build_target_names,
     const std::vector<std::string> &updated_target_names)
 {
-    /* marking first */
-    for (int i = 0; i < build_target_names.size(); ++i) {
-        const std::string &build_target_name = build_target_names[i];
-        if (graph->target_map.find(build_target_name) == graph->target_map.end()) {
-            logic_error("Target `%s` is not found", build_target_name.c_str());
+    if (build_target_names.size() == 1 && build_target_names[0] == "all") {
+        node_t *node = graph->targets; 
+        while (node) {
+            mark_build_nodes(node->value);
+            node = node->next;
         }
-        mark_build_nodes(graph->target_map[build_target_name]);
+    } else {
+        /* marking first */
+        for (int i = 0; i < build_target_names.size(); ++i) {
+            const std::string &build_target_name = build_target_names[i];
+            if (graph->target_map->find(build_target_name) == graph->target_map->end()) {
+                logic_error("Target `%s` is not found", build_target_name.c_str());
+            }
+            mark_build_nodes((*graph->target_map)[build_target_name]);
+        }
     }
-    for (int i = 0; i < updated_target_names.size(); ++i) {
-        const std::string &updated_target_name = updated_target_names[i];
-        if (graph->target_map.find(updated_target_name) == graph->target_map.end()) {
-            logic_error("Target `%s` is not found", updated_target_name.c_str());
+
+    if (updated_target_names.size() == 1 && updated_target_names[0] == "all") {
+        node_t *node = graph->targets; 
+        while (node) {
+            mark_updated_nodes(node->value);
+            node = node->next;
         }
-        mark_updated_nodes(graph->target_map[updated_target_name]);
+    } else {
+        for (int i = 0; i < updated_target_names.size(); ++i) {
+            const std::string &updated_target_name = updated_target_names[i];
+            if (graph->target_map->find(updated_target_name) == graph->target_map->end()) {
+                logic_error("Target `%s` is not found", updated_target_name.c_str());
+            }
+            mark_updated_nodes((*graph->target_map)[updated_target_name]);
+        }
     }
 
     /* initializing incounts */
@@ -439,22 +537,27 @@ generate_schedule_queue(target_graph_t *graph,
     while (node) {
         node_t *parent = node->value->parents;
         while (parent) {
-            if (node->value->marker == TO_EXECUTE 
+            if (node->value->exec_info.marker == TO_EXECUTE 
                 && parent->value->exec_info.marker == TO_EXECUTE) 
-            { parent->value->exec_info.incount++; }
+            { node->value->exec_info.incount++; }
             parent = parent->next;
         }
         node = node->next;
     }
 
-    node_t *result_head = NULL;
+    node_t *result_head = NULL, *current_head = NULL;
     while (1) {
         node_t *min_node = find_ready_node_with_zero_incount(graph->targets);
         if (!min_node) {
             break;
         }
 
-        link_insert(&result_head, min_node);
+        if (current_head) {
+            link_after(current_head, min_node);
+            current_head = current_head->next;
+        } else {
+            result_head = current_head = min_node;
+        }
 
         /* setting non-zero incount, 
          * so next iterations won't choose it again */
@@ -489,15 +592,16 @@ execute_process(char *cmd_name) {
     pid_t result;
     if ((result = fork()) == 0) {
         std::vector<char *> args;
-        p = cmd_name;
+        char *p = cmd_name;
         while (*p) {
             while (*p && isspace(*p)) { p++; }
-            args.push_back(p);
+            if (*p) args.push_back(p);
             while (*p && !isspace(*p)) { p++; }
+            if (!*p) break;
             *p++ = 0;
         }
         args.push_back(NULL);
-        execv(args[0], &args[1]);
+        execv(args[0], &args[0]);
         exit(3);
     } 
     if (result == -1) { system_error("fork failed:"); }
@@ -520,7 +624,8 @@ execute_schedule_queue(node_t *node, int parallel) {
     int currently_free = parallel;
     while (node) {
         /* skip node with no command */
-        if (!min_node->value->cmdline) {
+        if (!node->value->cmdline) {
+            node = node->next;
             continue;
         }
 
@@ -543,20 +648,46 @@ execute_schedule_queue(node_t *node, int parallel) {
     }
 }
 
-int main() {
-    int dryrun = 1, parallel = 1;
-    const char *makefile_filename;
-    std::vector<std::string> build_target_names, updated_target_names;
+static void
+init_updated_target_names(std::vector<std::string> &updated_target_names) {
+    const char *updated_filename = ".updated";
+    if (access(updated_filename, R_OK | W_OK)) {
+        return; /* no file or no rights to it (not-error) */
+    }
 
+    std::fstream fs(updated_filename, std::ios::in);
+    updated_target_names.clear();
+    std::string fname; time_t ktime;
+    while (fs >> fname >> ktime) {
+        struct stat st;
+        if (stat(fname.c_str(), &st)) {
+            system_error("stat failed:");
+        }
+        if (ktime != st.st_atime) {
+            updated_target_names.push_back(fname);
+        }
+    }
+}
+
+int main() {
     init_pool(&standard_pool);
+
+    int dryrun = 1, parallel = 1;
+    const char *makefile_filename = "Makefile";
+    std::vector<std::string> build_target_names, updated_target_names;
+    build_target_names.push_back("all");
+    updated_target_names.push_back("all");
+    init_updated_target_names(updated_target_names);
+    
     char *file_contents = parse_file_bloat(makefile_filename);
     target_graph_t *graph = parse_makefile(file_contents);
     node_t *queue = generate_schedule_queue(graph, 
             build_target_names, updated_target_names);
+    print_dependency_graph(graph);
     if (dryrun) { print_schedule_queue(queue); }
     else { execute_schedule_queue(queue, parallel); }
 
+    delete graph->target_map;
     deallocate_pool(&standard_pool);
     return 0;
 }
-
