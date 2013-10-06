@@ -12,6 +12,8 @@
 
 #include <event.h>
 
+const int MAX_PACKET_LENGTH = 256L*256L*256L-1;
+
 namespace {
 struct fragment_t {
     fragment_t():
@@ -47,7 +49,7 @@ struct fragment_t {
         }
 
         if (fragment_data.length + size < fragment_size) {
-            dynstr_append_mem(&fragment_data, size);
+            dynstr_append_mem(&fragment_data, data, size);
             return data + size;
         } else {
             size_t bytes_to_fill = fragment_size - fragment_data.length;
@@ -155,7 +157,7 @@ private:
         completed = true;
         dynstr_realloc(&fragment_data, 
             uncompressed_fragment_size - compressed_fragment_size);
-        my_uncompress(fragment_data.str, compressed_fragment_size,
+        my_uncompress((uchar*)fragment_data.str, compressed_fragment_size,
                 &uncompressed_fragment_size); 
     }
 
@@ -172,7 +174,7 @@ private:
 
 struct packet_t {
     packet_t()
-    { init_dynamic_string(&fragment_data, "", 128, 16); }
+    { init_dynamic_string(&packet_data, "", 128, 16); }
 
     ~packet_t() {
         dynstr_free(&packet_data);
@@ -227,8 +229,6 @@ enum ServerFlags {
     SERVER_COMMAND_PHASE,
 };
 
-#define MAX_PACKET_LENGTH (256L*256L*256L-1)
-
 class packet_output_stream {
 public:
     virtual void feed_packet(uchar *data, size_t len) = 0;
@@ -237,7 +237,7 @@ public:
     virtual int  packet_count() const = 0;
 
     void feed_packet(packet_t *packet) { 
-        feed_packet(packet->get_pointer(), packet->get_size());    
+        feed_packet((uchar*)packet->get_pointer(), packet->get_size());    
     }
 };
 
@@ -258,8 +258,8 @@ public:
         while (len >= MAX_PACKET_LENGTH) {
             int3store(packet_header, MAX_PACKET_LENGTH);
             packet_header[3] = (uchar)output_seq;
-            dynstr_append_mem(&output, packet_header, sizeof(packet_header));
-            dynstr_append_mem(&output, data, MAX_PACKET_LENGTH);
+            dynstr_append_mem(&output, (char*)packet_header, sizeof(packet_header));
+            dynstr_append_mem(&output, (char*)data, MAX_PACKET_LENGTH);
 
             data += MAX_PACKET_LENGTH;
             len -= MAX_PACKET_LENGTH;
@@ -269,8 +269,8 @@ public:
 
         int3store(packet_header, len);
         packet_header[3] = (uchar)output_seq++;
-        dynstr_append_mem(&output, packet_header, sizeof(packet_header));
-        dynstr_append_mem(&output, data, len);
+        dynstr_append_mem(&output, (char*)packet_header, sizeof(packet_header));
+        dynstr_append_mem(&output, (char*)data, len);
 
         output_packet_fragments_count++;
         output_packet_count++;
@@ -315,7 +315,7 @@ public:
         while (len >= MAX_PACKET_LENGTH) {
             size_t uncompressed_size = 3+1+MAX_PACKET_LENGTH;
             uchar *uncompressed_packet_data 
-                = (uchar*)malloc(uncompressed_packet_size);
+                = (uchar*)malloc(uncompressed_size);
             int3store(uncompressed_packet_data, MAX_PACKET_LENGTH);
             uncompressed_packet_data[3] = (uchar)output_seq;
             memcpy(uncompressed_packet_data, data, MAX_PACKET_LENGTH);
@@ -328,7 +328,7 @@ public:
 
         size_t uncompressed_size = 3+1+len;
         uchar *uncompressed_packet_data 
-            = (uchar*)malloc(uncompressed_packet_size);
+            = (uchar*)malloc(uncompressed_size);
         int3store(uncompressed_packet_data, len);
         uncompressed_packet_data[3] = (uchar)output_seq++;
         memcpy(uncompressed_packet_data, data, len);
@@ -367,10 +367,10 @@ private:
             compressed_packet_header[3] = (uchar)compressed_output_seq;
             int3store(compressed_packet_header+3+1, uncompressed_packet_original);
 
-            dynstr_append_mem(output, compressed_packet_header, 
+            dynstr_append_mem(&output, (char*)compressed_packet_header, 
                 sizeof(compressed_packet_header));
-            dynstr_append_mem(output,
-                uncompressed_packet_data, uncompressed_packet_size);
+            dynstr_append_mem(&output,
+                (char*)uncompressed_packet_data, uncompressed_packet_size);
             output_packet_fragments_count++;
 
             uncompressed_packet_data += uncompressed_packet_original;
@@ -388,10 +388,10 @@ private:
         compressed_packet_header[3] = (uchar)compressed_output_seq++;
         int3store(compressed_packet_header+3+1, uncompressed_packet_original);
 
-        dynstr_append_mem(output, compressed_packet_header, 
+        dynstr_append_mem(&output, (char*)compressed_packet_header, 
             sizeof(compressed_packet_header));
-        dynstr_append_mem(output,
-            uncompressed_packet_data, uncompressed_packet_size);
+        dynstr_append_mem(&output,
+            (char*)uncompressed_packet_data, uncompressed_packet_size);
 
         output_packet_fragments_count++;
         output_packet_count++;
@@ -409,6 +409,8 @@ private:
 class packet_input_stream {
 public:
     virtual void feed_data(uchar *data, size_t len) = 0;
+    virtual packet_t *packet_top() const;
+    virtual void packet_pop();
     virtual int  packet_count() const = 0;
 };
 
@@ -432,12 +434,13 @@ public:
         }
 
         while (len) {
-            uchar *newdata = pending_fragments.back()->append(data, len);
+            fragment_t *fragment 
+                = reinterpret_cast<fragment_t *>(pending_fragments->data);
+
+            uchar *newdata = (uchar*)fragment->append((char*)data, len);
             len -= newdata - data;
             data = newdata;
 
-            fragment_t *fragment 
-                = reinterpret_cast<fragment_t *>(pending_fragments->data);
             if (fragment->is_complete()) {
                 add_fragment_to_output(fragment);
                 list_push(pending_fragments, new fragment_t());
@@ -490,13 +493,13 @@ private:
 
 class mysql_packet_input_stream_compressed: public packet_input_stream {
 public:
-    mysql_packet_input_stream() 
+    mysql_packet_input_stream_compressed() 
         : output_packets(NULL),
           pending_fragments(NULL),
           compressed_pending_fragments(NULL)
     {}
 
-    ~mysql_packet_input_stream() {
+    ~mysql_packet_input_stream_compressed() {
         list_free(output_packets, 0);
         list_free(pending_fragments, 0);
         list_free(compressed_pending_fragments, 0);
@@ -511,13 +514,13 @@ public:
         }
 
         while (len) {
-            uchar *newdata = compressed_pending_fragments.back()->append(data, len);
+            compressed_fragment_t *fragment 
+                = reinterpret_cast<compressed_fragment_t *>(pending_fragments->data);
+
+            uchar *newdata = (uchar*)fragment->append((char*)data, len);
             len -= newdata - data;
             data = newdata;
 
-            compressed_fragment_t *fragment 
-                = reinterpret_cast<compressed_fragment_t *>(
-                        pending_fragments->data);
             if (fragment->is_complete()) {
                 add_fragment_to_pending(fragment);
                 list_push(compressed_pending_fragments, 
@@ -619,7 +622,7 @@ typedef struct connection_s {
     packet_input_stream *input_stream;
     packet_output_stream *output_stream;
 
-    st_VioSSLFd *ssl_connector;
+    struct st_VioSSLFd *ssl_connector;
 } connection_t;
 
 typedef struct connector_s {
@@ -701,7 +704,7 @@ static int
 write_nbytes_to_connection(Vio *vio, char *buf, size_t size) {
     size_t left = size;
     while (left) {
-        int written_bytes = vio_write(fd, buf, left);
+        int written_bytes = vio_write(vio, (const uchar*)buf, left);
         if (written_bytes <= 0) {
             if (written_bytes < 0 && (errno == EINTR || errno == EAGAIN))
                 continue;
@@ -777,15 +780,15 @@ struct nullterminated_string: public mysql_protocol_itemtype {
     }
     char *unpack(char *p) { 
         int len = strlen(p);
-        b = (char*)realloc(len);
+        b = (char*)realloc(b, len);
         return p + len;
     }
     char *b;
 };
 
 struct mysql_protocol_handshake_packet: public mysql_protocol_itemtype {
-    char *pack(char *p);
-    char *unpack(char *p);
+    char *pack(char *p) {}
+    char *unpack(char *p) {}
 
     fixed_integer1 proto_version; 
     nullterminated_string server_version;
@@ -796,15 +799,15 @@ struct mysql_protocol_handshake_packet: public mysql_protocol_itemtype {
 };
 
 struct mysql_protocol_ssl_request_packet: public mysql_protocol_itemtype {
-    char *pack(char *p);
-    char *unpack(char *p);
+    char *pack(char *p) {}
+    char *unpack(char *p) {}
 
     fixed_integer4 capability_flags; 
 };
 
 struct mysql_protocol_handshake_response_packet: public mysql_protocol_itemtype {
-    char *pack(char *p);
-    char *unpack(char *p);
+    char *pack(char *p) {}
+    char *unpack(char *p) {}
 
     fixed_integer4 capability_flags; 
     fixed_integer4 max_packet_size; 
@@ -812,20 +815,20 @@ struct mysql_protocol_handshake_response_packet: public mysql_protocol_itemtype 
 };
 
 struct mysql_protocol_ok_packet: public mysql_protocol_itemtype {
-    char *pack(char *p);
-    char *unpack(char *p);
+    char *pack(char *p) {}
+    char *unpack(char *p) {}
     uchar b;
 };
 
 struct mysql_protocol_err_packet: public mysql_protocol_itemtype {
-    char *pack(char *p);
-    char *unpack(char *p);
+    char *pack(char *p) {}
+    char *unpack(char *p) {}
     uchar b;
 };
 
 struct mysql_protocol_eof_packet: public mysql_protocol_itemtype {
-    char *pack(char *p);
-    char *unpack(char *p);
+    char *pack(char *p) {}
+    char *unpack(char *p) {}
     uchar b;
 };
 
@@ -833,8 +836,8 @@ struct mysql_protocol_eof_packet: public mysql_protocol_itemtype {
  * otherwise stop it */
 static void
 client_connector_processor(connector_t *connector, packet_t *packet) {
-    connection_t *sconn = connector->scon;
-    connection_t *cconn = connector->scon;
+    connection_t *sconn = &connector->scon;
+    connection_t *cconn = &connector->scon;
     switch (cconn->state) {
     case CLIENT_NONE: {
         break;
@@ -845,13 +848,16 @@ client_connector_processor(connector_t *connector, packet_t *packet) {
         if (is_ssl_handshake_request) {
             mysql_protocol_ssl_request_packet ssl_request;
             ssl_request.unpack(packet->get_pointer());
-            cconn->protocol41 = ssl_request.capability_flags.b & CLIENT_PROTOCOL41;
+            cconn->protocol41 = ssl_request.capability_flags.b & CLIENT_PROTOCOL_41;
             cconn->compress = ssl_request.capability_flags.b & CLIENT_COMPRESS;
             cconn->ssl = ssl_request.capability_flags.b & CLIENT_SSL;
 
             /* drain immediately, cause switching to ssl */
             sconn->output_stream->feed_packet(packet);
-            drain_output_stream(sconn); /
+            drain_output_stream(sconn);
+
+
+#ifdef HAVE_OPENSSL
 
             /* switch to ssl */
             vio_reset(sconn->vio, VIO_TYPE_SSL, sconn->fd, 0, 1);
@@ -866,6 +872,8 @@ client_connector_processor(connector_t *connector, packet_t *packet) {
             sslconnect(cconn->ssl_connector, cconn->vio, 60L);
             sslconnect(sconn->ssl_connector, sconn->vio, 60L);
 
+#endif
+
             cconn->state = SSL_CONNECTION_REQUEST;
             return;
         }
@@ -877,7 +885,7 @@ client_connector_processor(connector_t *connector, packet_t *packet) {
         if (cconn->state != SSL_CONNECTION_REQUEST) {
             mysql_protocol_handshake_response_packet response;
             response.unpack(packet->get_pointer());
-            cconn->protocol41 = response.capability_flags.b & CLIENT_PROTOCOL41;
+            cconn->protocol41 = response.capability_flags.b & CLIENT_PROTOCOL_41;
             cconn->compress = response.capability_flags.b & CLIENT_COMPRESS;
             cconn->ssl = response.capability_flags.b & CLIENT_SSL;
         }
@@ -898,8 +906,8 @@ client_connector_processor(connector_t *connector, packet_t *packet) {
 
 static void
 server_connector_processor(connector_t *connector, packet_t *packet) {
-    connection_t *sconn = connector->scon;
-    connection_t *cconn = connector->scon;
+    connection_t *sconn = &connector->scon;
+    connection_t *cconn = &connector->scon;
     switch (sconn->state) {
     case SERVER_NONE: {
         sconn->state = INITIAL_HANDSHAKE_FROM_SERVER;
@@ -937,7 +945,7 @@ server_connector_processor(connector_t *connector, packet_t *packet) {
 
             /* drain immediately, cause turning on compression */
             cconn->output_stream->feed_packet(packet);
-            drain_output_stream(cconn); /
+            drain_output_stream(cconn);
 
             /* turning on compression if needed */
             if (sconn->compress && cconn->compress) {
@@ -978,7 +986,7 @@ server_connector_handler(int fd, short event, void *arg) {
         connector->scon.input_stream->packet_pop();
     }
     event_add(&connector->scon.event, NULL);
-    drain_output_stream(connector->ccon);
+    drain_output_stream(&connector->ccon);
 }
 
 static void
@@ -1003,7 +1011,7 @@ client_connector_handler(int fd, short event, void *arg) {
         connector->ccon.input_stream->packet_pop();
     }
     event_add(&connector->ccon.event, NULL);
-    drain_output_stream(connector->scon);
+    drain_output_stream(&connector->scon);
 }
 
 static void 
