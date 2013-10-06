@@ -201,11 +201,13 @@ const char *k_mysql_server = "127.0.0.1";
 const int k_proxy_listen_port = 19999;
 const int k_mysql_server_port = 3306;
 
-enum kFlags {
-    HANDSHAKE_BEGIN,
-    HANDSHAKE_AFTER_SSL,
-    HANDSHAKE_COMMAND_PHASE,
-};
+const char *client_key = "client-key.pem";
+const char *client_cert = "client-cert.pem";
+const char *client_ca_file = "cacert.pem";
+
+const char *server_key = "server-key.pem";
+const char *server_cert = "server-cert.pem";
+const char *server_ca_file = "cacert.pem";
 
 enum ClientFlags {
     CLIENT_NONE,
@@ -226,8 +228,6 @@ enum ServerFlags {
 };
 
 #define MAX_PACKET_LENGTH (256L*256L*256L-1)
-#define MIN(A,B) ((A) < (B) ? (A) : (B))
-#define MAX(A,B) ((A) > (B) ? (A) : (B))
 
 class packet_output_stream {
 public:
@@ -615,8 +615,11 @@ typedef struct connection_s {
     bool protocol41;
     bool compress;
     bool ssl;
+
     packet_input_stream *input_stream;
     packet_output_stream *output_stream;
+
+    st_VioSSLFd *ssl_connector;
 } connection_t;
 
 typedef struct connector_s {
@@ -828,7 +831,7 @@ struct mysql_protocol_eof_packet: public mysql_protocol_itemtype {
 
 /* return true if connection is still need to keep alive,
  * otherwise stop it */
-static bool
+static void
 client_connector_processor(connector_t *connector, packet_t *packet) {
     connection_t *sconn = connector->scon;
     connection_t *cconn = connector->scon;
@@ -853,6 +856,15 @@ client_connector_processor(connector_t *connector, packet_t *packet) {
             /* switch to ssl */
             vio_reset(sconn->vio, VIO_TYPE_SSL, sconn->fd, 0, 1);
             vio_reset(cconn->vio, VIO_TYPE_SSL, cconn->fd, 0, 1);
+
+            char *cipher = NULL;
+            cconn->ssl_connector = new_VioSSLConnectorFd(server_key, 
+                    server_cert, server_ca_file, NULL, cipher);
+            sconn->ssl_connector = new_VioSSLConnectorFd(client_key, 
+                    client_cert, client_ca_file, NULL, cipher);
+
+            sslconnect(cconn->ssl_connector, cconn->vio, 60L);
+            sslconnect(sconn->ssl_connector, sconn->vio, 60L);
 
             cconn->state = SSL_CONNECTION_REQUEST;
             return;
@@ -884,7 +896,7 @@ client_connector_processor(connector_t *connector, packet_t *packet) {
     };
 }
 
-static bool
+static void
 server_connector_processor(connector_t *connector, packet_t *packet) {
     connection_t *sconn = connector->scon;
     connection_t *cconn = connector->scon;
@@ -916,6 +928,7 @@ server_connector_processor(connector_t *connector, packet_t *packet) {
     case AWAIT_STATUS_PACKET_FROM_SERVER: {
         /* is err-packet */
         if (packet->get_pointer()[0] == 0xff) {
+            cconn->output_stream->feed_packet(packet);
             return;
         } else {
             /* ok-packet arrived, switch to command-phase */
@@ -965,7 +978,7 @@ server_connector_handler(int fd, short event, void *arg) {
         connector->scon.input_stream->packet_pop();
     }
     event_add(&connector->scon.event, NULL);
-    drain_output_stream(connector->scon);
+    drain_output_stream(connector->ccon);
 }
 
 static void
@@ -990,7 +1003,7 @@ client_connector_handler(int fd, short event, void *arg) {
         connector->ccon.input_stream->packet_pop();
     }
     event_add(&connector->ccon.event, NULL);
-    drain_output_stream(connector->ccon);
+    drain_output_stream(connector->scon);
 }
 
 static void 
