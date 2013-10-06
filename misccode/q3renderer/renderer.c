@@ -89,6 +89,564 @@ vec_t VectorNormalize2( const vec3_t v, vec3_t out) {
 	return length;
 }
 
+static float	s_flipMatrix[16] = {
+	// convert from our coordinate system (looking down X)
+	// to OpenGL's coordinate system (looking down -Z)
+	0, 0, -1, 0,
+	-1, 0, 0, 0,
+	0, 1, 0, 0,
+	0, 0, 0, 1
+}
+
+char *va( char *format, ... ) {
+	va_list		argptr;
+	static char string[2][32000]; // in case va is called by nested functions
+	static int	index = 0;
+	char		*buf;
+
+	buf = string[index & 1];
+	index++;
+
+	va_start(argptr, format);
+	vsnprintf(buf, sizeof(*string), format, argptr);
+	va_end(argptr);
+
+	return buf;
+}
+
+static shader_t *ShaderForShaderNum( int shaderNum, int lightmapNum ) {
+	shader_t	*shader;
+	dshader_t	*dsh;
+
+	int _shaderNum = LittleLong( shaderNum );
+	if ( _shaderNum < 0 || _shaderNum >= s_worldData.numShaders ) {
+		Ferror("ShaderForShaderNum: bad num %i");
+	}
+	dsh = &s_worldData.shaders[ _shaderNum ];
+
+	shader = R_FindShader( dsh->shader, lightmapNum, qtrue );
+
+	// if the shader had errors, just use default shader
+	if ( shader->defaultShader ) {
+		return tr.defaultShader;
+	}
+
+	return shader;
+}
+
+static	void R_ColorShiftLightingBytes( byte in[4], byte out[4] ) {
+	int		shift, r, g, b;
+
+	// shift the color data based on overbright range
+	shift = 0;
+
+	// shift the data based on overbright range
+	r = in[0] << shift;
+	g = in[1] << shift;
+	b = in[2] << shift;
+	
+	// normalize by color instead of saturating to white
+	if ( ( r | g | b ) > 255 ) {
+		int		max;
+
+		max = r > g ? r : g;
+		max = max > b ? max : b;
+		r = r * 255 / max;
+		g = g * 255 / max;
+		b = b * 255 / max;
+	}
+
+	out[0] = r;
+	out[1] = g;
+	out[2] = b;
+	out[3] = in[3];
+}
+
+#define FILE_HASH_SIZE		1024
+static	image_t*		hashTable[FILE_HASH_SIZE];
+
+static long generateHashValue( const char *fname ) {
+	int		i;
+	long	hash;
+	char	letter;
+
+	hash = 0;
+	i = 0;
+	while (fname[i] != '\0') {
+		letter = tolower(fname[i]);
+		if (letter =='.') break;				// don't include extension
+		if (letter =='\\') letter = '/';		// damn path names
+		hash+=(long)(letter)*(i+119);
+		i++;
+	}
+	hash &= (FILE_HASH_SIZE-1);
+	return hash;
+}
+
+typedef struct {
+	int			currenttextures[2];
+	int			currenttmu;
+	qboolean	finishCalled;
+	int			texEnv[2];
+	int			faceCulling;
+	unsigned long	glStateBits;
+} glstate_t;
+
+static glstate_t	glState;
+
+static void GL_Bind( image_t *image ) {
+	int texnum;
+
+	if ( !image ) {
+		texnum = tr.defaultImage->texnum;
+	} else {
+		texnum = image->texnum;
+	}
+
+	if ( glState.currenttextures[glState.currenttmu] != texnum ) {
+		if ( image ) {
+			image->frameUsed = tr.frameCount;
+		}
+		glState.currenttextures[glState.currenttmu] = texnum;
+		qglBindTexture (GL_TEXTURE_2D, texnum);
+	}
+}
+
+static void ResampleTexture( unsigned *in, int inwidth, int inheight, unsigned *out,  
+							int outwidth, int outheight ) {
+	int		i, j;
+	unsigned	*inrow, *inrow2;
+	unsigned	frac, fracstep;
+	unsigned	p1[2048], p2[2048];
+	byte		*pix1, *pix2, *pix3, *pix4;
+
+	if (outwidth>2048)
+		Ferror("ResampleTexture: max width");
+								
+	fracstep = inwidth*0x10000/outwidth;
+
+	frac = fracstep>>2;
+	for ( i=0 ; i<outwidth ; i++ ) {
+		p1[i] = 4*(frac>>16);
+		frac += fracstep;
+	}
+	frac = 3*(fracstep>>2);
+	for ( i=0 ; i<outwidth ; i++ ) {
+		p2[i] = 4*(frac>>16);
+		frac += fracstep;
+	}
+
+	for (i=0 ; i<outheight ; i++, out += outwidth) {
+		inrow = in + inwidth*(int)((i+0.25)*inheight/outheight);
+		inrow2 = in + inwidth*(int)((i+0.75)*inheight/outheight);
+		for (j=0 ; j<outwidth ; j++) {
+			pix1 = (byte *)inrow + p1[j];
+			pix2 = (byte *)inrow + p2[j];
+			pix3 = (byte *)inrow2 + p1[j];
+			pix4 = (byte *)inrow2 + p2[j];
+			((byte *)(out+j))[0] = (pix1[0] + pix2[0] + pix3[0] + pix4[0])>>2;
+			((byte *)(out+j))[1] = (pix1[1] + pix2[1] + pix3[1] + pix4[1])>>2;
+			((byte *)(out+j))[2] = (pix1[2] + pix2[2] + pix3[2] + pix4[2])>>2;
+			((byte *)(out+j))[3] = (pix1[3] + pix2[3] + pix3[3] + pix4[3])>>2;
+		}
+	}
+}
+
+static
+void R_LightScaleTexture (unsigned *in, int inwidth, int inheight, qboolean only_gamma )
+{
+	if ( only_gamma )
+	{
+		if ( !glConfig.deviceSupportsGamma )
+		{
+			int		i, c;
+			byte	*p;
+
+			p = (byte *)in;
+
+			c = inwidth*inheight;
+			for (i=0 ; i<c ; i++, p+=4)
+			{
+				p[0] = s_gammatable[p[0]];
+				p[1] = s_gammatable[p[1]];
+				p[2] = s_gammatable[p[2]];
+			}
+		}
+	}
+	else
+	{
+		int		i, c;
+		byte	*p;
+
+		p = (byte *)in;
+
+		c = inwidth*inheight;
+
+		if ( glConfig.deviceSupportsGamma )
+		{
+			for (i=0 ; i<c ; i++, p+=4)
+			{
+				p[0] = s_intensitytable[p[0]];
+				p[1] = s_intensitytable[p[1]];
+				p[2] = s_intensitytable[p[2]];
+			}
+		}
+		else
+		{
+			for (i=0 ; i<c ; i++, p+=4)
+			{
+				p[0] = s_gammatable[s_intensitytable[p[0]]];
+				p[1] = s_gammatable[s_intensitytable[p[1]]];
+				p[2] = s_gammatable[s_intensitytable[p[2]]];
+			}
+		}
+	}
+}
+
+static void R_MipMap (byte *in, int width, int height) {
+	int		i, j;
+	byte	*out;
+	int		row;
+
+	if ( width == 1 && height == 1 ) {
+		return;
+	}
+
+	row = width * 4;
+	out = in;
+	width >>= 1;
+	height >>= 1;
+
+	if ( width == 0 || height == 0 ) {
+		width += height;	// get largest
+		for (i=0 ; i<width ; i++, out+=4, in+=8 ) {
+			out[0] = ( in[0] + in[4] )>>1;
+			out[1] = ( in[1] + in[5] )>>1;
+			out[2] = ( in[2] + in[6] )>>1;
+			out[3] = ( in[3] + in[7] )>>1;
+		}
+		return;
+	}
+
+	for (i=0 ; i<height ; i++, in+=row) {
+		for (j=0 ; j<width ; j++, out+=4, in+=8) {
+			out[0] = (in[0] + in[4] + in[row+0] + in[row+4])>>2;
+			out[1] = (in[1] + in[5] + in[row+1] + in[row+5])>>2;
+			out[2] = (in[2] + in[6] + in[row+2] + in[row+6])>>2;
+			out[3] = (in[3] + in[7] + in[row+3] + in[row+7])>>2;
+		}
+	}
+}
+
+static void Upload32( unsigned *data, 
+						  int width, int height, 
+						  qboolean mipmap, 
+						  qboolean picmip, 
+							qboolean lightMap,
+						  int *format, 
+						  int *pUploadWidth, int *pUploadHeight )
+{
+	int			samples;
+	unsigned	*scaledBuffer = NULL;
+	unsigned	*resampledBuffer = NULL;
+	int			scaled_width, scaled_height;
+	int			i, c;
+	byte		*scan;
+	GLenum		internalFormat = GL_RGB;
+	float		rMax = 0, gMax = 0, bMax = 0;
+
+	//
+	// convert to exact power of 2 sizes
+	//
+	for (scaled_width = 1 ; scaled_width < width ; scaled_width<<=1)
+		;
+	for (scaled_height = 1 ; scaled_height < height ; scaled_height<<=1)
+		;
+
+	if ( scaled_width != width || scaled_height != height ) {
+		resampledBuffer = HunkAlloc( scaled_width * scaled_height * 4 );
+		ResampleTexture (data, width, height, resampledBuffer, 
+                scaled_width, scaled_height);
+		data = resampledBuffer;
+		width = scaled_width;
+		height = scaled_height;
+	}
+
+	//
+	// perform optional picmip operation
+	//
+	//if ( picmip ) {
+	//	scaled_width >>= r_picmip->integer;
+	//	scaled_height >>= r_picmip->integer;
+	//}
+
+	//
+	// clamp to minimum size
+	//
+	if (scaled_width < 1) {
+		scaled_width = 1;
+	}
+	if (scaled_height < 1) {
+		scaled_height = 1;
+	}
+
+	//
+	// clamp to the current upper OpenGL limit
+	// scale both axis down equally so we don't have to
+	// deal with a half mip resampling
+	//
+	//while ( scaled_width > glConfig.maxTextureSize
+		//|| scaled_height > glConfig.maxTextureSize ) {
+		//scaled_width >>= 1;
+		//scaled_height >>= 1;
+	//}
+
+	scaledBuffer = HunkAlloc( sizeof( unsigned ) * scaled_width * scaled_height );
+
+	//
+	// scan the texture for each channel's max values
+	// and verify if the alpha channel is being used or not
+	//
+	c = width*height;
+	scan = ((byte *)data);
+	samples = 3;
+
+	if(lightMap)
+	{
+		internalFormat = GL_RGB;
+	}
+	else
+	{
+		for ( i = 0; i < c; i++ )
+		{
+			if ( scan[i*4+0] > rMax )
+			{
+				rMax = scan[i*4+0];
+			}
+			if ( scan[i*4+1] > gMax )
+			{
+				gMax = scan[i*4+1];
+			}
+			if ( scan[i*4+2] > bMax )
+			{
+				bMax = scan[i*4+2];
+			}
+			if ( scan[i*4 + 3] != 255 ) 
+			{
+				samples = 4;
+				break;
+			}
+		}
+		// select proper internal format
+		if ( samples == 3 )
+		{
+			if(r_greyscale->integer)
+			{
+				if(r_texturebits->integer == 16)
+					internalFormat = GL_LUMINANCE8;
+				else if(r_texturebits->integer == 32)
+					internalFormat = GL_LUMINANCE16;
+				else
+					internalFormat = GL_LUMINANCE;
+			}
+			else
+			{
+				if ( glConfig.textureCompression == TC_S3TC_ARB )
+				{
+					internalFormat = GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
+				}
+				else if ( glConfig.textureCompression == TC_S3TC )
+				{
+					internalFormat = GL_RGB4_S3TC;
+				}
+				else if ( r_texturebits->integer == 16 )
+				{
+					internalFormat = GL_RGB5;
+				}
+				else if ( r_texturebits->integer == 32 )
+				{
+					internalFormat = GL_RGB8;
+				}
+				else
+				{
+					internalFormat = GL_RGB;
+				}
+			}
+		}
+		else if ( samples == 4 )
+		{
+			if(r_greyscale->integer)
+			{
+				if(r_texturebits->integer == 16)
+					internalFormat = GL_LUMINANCE8_ALPHA8;
+				else if(r_texturebits->integer == 32)
+					internalFormat = GL_LUMINANCE16_ALPHA16;
+				else
+					internalFormat = GL_LUMINANCE_ALPHA;
+			}
+			else
+			{
+				if ( r_texturebits->integer == 16 )
+				{
+					internalFormat = GL_RGBA4;
+				}
+				else if ( r_texturebits->integer == 32 )
+				{
+					internalFormat = GL_RGBA8;
+				}
+				else
+				{
+					internalFormat = GL_RGBA;
+				}
+			}
+		}
+	}
+
+	// copy or resample data as appropriate for first MIP level
+	if ( ( scaled_width == width ) && 
+		( scaled_height == height ) ) {
+		if (!mipmap)
+		{
+			qglTexImage2D (GL_TEXTURE_2D, 0, internalFormat, scaled_width, scaled_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+			*pUploadWidth = scaled_width;
+			*pUploadHeight = scaled_height;
+			*format = internalFormat;
+
+			goto done;
+		}
+		Com_Memcpy (scaledBuffer, data, width*height*4);
+	}
+	else
+	{
+		// use the normal mip-mapping function to go down from here
+		while ( width > scaled_width || height > scaled_height ) {
+			R_MipMap( (byte *)data, width, height );
+			width >>= 1;
+			height >>= 1;
+			if ( width < 1 ) {
+				width = 1;
+			}
+			if ( height < 1 ) {
+				height = 1;
+			}
+		}
+		Com_Memcpy( scaledBuffer, data, width * height * 4 );
+	}
+
+	R_LightScaleTexture (scaledBuffer, scaled_width, scaled_height, !mipmap );
+
+	*pUploadWidth = scaled_width;
+	*pUploadHeight = scaled_height;
+	*format = internalFormat;
+
+	qglTexImage2D (GL_TEXTURE_2D, 0, internalFormat, scaled_width, scaled_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, scaledBuffer );
+
+	if (mipmap)
+	{
+		int		miplevel;
+
+		miplevel = 0;
+		while (scaled_width > 1 || scaled_height > 1)
+		{
+			R_MipMap( (byte *)scaledBuffer, scaled_width, scaled_height );
+			scaled_width >>= 1;
+			scaled_height >>= 1;
+			if (scaled_width < 1)
+				scaled_width = 1;
+			if (scaled_height < 1)
+				scaled_height = 1;
+			miplevel++;
+
+			qglTexImage2D (GL_TEXTURE_2D, miplevel, internalFormat, scaled_width, scaled_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, scaledBuffer );
+		}
+	}
+done:
+
+	if (mipmap)
+	{
+		if ( textureFilterAnisotropic )
+			qglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT,
+					(GLint)Com_Clamp( 1, maxAnisotropy, r_ext_max_anisotropy->integer ) );
+
+		qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_filter_min);
+		qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter_max);
+	}
+	else
+	{
+		if ( textureFilterAnisotropic )
+			qglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, 1 );
+
+		qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
+		qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+	}
+
+	GL_CheckErrors();
+
+	if ( scaledBuffer != 0 )
+		HunkFree( scaledBuffer );
+	if ( resampledBuffer != 0 )
+		HunkFree( resampledBuffer );
+}
+
+image_t *R_CreateImage( const char *name, byte *pic, int width, int height,
+		imgType_t type, imgFlags_t flags, int internalFormat ) {
+	image_t		*image;
+	qboolean	isLightmap = qfalse;
+	long		hash;
+	int         glWrapClampMode;
+
+	if (strlen(name) >= MAX_QPATH ) {
+		Ferror ("R_CreateImage: \"%s\" is too long", name);
+	}
+	if ( !strncmp( name, "*lightmap", 9 ) ) {
+		isLightmap = qtrue;
+	}
+
+	if ( tr.numImages == MAX_DRAWIMAGES ) {
+		Ferror( ERR_DROP, "R_CreateImage: MAX_DRAWIMAGES hit");
+	}
+
+	image = tr.images[tr.numImages] = Hunk_Alloc( sizeof( image_t ) );
+	image->texnum = 1024 + tr.numImages;
+	tr.numImages++;
+
+	image->type = type;
+	image->flags = flags;
+
+	strcpy (image->imgName, name);
+
+	image->width = width;
+	image->height = height;
+	if (flags & IMGFLAG_CLAMPTOEDGE)
+		glWrapClampMode = GL_CLAMP_TO_EDGE;
+	else
+		glWrapClampMode = GL_REPEAT;
+
+	// lightmaps are always allocated on TMU 1
+	image->TMU = 0;
+
+	GL_Bind(image);
+
+	Upload32( (unsigned *)pic, image->width, image->height, 
+								image->flags & IMGFLAG_MIPMAP,
+								image->flags & IMGFLAG_PICMIP,
+								isLightmap,
+								&image->internalFormat,
+								&image->uploadWidth,
+								&image->uploadHeight );
+
+	qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, glWrapClampMode );
+	qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, glWrapClampMode );
+
+	qglBindTexture( GL_TEXTURE_2D, 0 );
+
+	hash = generateHashValue(name);
+	image->next = hashTable[hash];
+	hashTable[hash] = image;
+
+	return image;
+}
+
 
 #define	PLANE_X			0
 #define	PLANE_Y			1
@@ -859,6 +1417,82 @@ static	void R_LoadVisibility( lump_t *l ) {
 	world.vis = dest;
 }
 
+
+static void R_LoadEntities( lump_t *l ) {
+	char *p, *token, *s;
+	char keyname[MAX_TOKEN_CHARS];
+	char value[MAX_TOKEN_CHARS];
+	world_t	*w;
+
+	w = &s_worldData;
+	w->lightGridSize[0] = 64;
+	w->lightGridSize[1] = 64;
+	w->lightGridSize[2] = 128;
+
+	p = (char *)(fileBase + l->fileofs);
+
+	// store for reference by the cgame
+	w->entityString = Hunk_Alloc( l->filelen + 1 );
+	strcpy( w->entityString, p );
+	w->entityParsePoint = w->entityString;
+
+	token = COM_ParseExt( &p, qtrue );
+	if (!*token || *token != '{') {
+		return;
+	}
+
+	// only parse the world spawn
+	while ( 1 ) {	
+		// parse key
+		token = COM_ParseExt( &p, qtrue );
+
+		if ( !*token || *token == '}' ) {
+			break;
+		}
+		Q_strncpyz(keyname, token, sizeof(keyname));
+
+		// parse value
+		token = COM_ParseExt( &p, qtrue );
+
+		if ( !*token || *token == '}' ) {
+			break;
+		}
+		Q_strncpyz(value, token, sizeof(value));
+
+		// check for remapping of shaders for vertex lighting
+		s = "vertexremapshader";
+		if (!Q_strncmp(keyname, s, strlen(s)) ) {
+			s = strchr(value, ';');
+			if (!s) {
+				ri.Printf( PRINT_WARNING, "WARNING: no semi colon in vertexshaderremap '%s'\n", value );
+				break;
+			}
+			*s++ = 0;
+			if (r_vertexLight->integer) {
+				R_RemapShader(value, s, "0");
+			}
+			continue;
+		}
+		// check for remapping of shaders
+		s = "remapshader";
+		if (!Q_strncmp(keyname, s, strlen(s)) ) {
+			s = strchr(value, ';');
+			if (!s) {
+				ri.Printf( PRINT_WARNING, "WARNING: no semi colon in shaderremap '%s'\n", value );
+				break;
+			}
+			*s++ = 0;
+			R_RemapShader(value, s, "0");
+			continue;
+		}
+		// check for a different grid size
+		if (!Q_stricmp(keyname, "gridsize")) {
+			sscanf(value, "%f %f %f", &w->lightGridSize[0], &w->lightGridSize[1], &w->lightGridSize[2] );
+			continue;
+		}
+	}
+}
+
 static	void R_LoadShaders( lump_t *l ) {
 	int		i, count;
 	dshader_t	*in, *out;
@@ -877,6 +1511,45 @@ static	void R_LoadShaders( lump_t *l ) {
 	for ( i=0 ; i<count ; i++ ) {
 		out[i].surfaceFlags = LittleLong( out[i].surfaceFlags );
 		out[i].contentFlags = LittleLong( out[i].contentFlags );
+	}
+}
+
+#define	LIGHTMAP_SIZE	128
+static	void R_LoadLightmaps( lump_t *l ) {
+	byte		*buf, *buf_p;
+	int			len;
+	byte		image[LIGHTMAP_SIZE*LIGHTMAP_SIZE*4];
+	int			i, j;
+	float maxIntensity = 0;
+	double sumIntensity = 0;
+
+	len = l->filelen;
+	if ( !len ) {
+		return;
+	}
+	buf = fileBase + l->fileofs;
+
+	// create all the lightmaps
+	tr.numLightmaps = len / (LIGHTMAP_SIZE * LIGHTMAP_SIZE * 3);
+	if ( tr.numLightmaps == 1 ) {
+		//FIXME: HACK: maps with only one lightmap turn up fullbright for some reason.
+		//this avoids this, but isn't the correct solution.
+		tr.numLightmaps++;
+	}
+
+	tr.lightmaps = Hunk_Alloc( tr.numLightmaps * sizeof(image_t *) );
+	for ( i = 0 ; i < tr.numLightmaps ; i++ ) {
+		// expand the 24 bit on-disk to 32 bit
+		buf_p = buf + i * LIGHTMAP_SIZE*LIGHTMAP_SIZE * 3;
+
+		for ( j = 0 ; j < LIGHTMAP_SIZE * LIGHTMAP_SIZE; j++ ) {
+			R_ColorShiftLightingBytes( &buf_p[j*3], &image[j*4] );
+			image[j*4+3] = 255;
+		}
+
+		tr.lightmaps[i] = R_CreateImage( va("*lightmap%d",i), image, 
+			LIGHTMAP_SIZE, LIGHTMAP_SIZE, IMGTYPE_COLORALPHA,
+			IMGFLAG_NOLIGHTSCALE | IMGFLAG_NO_COMPRESSION | IMGFLAG_CLAMPTOEDGE, 0 );
 	}
 }
 
@@ -1343,10 +2016,10 @@ static void ParseMesh( dsurface_t *ds, drawVert_t *verts, msurface_t *surf ) {
 	lightmapNum = LittleLong( ds->lightmapNum );
 
 	// get fog volume
-	//surf->fogIndex = LittleLong( ds->fogNum ) + 1;
+	surf->fogIndex = LittleLong( ds->fogNum ) + 1;
 
 	// get shader value
-	//surf->shader = ShaderForShaderNum( ds->shaderNum, lightmapNum );
+	surf->shader = ShaderForShaderNum( ds->shaderNum, lightmapNum );
 
 	// we may have a nodraw surface, because they might still need to
 	// be around for movement clipping
@@ -1410,10 +2083,10 @@ static void ParseFace( dsurface_t *ds, drawVert_t *verts, msurface_t *surf, int 
 	lightmapNum = LittleLong( ds->lightmapNum );
 
 	// get fog volume
-	//surf->fogIndex = LittleLong( ds->fogNum ) + 1;
+	surf->fogIndex = LittleLong( ds->fogNum ) + 1;
 
 	// get shader value
-	//surf->shader = ShaderForShaderNum( ds->shaderNum, lightmapNum );
+	surf->shader = ShaderForShaderNum( ds->shaderNum, lightmapNum );
 
 	numPoints = LittleLong( ds->numVerts );
 	if (numPoints > MAX_FACE_POINTS) {
@@ -1540,6 +2213,795 @@ static	void R_LoadSurfaces( lump_t *surfs, lump_t *verts, lump_t *indexLump ) {
 		numFaces, numMeshes, numTriSurfs, numFlares );
 }
 
+static unsigned 
+ColorBytes3 (float r, float g, float b) {
+	unsigned	i;
+
+	( (byte *)&i )[0] = r * 255;
+	( (byte *)&i )[1] = g * 255;
+	( (byte *)&i )[2] = b * 255;
+
+	return i;
+}
+
+static unsigned 
+ColorBytes4 (float r, float g, float b, float a) {
+	unsigned	i;
+
+	( (byte *)&i )[0] = r * 255;
+	( (byte *)&i )[1] = g * 255;
+	( (byte *)&i )[2] = b * 255;
+	( (byte *)&i )[3] = a * 255;
+
+	return i;
+}
+
+static long generateShaderHashValue( const char *fname, const int size ) {
+	int		i;
+	long	hash;
+	char	letter;
+
+	hash = 0;
+	i = 0;
+	while (fname[i] != '\0') {
+		letter = tolower(fname[i]);
+		if (letter =='.') break;				// don't include extension
+		if (letter =='\\') letter = '/';		// damn path names
+		if (letter == PATH_SEP) letter = '/';		// damn path names
+		hash+=(long)(letter)*(i+119);
+		i++;
+	}
+	hash = (hash ^ (hash >> 10) ^ (hash >> 20));
+	hash &= (size-1);
+	return hash;
+}
+
+#define SHADER_FILE_HASH_SIZE		1024
+static	shader_t*		shaderHashTable[FILE_HASH_SIZE];
+static	shaderStage_t	stages[MAX_SHADER_STAGES];		
+static	texModInfo_t	texMods[MAX_SHADER_STAGES][TR_MAX_TEXMODS];
+static	shader_t		shader;
+#define MAX_SHADERTEXT_HASH		2048
+static char **shaderTextHashTable[MAX_SHADERTEXT_HASH];
+
+static char *FindShaderInShaderText( const char *shadername ) {
+
+	char *token, *p;
+
+	int i, hash;
+
+	hash = generateShaderHashValue(shadername, MAX_SHADERTEXT_HASH);
+
+	if(shaderTextHashTable[hash])
+	{
+		for (i = 0; shaderTextHashTable[hash][i]; i++)
+		{
+			p = shaderTextHashTable[hash][i];
+			token = COM_ParseExt(&p, qtrue);
+		
+			if(!Q_stricmp(token, shadername))
+				return p;
+		}
+	}
+
+	p = s_shaderText;
+
+	if ( !p ) {
+		return NULL;
+	}
+
+	// look for label
+	while ( 1 ) {
+		token = COM_ParseExt( &p, qtrue );
+		if ( token[0] == 0 ) {
+			break;
+		}
+
+		if ( !Q_stricmp( token, shadername ) ) {
+			return p;
+		}
+		else {
+			// skip the definition
+			SkipBracedSection( &p );
+		}
+	}
+
+	return NULL;
+}
+
+static qboolean ParseShader( char **text )
+{
+	char *token;
+	int s;
+
+	s = 0;
+
+	token = COM_ParseExt( text, qtrue );
+	if ( token[0] != '{' )
+	{
+		return qfalse;
+	}
+
+	while ( 1 )
+	{
+		token = COM_ParseExt( text, qtrue );
+		if ( !token[0] )
+		{
+			return qfalse;
+		}
+
+		// end of shader definition
+		if ( token[0] == '}' )
+		{
+			break;
+		}
+		// stage definition
+		else if ( token[0] == '{' )
+		{
+			if ( s >= MAX_SHADER_STAGES ) {
+				return qfalse;
+			}
+
+			if ( !ParseStage( &stages[s], text ) )
+			{
+				return qfalse;
+			}
+			stages[s].active = qtrue;
+			s++;
+
+			continue;
+		}
+		// skip stuff that only the QuakeEdRadient needs
+		else if ( !Q_stricmpn( token, "qer", 3 ) ) {
+			SkipRestOfLine( text );
+			continue;
+		}
+		// sun parms
+		else if ( !Q_stricmp( token, "q3map_sun" ) ) {
+			float	a, b;
+
+			token = COM_ParseExt( text, qfalse );
+			tr.sunLight[0] = atof( token );
+			token = COM_ParseExt( text, qfalse );
+			tr.sunLight[1] = atof( token );
+			token = COM_ParseExt( text, qfalse );
+			tr.sunLight[2] = atof( token );
+			
+			VectorNormalize( tr.sunLight );
+
+			token = COM_ParseExt( text, qfalse );
+			a = atof( token );
+			VectorScale( tr.sunLight, a, tr.sunLight);
+
+			token = COM_ParseExt( text, qfalse );
+			a = atof( token );
+			a = a / 180 * M_PI;
+
+			token = COM_ParseExt( text, qfalse );
+			b = atof( token );
+			b = b / 180 * M_PI;
+
+			tr.sunDirection[0] = cos( a ) * cos( b );
+			tr.sunDirection[1] = sin( a ) * cos( b );
+			tr.sunDirection[2] = sin( b );
+		}
+		else if ( !Q_stricmp( token, "deformVertexes" ) ) {
+			ParseDeform( text );
+			continue;
+		}
+		else if ( !Q_stricmp( token, "tesssize" ) ) {
+			SkipRestOfLine( text );
+			continue;
+		}
+		else if ( !Q_stricmp( token, "clampTime" ) ) {
+			token = COM_ParseExt( text, qfalse );
+      if (token[0]) {
+        shader.clampTime = atof(token);
+      }
+    }
+		// skip stuff that only the q3map needs
+		else if ( !Q_stricmpn( token, "q3map", 5 ) ) {
+			SkipRestOfLine( text );
+			continue;
+		}
+		// skip stuff that only q3map or the server needs
+		else if ( !Q_stricmp( token, "surfaceParm" ) ) {
+			ParseSurfaceParm( text );
+			continue;
+		}
+		// no mip maps
+		else if ( !Q_stricmp( token, "nomipmaps" ) )
+		{
+			shader.noMipMaps = qtrue;
+			shader.noPicMip = qtrue;
+			continue;
+		}
+		// no picmip adjustment
+		else if ( !Q_stricmp( token, "nopicmip" ) )
+		{
+			shader.noPicMip = qtrue;
+			continue;
+		}
+		// polygonOffset
+		else if ( !Q_stricmp( token, "polygonOffset" ) )
+		{
+			shader.polygonOffset = qtrue;
+			continue;
+		}
+		// entityMergable, allowing sprite surfaces from multiple entities
+		// to be merged into one batch.  This is a savings for smoke
+		// puffs and blood, but can't be used for anything where the
+		// shader calcs (not the surface function) reference the entity color or scroll
+		else if ( !Q_stricmp( token, "entityMergable" ) )
+		{
+			shader.entityMergable = qtrue;
+			continue;
+		}
+		// fogParms
+		else if ( !Q_stricmp( token, "fogParms" ) ) 
+		{
+			if ( !ParseVector( text, 3, shader.fogParms.color ) ) {
+				return qfalse;
+			}
+
+			token = COM_ParseExt( text, qfalse );
+			if ( !token[0] ) 
+			{
+				ri.Printf( PRINT_WARNING, "WARNING: missing parm for 'fogParms' keyword in shader '%s'\n", shader.name );
+				continue;
+			}
+			shader.fogParms.depthForOpaque = atof( token );
+
+			// skip any old gradient directions
+			SkipRestOfLine( text );
+			continue;
+		}
+		// portal
+		else if ( !Q_stricmp(token, "portal") )
+		{
+			shader.sort = SS_PORTAL;
+			continue;
+		}
+		// skyparms <cloudheight> <outerbox> <innerbox>
+		else if ( !Q_stricmp( token, "skyparms" ) )
+		{
+			ParseSkyParms( text );
+			continue;
+		}
+		// light <value> determines flaring in q3map, not needed here
+		else if ( !Q_stricmp(token, "light") ) 
+		{
+			(void)COM_ParseExt( text, qfalse );
+			continue;
+		}
+		// cull <face>
+		else if ( !Q_stricmp( token, "cull") ) 
+		{
+			token = COM_ParseExt( text, qfalse );
+			if ( token[0] == 0 )
+			{
+				ri.Printf( PRINT_WARNING, "WARNING: missing cull parms in shader '%s'\n", shader.name );
+				continue;
+			}
+
+			if ( !Q_stricmp( token, "none" ) || !Q_stricmp( token, "twosided" ) || !Q_stricmp( token, "disable" ) )
+			{
+				shader.cullType = CT_TWO_SIDED;
+			}
+			else if ( !Q_stricmp( token, "back" ) || !Q_stricmp( token, "backside" ) || !Q_stricmp( token, "backsided" ) )
+			{
+				shader.cullType = CT_BACK_SIDED;
+			}
+			else
+			{
+				ri.Printf( PRINT_WARNING, "WARNING: invalid cull parm '%s' in shader '%s'\n", token, shader.name );
+			}
+			continue;
+		}
+		// sort
+		else if ( !Q_stricmp( token, "sort" ) )
+		{
+			ParseSort( text );
+			continue;
+		}
+		else
+		{
+			ri.Printf( PRINT_WARNING, "WARNING: unknown general shader parameter '%s' in '%s'\n", token, shader.name );
+			return qfalse;
+		}
+	}
+
+	//
+	// ignore shaders that don't have any stages, unless it is a sky or fog
+	//
+	if ( s == 0 && !shader.isSky && !(shader.contentFlags & CONTENTS_FOG ) ) {
+		return qfalse;
+	}
+
+	shader.explicitlyDefined = qtrue;
+
+	return qtrue;
+}
+
+static void SortNewShader( void ) {
+	int		i;
+	float	sort;
+	shader_t	*newShader;
+
+	newShader = tr.shaders[ tr.numShaders - 1 ];
+	sort = newShader->sort;
+
+	for ( i = tr.numShaders - 2 ; i >= 0 ; i-- ) {
+		if ( tr.sortedShaders[ i ]->sort <= sort ) {
+			break;
+		}
+		tr.sortedShaders[i+1] = tr.sortedShaders[i];
+		tr.sortedShaders[i+1]->sortedIndex++;
+	}
+
+
+	newShader->sortedIndex = i+1;
+	tr.sortedShaders[i+1] = newShader;
+}
+
+static shader_t *GeneratePermanentShader( void ) {
+	shader_t	*newShader;
+	int			i, b;
+	int			size, hash;
+
+	if ( tr.numShaders == MAX_SHADERS ) {
+		ri.Printf( PRINT_WARNING, "WARNING: GeneratePermanentShader - MAX_SHADERS hit\n");
+		return tr.defaultShader;
+	}
+
+	newShader = ri.Hunk_Alloc( sizeof( shader_t ), h_low );
+
+	*newShader = shader;
+
+	if ( shader.sort <= SS_OPAQUE ) {
+		newShader->fogPass = FP_EQUAL;
+	} else if ( shader.contentFlags & CONTENTS_FOG ) {
+		newShader->fogPass = FP_LE;
+	}
+
+	tr.shaders[ tr.numShaders ] = newShader;
+	newShader->index = tr.numShaders;
+	
+	tr.sortedShaders[ tr.numShaders ] = newShader;
+	newShader->sortedIndex = tr.numShaders;
+
+	tr.numShaders++;
+
+	for ( i = 0 ; i < newShader->numUnfoggedPasses ; i++ ) {
+		if ( !stages[i].active ) {
+			break;
+		}
+		newShader->stages[i] = Hunk_Alloc( sizeof( stages[i] ), h_low );
+		*newShader->stages[i] = stages[i];
+
+		for ( b = 0 ; b < NUM_TEXTURE_BUNDLES ; b++ ) {
+			size = newShader->stages[i]->bundle[b].numTexMods * sizeof( texModInfo_t );
+			newShader->stages[i]->bundle[b].texMods = ri.Hunk_Alloc( size, h_low );
+			Com_Memcpy( newShader->stages[i]->bundle[b].texMods, stages[i].bundle[b].texMods, size );
+		}
+	}
+
+	SortNewShader();
+
+	hash = generateShaderHashValue(newShader->name, SHADER_FILE_HASH_SIZE);
+	newShader->next = shaderHashTable[hash];
+	shaderHashTable[hash] = newShader;
+
+	return newShader;
+}
+
+static void ComputeStageIteratorFunc( void )
+{
+	shader.optimalStageIteratorFunc = RB_StageIteratorGeneric;
+
+	//
+	// see if this should go into the sky path
+	//
+	if ( shader.isSky )
+	{ shader.optimalStageIteratorFunc = RB_StageIteratorSky; }
+}
+
+static shader_t *FinishShader( void ) {
+	int stage;
+	qboolean		hasLightmapStage;
+	qboolean		vertexLightmap;
+
+	hasLightmapStage = qfalse;
+	vertexLightmap = qfalse;
+
+	//
+	// set sky stuff appropriate
+	//
+	if ( shader.isSky ) {
+		shader.sort = SS_ENVIRONMENT;
+	}
+
+	//
+	// set polygon offset
+	//
+	if ( shader.polygonOffset && !shader.sort ) {
+		shader.sort = SS_DECAL;
+	}
+
+	//
+	// set appropriate stage information
+	//
+	for ( stage = 0; stage < MAX_SHADER_STAGES; ) {
+		shaderStage_t *pStage = &stages[stage];
+
+		if ( !pStage->active ) {
+			break;
+		}
+
+    // check for a missing texture
+		if ( !pStage->bundle[0].image[0] ) {
+			pStage->active = qfalse;
+			stage++;
+			continue;
+		}
+
+		//
+		// default texture coordinate generation
+		//
+		if ( pStage->bundle[0].isLightmap ) {
+			if ( pStage->bundle[0].tcGen == TCGEN_BAD ) {
+				pStage->bundle[0].tcGen = TCGEN_LIGHTMAP;
+			}
+			hasLightmapStage = qtrue;
+		} else {
+			if ( pStage->bundle[0].tcGen == TCGEN_BAD ) {
+				pStage->bundle[0].tcGen = TCGEN_TEXTURE;
+			}
+		}
+
+		//
+		// determine sort order and fog color adjustment
+		//
+		if ( ( pStage->stateBits & ( GLS_SRCBLEND_BITS | GLS_DSTBLEND_BITS ) ) &&
+			 ( stages[0].stateBits & ( GLS_SRCBLEND_BITS | GLS_DSTBLEND_BITS ) ) ) {
+			int blendSrcBits = pStage->stateBits & GLS_SRCBLEND_BITS;
+			int blendDstBits = pStage->stateBits & GLS_DSTBLEND_BITS;
+
+			// fog color adjustment only works for blend modes that have a contribution
+			// that aproaches 0 as the modulate values aproach 0 --
+			// GL_ONE, GL_ONE
+			// GL_ZERO, GL_ONE_MINUS_SRC_COLOR
+			// GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA
+
+			// modulate, additive
+			if ( ( ( blendSrcBits == GLS_SRCBLEND_ONE ) && ( blendDstBits == GLS_DSTBLEND_ONE ) ) ||
+				( ( blendSrcBits == GLS_SRCBLEND_ZERO ) && ( blendDstBits == GLS_DSTBLEND_ONE_MINUS_SRC_COLOR ) ) ) {
+				pStage->adjustColorsForFog = ACFF_MODULATE_RGB;
+			}
+			// strict blend
+			else if ( ( blendSrcBits == GLS_SRCBLEND_SRC_ALPHA ) && ( blendDstBits == GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA ) )
+			{
+				pStage->adjustColorsForFog = ACFF_MODULATE_ALPHA;
+			}
+			// premultiplied alpha
+			else if ( ( blendSrcBits == GLS_SRCBLEND_ONE ) && ( blendDstBits == GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA ) )
+			{
+				pStage->adjustColorsForFog = ACFF_MODULATE_RGBA;
+			} else {
+				// we can't adjust this one correctly, so it won't be exactly correct in fog
+			}
+
+			// don't screw with sort order if this is a portal or environment
+			if ( !shader.sort ) {
+				// see through item, like a grill or grate
+				if ( pStage->stateBits & GLS_DEPTHMASK_TRUE ) {
+					shader.sort = SS_SEE_THROUGH;
+				} else {
+					shader.sort = SS_BLEND0;
+				}
+			}
+		}
+		
+		stage++;
+	}
+
+	// there are times when you will need to manually apply a sort to
+	// opaque alpha tested shaders that have later blend passes
+	if ( !shader.sort ) {
+		shader.sort = SS_OPAQUE;
+	}
+
+	//
+	// if we are in r_vertexLight mode, never use a lightmap texture
+	//
+	if ( stage > 1 && ( (r_vertexLight->integer && !r_uiFullScreen->integer) || glConfig.hardwareType == GLHW_PERMEDIA2 ) ) {
+		VertexLightingCollapse();
+		stage = 1;
+		hasLightmapStage = qfalse;
+	}
+
+	//
+	// look for multitexture potential
+	//
+	if ( stage > 1 && CollapseMultitexture() ) {
+		stage--;
+	}
+
+	if ( shader.lightmapIndex >= 0 && !hasLightmapStage ) {
+		if (vertexLightmap) {
+		} else {
+  			shader.lightmapIndex = LIGHTMAP_NONE;
+		}
+	}
+
+
+	//
+	// compute number of passes
+	//
+	shader.numUnfoggedPasses = stage;
+
+	// fogonly shaders don't have any normal passes
+	if (stage == 0 && !shader.isSky)
+		shader.sort = SS_FOG;
+
+	// determine which stage iterator function is appropriate
+	ComputeStageIteratorFunc();
+
+	return GeneratePermanentShader();
+}
+
+static
+shader_t *R_FindShader( const char *name, int lightmapIndex, qboolean mipRawImage ) {
+	char		strippedName[MAX_QPATH];
+	int			i, hash;
+	char		*shaderText;
+	image_t		*image;
+	shader_t	*sh;
+
+	if ( name[0] == 0 ) {
+		return tr.defaultShader;
+	}
+
+	// use (fullbright) vertex lighting if the bsp file doesn't have
+	// lightmaps
+	if ( lightmapIndex >= 0 && lightmapIndex >= tr.numLightmaps ) {
+		lightmapIndex = LIGHTMAP_BY_VERTEX;
+	} else if ( lightmapIndex < LIGHTMAP_2D ) {
+		// negative lightmap indexes cause stray pointers (think tr.lightmaps[lightmapIndex])
+		lightmapIndex = LIGHTMAP_BY_VERTEX;
+	}
+
+	COM_StripExtension(name, strippedName, sizeof(strippedName));
+
+	hash = generateShaderHashValue(strippedName, SHADER_FILE_HASH_SIZE);
+
+	//
+	// see if the shader is already loaded
+	//
+	for (sh = shaderHashTable[hash]; sh; sh = sh->next) {
+		// NOTE: if there was no shader or image available with the name strippedName
+		// then a default shader is created with lightmapIndex == LIGHTMAP_NONE, so we
+		// have to check all default shaders otherwise for every call to R_FindShader
+		// with that same strippedName a new default shader is created.
+		if ( (sh->lightmapIndex == lightmapIndex || sh->defaultShader) &&
+		     !Q_stricmp(sh->name, strippedName)) {
+			// match found
+			return sh;
+		}
+	}
+
+	// clear the global shader
+	Com_Memset( &shader, 0, sizeof( shader ) );
+	Com_Memset( &stages, 0, sizeof( stages ) );
+	Q_strncpyz(shader.name, strippedName, sizeof(shader.name));
+	shader.lightmapIndex = lightmapIndex;
+	for ( i = 0 ; i < MAX_SHADER_STAGES ; i++ ) {
+		stages[i].bundle[0].texMods = texMods[i];
+	}
+
+	// FIXME: set these "need" values apropriately
+	shader.needsNormal = qtrue;
+	shader.needsST1 = qtrue;
+	shader.needsST2 = qtrue;
+	shader.needsColor = qtrue;
+
+	//
+	// attempt to define shader from an explicit parameter file
+	//
+	shaderText = FindShaderInShaderText( strippedName );
+	if ( shaderText ) {
+		if ( !ParseShader( &shaderText ) ) {
+			// had errors, so use default shader
+			shader.defaultShader = qtrue;
+		}
+		sh = FinishShader();
+		return sh;
+	}
+
+
+	//
+	// if not defined in the in-memory shader descriptions,
+	// look for a single supported image file
+	//
+	{
+		imgFlags_t flags;
+
+		flags = IMGFLAG_NONE;
+
+		if (mipRawImage)
+		{
+			flags |= IMGFLAG_MIPMAP | IMGFLAG_PICMIP;
+		}
+		else
+		{
+			flags |= IMGFLAG_CLAMPTOEDGE;
+		}
+
+		image = R_FindImageFile( name, IMGTYPE_COLORALPHA, flags );
+		if ( !image ) {
+			shader.defaultShader = qtrue;
+			return FinishShader();
+		}
+	}
+
+	//
+	// create the default shading commands
+	//
+	if ( shader.lightmapIndex == LIGHTMAP_NONE ) {
+		// dynamic colors at vertexes
+		stages[0].bundle[0].image[0] = image;
+		stages[0].active = qtrue;
+		stages[0].rgbGen = CGEN_LIGHTING_DIFFUSE;
+		stages[0].stateBits = GLS_DEFAULT;
+	} else if ( shader.lightmapIndex == LIGHTMAP_BY_VERTEX ) {
+		// explicit colors at vertexes
+		stages[0].bundle[0].image[0] = image;
+		stages[0].active = qtrue;
+		stages[0].rgbGen = CGEN_EXACT_VERTEX;
+		stages[0].alphaGen = AGEN_SKIP;
+		stages[0].stateBits = GLS_DEFAULT;
+	} else if ( shader.lightmapIndex == LIGHTMAP_2D ) {
+		// GUI elements
+		stages[0].bundle[0].image[0] = image;
+		stages[0].active = qtrue;
+		stages[0].rgbGen = CGEN_VERTEX;
+		stages[0].alphaGen = AGEN_VERTEX;
+		stages[0].stateBits = GLS_DEPTHTEST_DISABLE |
+			  GLS_SRCBLEND_SRC_ALPHA |
+			  GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA;
+	} else if ( shader.lightmapIndex == LIGHTMAP_WHITEIMAGE ) {
+		// fullbright level
+		stages[0].bundle[0].image[0] = tr.whiteImage;
+		stages[0].active = qtrue;
+		stages[0].rgbGen = CGEN_IDENTITY_LIGHTING;
+		stages[0].stateBits = GLS_DEFAULT;
+
+		stages[1].bundle[0].image[0] = image;
+		stages[1].active = qtrue;
+		stages[1].rgbGen = CGEN_IDENTITY;
+		stages[1].stateBits |= GLS_SRCBLEND_DST_COLOR | GLS_DSTBLEND_ZERO;
+	} else {
+		// two pass lightmap
+		stages[0].bundle[0].image[0] = tr.lightmaps[shader.lightmapIndex];
+		stages[0].bundle[0].isLightmap = qtrue;
+		stages[0].active = qtrue;
+		stages[0].rgbGen = CGEN_IDENTITY;	// lightmaps are scaled on creation
+													// for identitylight
+		stages[0].stateBits = GLS_DEFAULT;
+
+		stages[1].bundle[0].image[0] = image;
+		stages[1].active = qtrue;
+		stages[1].rgbGen = CGEN_IDENTITY;
+		stages[1].stateBits |= GLS_SRCBLEND_DST_COLOR | GLS_DSTBLEND_ZERO;
+	}
+
+	return FinishShader();
+}
+
+static	void R_LoadFogs( lump_t *l, lump_t *brushesLump, lump_t *sidesLump ) {
+	int			i;
+	fog_t		*out;
+	dfog_t		*fogs;
+	dbrush_t 	*brushes, *brush;
+	dbrushside_t	*sides;
+	int			count, brushesCount, sidesCount;
+	int			sideNum;
+	int			planeNum;
+	shader_t	*shader;
+	float		d;
+	int			firstSide;
+
+	fogs = (void *)(fileBase + l->fileofs);
+	if (l->filelen % sizeof(*fogs)) {
+		Ferror ("LoadMap: funny lump size in %s",s_worldData.name);
+	}
+	count = l->filelen / sizeof(*fogs);
+
+	// create fog strucutres for them
+	world.numfogs = count + 1;
+	world.fogs = Hunk_Alloc( world.numfogs*sizeof(*out));
+	out = world.fogs + 1;
+
+	brushes = (void *)(fileBase + brushesLump->fileofs);
+	if (brushesLump->filelen % sizeof(*brushes)) {
+		Ferror("LoadMap: funny lump size in %s",s_worldData.name);
+	}
+	brushesCount = brushesLump->filelen / sizeof(*brushes);
+
+	sides = (void *)(fileBase + sidesLump->fileofs);
+	if (sidesLump->filelen % sizeof(*sides)) {
+		Ferror("LoadMap: funny lump size in %s",s_worldData.name);
+	}
+	sidesCount = sidesLump->filelen / sizeof(*sides);
+
+	for ( i=0 ; i<count ; i++, fogs++) {
+		out->originalBrushNumber = LittleLong( fogs->brushNum );
+
+		if ( (unsigned)out->originalBrushNumber >= brushesCount ) {
+			Ferror( "fog brushNumber out of range" );
+		}
+		brush = brushes + out->originalBrushNumber;
+
+		firstSide = LittleLong( brush->firstSide );
+
+		if ( (unsigned)firstSide > sidesCount - 6 ) {
+			Ferror( "fog brush sideNumber out of range" );
+		}
+
+		// brushes are always sorted with the axial sides first
+		sideNum = firstSide + 0;
+		planeNum = LittleLong( sides[ sideNum ].planeNum );
+		out->bounds[0][0] = -world.planes[ planeNum ].dist;
+
+		sideNum = firstSide + 1;
+		planeNum = LittleLong( sides[ sideNum ].planeNum );
+		out->bounds[1][0] = world.planes[ planeNum ].dist;
+
+		sideNum = firstSide + 2;
+		planeNum = LittleLong( sides[ sideNum ].planeNum );
+		out->bounds[0][1] = -world.planes[ planeNum ].dist;
+
+		sideNum = firstSide + 3;
+		planeNum = LittleLong( sides[ sideNum ].planeNum );
+		out->bounds[1][1] = world.planes[ planeNum ].dist;
+
+		sideNum = firstSide + 4;
+		planeNum = LittleLong( sides[ sideNum ].planeNum );
+		out->bounds[0][2] = -world.planes[ planeNum ].dist;
+
+		sideNum = firstSide + 5;
+		planeNum = LittleLong( sides[ sideNum ].planeNum );
+		out->bounds[1][2] = world.planes[ planeNum ].dist;
+
+		// get information from the shader for fog parameters
+		shader = R_FindShader( fogs->shader, LIGHTMAP_NONE, qtrue );
+
+		out->parms = shader->fogParms;
+
+		out->colorInt = ColorBytes4 ( shader->fogParms.color[0] * tr.identityLight, 
+			                          shader->fogParms.color[1] * tr.identityLight, 
+			                          shader->fogParms.color[2] * tr.identityLight, 1.0 );
+
+		d = shader->fogParms.depthForOpaque < 1 ? 1 : shader->fogParms.depthForOpaque;
+		out->tcScale = 1.0f / ( d * 8 );
+
+		// set the gradient vector
+		sideNum = LittleLong( fogs->visibleSide );
+
+		if ( sideNum == -1 ) {
+			out->hasSurface = qfalse;
+		} else {
+			out->hasSurface = qtrue;
+			planeNum = LittleLong( sides[ firstSide + sideNum ].planeNum );
+			VectorSubtract( vec3_origin, world.planes[ planeNum ].normal, out->surface );
+			out->surface[3] = -world.planes[ planeNum ].dist;
+		}
+
+		out++;
+	}
+
+}
+
 
 
 void RE_LoadWorldMap( const char *name ) {
@@ -1565,14 +3027,21 @@ void RE_LoadWorldMap( const char *name ) {
 			name, i, BSP_VERSION);
 	}
 
-	R_LoadShaders( &header->lumps[LUMP_SHADERS] );
-	R_LoadPlanes (&header->lumps[LUMP_PLANES]);
+	R_LoadShaders(&header->lumps[LUMP_SHADERS]);
+    R_LoadLightmaps(&header->lumps[LUMP_LIGHTMAPS]);
+	R_LoadPlanes(&header->lumps[LUMP_PLANES]);
+    R_LoadFogs(&header->lumps[LUMP_FOGS], &header->lumps[LUMP_BRUSHES], 
+            &header->lumps[LUMP_BRUSHSIDES]);
+	R_LoadSurfaces(&header->lumps[LUMP_SURFACES], 
+            &header->lumps[LUMP_DRAWVERTS], &header->lumps[LUMP_DRAWINDEXES]);
+    R_LoadMarksurfaces (&header->lumps[LUMP_LEAFSURFACES]);
 	R_LoadNodesAndLeafs(&header->lumps[LUMP_NODES], &header->lumps[LUMP_LEAFS]);
-	R_LoadMarksurfaces (&header->lumps[LUMP_LEAFSURFACES]);
-	R_LoadVisibility( &header->lumps[LUMP_VISIBILITY] );
 	R_LoadSubmodels (&header->lumps[LUMP_MODELS]);
-	R_LoadLightGrid( &header->lumps[LUMP_LIGHTGRID] );
-	R_LoadSurfaces( &header->lumps[LUMP_SURFACES], &header->lumps[LUMP_DRAWVERTS], &header->lumps[LUMP_DRAWINDEXES] );
+	R_LoadVisibility( &header->lumps[LUMP_VISIBILITY] );
+    R_LoadEntities(&header->lumps[LUMP_ENTITIES]);
+	R_LoadLightGrid(&header->lumps[LUMP_LIGHTGRID]);
+
+    tr.world = &world;
 
     HunkFree(bsp);
 }
@@ -2153,6 +3622,565 @@ static void R_GenerateDrawSurfs( void ) {
 	R_SetupProjectionZ (&tr.viewParms);
 }
 
+static void R_RadixSort( drawSurf_t *source, int size )
+{
+  static drawSurf_t scratch[ MAX_DRAWSURFS ];
+  R_Radix( 0, size, source, scratch );
+  R_Radix( 1, size, scratch, source );
+  R_Radix( 2, size, source, scratch );
+  R_Radix( 3, size, scratch, source );
+}
+
+void R_DecomposeSort( unsigned sort, int *entityNum, shader_t **shader, 
+					 int *fogNum, int *dlightMap ) {
+	*fogNum = ( sort >> QSORT_FOGNUM_SHIFT ) & 31;
+	*shader = tr.sortedShaders[ ( sort >> QSORT_SHADERNUM_SHIFT ) & (MAX_SHADERS-1) ];
+	*entityNum = ( sort >> QSORT_REFENTITYNUM_SHIFT ) & REFENTITYNUM_MASK;
+	*dlightMap = sort & 3;
+}
+
+typedef struct {
+	drawSurf_t	drawSurfs[MAX_DRAWSURFS];
+	dlight_t	dlights[MAX_DLIGHTS];
+	trRefEntity_t	entities[MAX_REFENTITIES];
+	srfPoly_t	*polys;//[MAX_POLYS];
+	polyVert_t	*polyVerts;//[MAX_POLYVERTS];
+	renderCommandList_t	commands;
+} backEndData_t;
+static backEndData_t	*backEndData;
+void *R_GetCommandBuffer( int bytes ) {
+	renderCommandList_t	*cmdList;
+
+	cmdList = &backEndData->commands;
+	bytes = PAD(bytes, sizeof(void *));
+
+	// always leave room for the end of list command
+	if ( cmdList->used + bytes + 4 > MAX_RENDER_COMMANDS ) {
+		if ( bytes > MAX_RENDER_COMMANDS - 4 ) {
+			Ferror("R_GetCommandBuffer: bad size %i", bytes );
+		}
+		// if we run out of room, just start dropping commands
+		return NULL;
+	}
+
+	cmdList->used += bytes;
+
+	return cmdList->cmds + cmdList->used - bytes;
+}
+
+void	R_AddDrawSurfCmd( drawSurf_t *drawSurfs, int numDrawSurfs ) {
+	drawSurfsCommand_t	*cmd;
+
+	cmd = R_GetCommandBuffer( sizeof( *cmd ) );
+	if ( !cmd ) {
+		return;
+	}
+	cmd->commandId = RC_DRAW_SURFS;
+
+	cmd->drawSurfs = drawSurfs;
+	cmd->numDrawSurfs = numDrawSurfs;
+
+	cmd->refdef = tr.refdef;
+	cmd->viewParms = tr.viewParms;
+}
+
+void R_SortDrawSurfs( drawSurf_t *drawSurfs, int numDrawSurfs ) {
+	shader_t		*shader;
+	int				fogNum;
+	int				entityNum;
+	int				dlighted;
+	int				i;
+
+	// it is possible for some views to not have any surfaces
+	if ( numDrawSurfs < 1 ) {
+		// we still need to add it for hyperspace cases
+		R_AddDrawSurfCmd( drawSurfs, numDrawSurfs );
+		return;
+	}
+
+	// if we overflowed MAX_DRAWSURFS, the drawsurfs
+	// wrapped around in the buffer and we will be missing
+	// the first surfaces, not the last ones
+	if ( numDrawSurfs > MAX_DRAWSURFS ) {
+		numDrawSurfs = MAX_DRAWSURFS;
+	}
+
+	// sort the drawsurfs by sort type, then orientation, then shader
+	R_RadixSort( drawSurfs, numDrawSurfs );
+
+	// check for any pass through drawing, which
+	// may cause another view to be rendered first
+	for ( i = 0 ; i < numDrawSurfs ; i++ ) {
+		R_DecomposeSort( (drawSurfs+i)->sort, &entityNum, &shader, &fogNum, &dlighted );
+
+		if ( shader->sort > SS_PORTAL ) {
+			break;
+		}
+
+		// no shader should ever have this sort type
+		if ( shader->sort == SS_BAD ) {
+			Ferror("Shader '%s'with sort == SS_BAD", shader->name );
+		}
+
+		// if the mirror was completely clipped away, we may need to check another surface
+		if ( R_MirrorViewBySurface( (drawSurfs+i), entityNum) ) {
+			// this is a debug option to see exactly what is being mirrored
+			if ( r_portalOnly->integer ) {
+				return;
+			}
+			break;		// only one mirror view at a time
+		}
+	}
+
+	R_AddDrawSurfCmd( drawSurfs, numDrawSurfs );
+}
+
+const void	*RB_DrawBuffer( const void *data ) {
+	const drawBufferCommand_t	*cmd;
+
+	cmd = (const drawBufferCommand_t *)data;
+
+	qglDrawBuffer( cmd->buffer );
+
+	return (const void *)(cmd + 1);
+}
+
+const void	*RB_SetColor( const void *data ) {
+	const setColorCommand_t	*cmd;
+
+	cmd = (const setColorCommand_t *)data;
+
+	backEnd.color2D[0] = cmd->color[0] * 255;
+	backEnd.color2D[1] = cmd->color[1] * 255;
+	backEnd.color2D[2] = cmd->color[2] * 255;
+	backEnd.color2D[3] = cmd->color[3] * 255;
+
+	return (const void *)(cmd + 1);
+}
+
+static
+const void *RB_ColorMask(const void *data)
+{
+	const colorMaskCommand_t *cmd = data;
+	
+	qglColorMask(cmd->rgba[0], cmd->rgba[1], cmd->rgba[2], cmd->rgba[3]);
+	
+	return (const void *)(cmd + 1);
+}
+
+const void *RB_ClearDepth(const void *data)
+{
+	const clearDepthCommand_t *cmd = data;
+	
+	if(tess.numIndexes)
+		RB_EndSurface();
+
+	qglClear(GL_DEPTH_BUFFER_BIT);
+	
+	return (const void *)(cmd + 1);
+}
+
+const void	*RB_SwapBuffers( const void *data ) {
+	const swapBuffersCommand_t	*cmd;
+
+	// finish any 2D drawing if needed
+	if ( tess.numIndexes ) {
+		RB_EndSurface();
+	}
+
+	cmd = (const swapBuffersCommand_t *)data;
+
+	if ( !glState.finishCalled ) {
+		qglFinish();
+	}
+
+	GLimp_EndFrame();
+
+	backEnd.projection2D = qfalse;
+
+	return (const void *)(cmd + 1);
+}
+
+void RB_BeginDrawingView (void) {
+	int clearBits = 0;
+
+	// sync with gl if needed
+	if ( r_finish->integer == 1 && !glState.finishCalled ) {
+		qglFinish ();
+		glState.finishCalled = qtrue;
+	}
+	if ( r_finish->integer == 0 ) {
+		glState.finishCalled = qtrue;
+	}
+
+	// we will need to change the projection matrix before drawing
+	// 2D images again
+	backEnd.projection2D = qfalse;
+
+	//
+	// set the modelview matrix for the viewer
+	//
+	SetViewportAndScissor();
+
+	// ensures that depth writes are enabled for the depth clear
+	GL_State( GLS_DEFAULT );
+	// clear relevant buffers
+	clearBits = GL_DEPTH_BUFFER_BIT;
+
+	if ( r_measureOverdraw->integer || r_shadows->integer == 2 )
+	{
+		clearBits |= GL_STENCIL_BUFFER_BIT;
+	}
+	if ( r_fastsky->integer && !( backEnd.refdef.rdflags & RDF_NOWORLDMODEL ) )
+	{
+		clearBits |= GL_COLOR_BUFFER_BIT;	// FIXME: only if sky shaders have been used
+#ifdef _DEBUG
+		qglClearColor( 0.8f, 0.7f, 0.4f, 1.0f );	// FIXME: get color of sky
+#else
+		qglClearColor( 0.0f, 0.0f, 0.0f, 1.0f );	// FIXME: get color of sky
+#endif
+	}
+	qglClear( clearBits );
+
+	if ( ( backEnd.refdef.rdflags & RDF_HYPERSPACE ) )
+	{
+		RB_Hyperspace();
+		return;
+	}
+	else
+	{
+		backEnd.isHyperspace = qfalse;
+	}
+
+	glState.faceCulling = -1;		// force face culling to set next time
+
+	// we will only draw a sun if there was sky rendered in this view
+	backEnd.skyRenderedThisView = qfalse;
+
+	// clip to the plane of the portal
+	if ( backEnd.viewParms.isPortal ) {
+		float	plane[4];
+		double	plane2[4];
+
+		plane[0] = backEnd.viewParms.portalPlane.normal[0];
+		plane[1] = backEnd.viewParms.portalPlane.normal[1];
+		plane[2] = backEnd.viewParms.portalPlane.normal[2];
+		plane[3] = backEnd.viewParms.portalPlane.dist;
+
+		plane2[0] = DotProduct (backEnd.viewParms.or.axis[0], plane);
+		plane2[1] = DotProduct (backEnd.viewParms.or.axis[1], plane);
+		plane2[2] = DotProduct (backEnd.viewParms.or.axis[2], plane);
+		plane2[3] = DotProduct (plane, backEnd.viewParms.or.origin) - plane[3];
+
+		qglLoadMatrixf( s_flipMatrix );
+		qglClipPlane (GL_CLIP_PLANE0, plane2);
+		qglEnable (GL_CLIP_PLANE0);
+	} else {
+		qglDisable (GL_CLIP_PLANE0);
+	}
+}
+
+void RB_BeginSurface( shader_t *shader, int fogNum ) {
+
+	shader_t *state = (shader->remappedShader) ? shader->remappedShader : shader;
+
+	tess.numIndexes = 0;
+	tess.numVertexes = 0;
+	tess.shader = state;
+	tess.fogNum = fogNum;
+	tess.dlightBits = 0;		// will be OR'd in by surface functions
+	tess.xstages = state->stages;
+	tess.numPasses = state->numUnfoggedPasses;
+	tess.currentStageIteratorFunc = state->optimalStageIteratorFunc;
+
+	tess.shaderTime = backEnd.refdef.floatTime - tess.shader->timeOffset;
+	if (tess.shader->clampTime && tess.shaderTime >= tess.shader->clampTime) {
+		tess.shaderTime = tess.shader->clampTime;
+	}
+}
+
+void RB_EndSurface( void ) {
+	shaderCommands_t *input;
+
+	input = &tess;
+
+	if (input->numIndexes == 0) {
+		return;
+	}
+
+	if (input->indexes[SHADER_MAX_INDEXES-1] != 0) {
+		Ferror(ERR_DROP, "RB_EndSurface() - SHADER_MAX_INDEXES hit");
+	}	
+	if (input->xyz[SHADER_MAX_VERTEXES-1][0] != 0) {
+		Ferror(ERR_DROP, "RB_EndSurface() - SHADER_MAX_VERTEXES hit");
+	}
+
+	if ( tess.shader == tr.shadowShader ) {
+		RB_ShadowTessEnd();
+		return;
+	}
+
+	//
+	// call off to shader specific tess end function
+	//
+	tess.currentStageIteratorFunc();
+
+	// clear shader so we can tell we don't have any unclosed surfaces
+	tess.numIndexes = 0;
+}
+
+void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
+	shader_t		*shader, *oldShader;
+	int				fogNum, oldFogNum;
+	int				entityNum, oldEntityNum;
+	int				dlighted, oldDlighted;
+	qboolean		depthRange, oldDepthRange, isCrosshair, wasCrosshair;
+	int				i;
+	drawSurf_t		*drawSurf;
+	int				oldSort;
+	float			originalTime;
+
+	// save original time for entity shader offsets
+	originalTime = backEnd.refdef.floatTime;
+
+	// clear the z buffer, set the modelview, etc
+	RB_BeginDrawingView ();
+
+	// draw everything
+	oldEntityNum = -1;
+	backEnd.currentEntity = &tr.worldEntity;
+	oldShader = NULL;
+	oldFogNum = -1;
+	oldDepthRange = qfalse;
+	wasCrosshair = qfalse;
+	oldDlighted = qfalse;
+	oldSort = -1;
+	depthRange = qfalse;
+
+	backEnd.pc.c_surfaces += numDrawSurfs;
+
+	for (i = 0, drawSurf = drawSurfs ; i < numDrawSurfs ; i++, drawSurf++) {
+		if ( drawSurf->sort == oldSort ) {
+			// fast path, same as previous sort
+			rb_surfaceTable[ *drawSurf->surface ]( drawSurf->surface );
+			continue;
+		}
+		oldSort = drawSurf->sort;
+		R_DecomposeSort( drawSurf->sort, &entityNum, &shader, &fogNum, &dlighted );
+
+		//
+		// change the tess parameters if needed
+		// a "entityMergable" shader is a shader that can have surfaces from seperate
+		// entities merged into a single batch, like smoke and blood puff sprites
+		if ( shader != NULL && ( shader != oldShader || fogNum != oldFogNum || dlighted != oldDlighted 
+			|| ( entityNum != oldEntityNum && !shader->entityMergable ) ) ) {
+			if (oldShader != NULL) {
+				RB_EndSurface();
+			}
+			RB_BeginSurface( shader, fogNum );
+			oldShader = shader;
+			oldFogNum = fogNum;
+			oldDlighted = dlighted;
+		}
+
+		//
+		// change the modelview matrix if needed
+		//
+		if ( entityNum != oldEntityNum ) {
+			depthRange = isCrosshair = qfalse;
+
+			if ( entityNum != REFENTITYNUM_WORLD ) {
+				backEnd.currentEntity = &backEnd.refdef.entities[entityNum];
+				backEnd.refdef.floatTime = originalTime - backEnd.currentEntity->e.shaderTime;
+				// we have to reset the shaderTime as well otherwise image animations start
+				// from the wrong frame
+				tess.shaderTime = backEnd.refdef.floatTime - tess.shader->timeOffset;
+
+				// set up the transformation matrix
+				R_RotateForEntity( backEnd.currentEntity, &backEnd.viewParms, &backEnd.or );
+
+				// set up the dynamic lighting if needed
+				if ( backEnd.currentEntity->needDlights ) {
+					R_TransformDlights( backEnd.refdef.num_dlights, backEnd.refdef.dlights, &backEnd.or );
+				}
+
+				if(backEnd.currentEntity->e.renderfx & RF_DEPTHHACK)
+				{
+					// hack the depth range to prevent view model from poking into walls
+					depthRange = qtrue;
+					
+					if(backEnd.currentEntity->e.renderfx & RF_CROSSHAIR)
+						isCrosshair = qtrue;
+				}
+			} else {
+				backEnd.currentEntity = &tr.worldEntity;
+				backEnd.refdef.floatTime = originalTime;
+				backEnd.or = backEnd.viewParms.world;
+				// we have to reset the shaderTime as well otherwise image animations on
+				// the world (like water) continue with the wrong frame
+				tess.shaderTime = backEnd.refdef.floatTime - tess.shader->timeOffset;
+				R_TransformDlights( backEnd.refdef.num_dlights, backEnd.refdef.dlights, &backEnd.or );
+			}
+
+			qglLoadMatrixf( backEnd.or.modelMatrix );
+
+			//
+			// change depthrange. Also change projection matrix so first person weapon does not look like coming
+			// out of the screen.
+			//
+			if (oldDepthRange != depthRange || wasCrosshair != isCrosshair)
+			{
+				if (depthRange)
+				{
+					if(backEnd.viewParms.stereoFrame != STEREO_CENTER)
+					{
+						if(isCrosshair)
+						{
+							if(oldDepthRange)
+							{
+								// was not a crosshair but now is, change back proj matrix
+								qglMatrixMode(GL_PROJECTION);
+								qglLoadMatrixf(backEnd.viewParms.projectionMatrix);
+								qglMatrixMode(GL_MODELVIEW);
+							}
+						}
+						else
+						{
+							viewParms_t temp = backEnd.viewParms;
+
+							R_SetupProjection(&temp, r_znear->value, qfalse);
+
+							qglMatrixMode(GL_PROJECTION);
+							qglLoadMatrixf(temp.projectionMatrix);
+							qglMatrixMode(GL_MODELVIEW);
+						}
+					}
+
+					if(!oldDepthRange)
+						qglDepthRange (0, 0.3);
+				}
+				else
+				{
+					if(!wasCrosshair && backEnd.viewParms.stereoFrame != STEREO_CENTER)
+					{
+						qglMatrixMode(GL_PROJECTION);
+						qglLoadMatrixf(backEnd.viewParms.projectionMatrix);
+						qglMatrixMode(GL_MODELVIEW);
+					}
+
+					qglDepthRange (0, 1);
+				}
+
+				oldDepthRange = depthRange;
+				wasCrosshair = isCrosshair;
+			}
+
+			oldEntityNum = entityNum;
+		}
+
+		// add the triangles for this surface
+		rb_surfaceTable[ *drawSurf->surface ]( drawSurf->surface );
+	}
+
+	backEnd.refdef.floatTime = originalTime;
+
+	// draw the contents of the last shader batch
+	if (oldShader != NULL) {
+		RB_EndSurface();
+	}
+
+	// go back to the world modelview matrix
+	qglLoadMatrixf( backEnd.viewParms.world.modelMatrix );
+	if ( depthRange ) {
+		qglDepthRange (0, 1);
+	}
+
+	// darken down any stencil shadows
+	RB_ShadowFinish();		
+}
+
+const void	*RB_DrawSurfs( const void *data ) {
+	const drawSurfsCommand_t	*cmd;
+
+	// finish any 2D drawing if needed
+	if ( tess.numIndexes ) {
+		RB_EndSurface();
+	}
+
+	cmd = (const drawSurfsCommand_t *)data;
+
+	backEnd.refdef = cmd->refdef;
+	backEnd.viewParms = cmd->viewParms;
+
+	RB_RenderDrawSurfList( cmd->drawSurfs, cmd->numDrawSurfs );
+
+	return (const void *)(cmd + 1);
+}
+
+void RB_ExecuteRenderCommands( const void *data ) {
+	int		t1, t2;
+
+	t1 = ri.Milliseconds ();
+
+	while ( 1 ) {
+		data = PADP(data, sizeof(void *));
+
+		switch ( *(const int *)data ) {
+		case RC_SET_COLOR:
+			data = RB_SetColor( data );
+			break;
+		case RC_STRETCH_PIC:
+            assert(0);
+			data = RB_StretchPic( data );
+			break;
+		case RC_DRAW_SURFS:
+			data = RB_DrawSurfs( data );
+			break;
+		case RC_DRAW_BUFFER:
+			data = RB_DrawBuffer( data );
+			break;
+		case RC_SWAP_BUFFERS:
+			data = RB_SwapBuffers( data );
+			break;
+		case RC_SCREENSHOT:
+            assert(0);
+			data = RB_TakeScreenshotCmd( data );
+			break;
+		case RC_VIDEOFRAME:
+            assert(0);
+			data = RB_TakeVideoFrameCmd( data );
+			break;
+		case RC_COLORMASK:
+			data = RB_ColorMask(data);
+			break;
+		case RC_CLEARDEPTH:
+			data = RB_ClearDepth(data);
+			break;
+		case RC_END_OF_LIST:
+		default:
+			// stop rendering
+			t2 = ri.Milliseconds ();
+			backEnd.pc.msec = t2 - t1;
+			return;
+		}
+	}
+
+}
+
+void R_IssueRenderCommands() {
+	renderCommandList_t	*cmdList;
+
+	cmdList = &backEndData->commands;
+	assert(cmdList);
+	// add an end-of-list command
+	*(int *)(cmdList->cmds + cmdList->used) = RC_END_OF_LIST;
+
+	// clear it out, in case this is a sync and not a buffer flip
+	cmdList->used = 0;
+
+	RB_ExecuteRenderCommands( cmdList->cmds );
+}
+
 void R_RenderView (viewParms_t *parms) {
 	int		firstDrawSurf;
 
@@ -2178,6 +4206,8 @@ void R_RenderView (viewParms_t *parms) {
 	R_GenerateDrawSurfs();
 
 	R_SortDrawSurfs( tr.refdef.drawSurfs + firstDrawSurf, tr.refdef.numDrawSurfs - firstDrawSurf );
+
+    R_IssueRenderCommands();
 }
 
 int main(int argc, char **argv) {
