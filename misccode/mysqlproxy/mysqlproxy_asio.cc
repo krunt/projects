@@ -249,12 +249,6 @@ public:
 protected:
     boost::shared_ptr<mysql_packet_seqid> seqid;
     boost::shared_ptr<mysql_packet_seqid> compressed_seqid;
-
-#ifdef DEBUG
-public:
-    std::vector<std::pair<int, int> > output_packet_offsets;
-#endif
-
 };
 
 class mysql_packet_handler {
@@ -292,10 +286,6 @@ public:
         while (len >= MAX_PACKET_LENGTH) {
             int3store(packet_header, MAX_PACKET_LENGTH);
             packet_header[3] = (uchar)seqid->get();
-#ifdef DEBUG
-            output_packet_offsets.push_back(std::make_pair(
-                        output.size(), MAX_PACKET_LENGTH));
-#endif
             output.append((char*)packet_header, sizeof(packet_header));
             output.append((char*)data, MAX_PACKET_LENGTH);
 
@@ -308,10 +298,6 @@ public:
         int3store(packet_header, len);
         packet_header[3] = (uchar)(*seqid)++;
 
-#ifdef DEBUG
-        output_packet_offsets.push_back(std::make_pair(output.size(), len));
-#endif
-
         output.append((char*)packet_header, sizeof(packet_header));
         output.append((char*)data, len);
 
@@ -323,9 +309,6 @@ public:
         output.clear();
         output_packet_count = 0;
         output_packet_fragments_count = 0;
-#ifdef DEBUG
-        output_packet_offsets.clear();
-#endif
     }
 
     void get_packets(char **packet_begin, size_t *write_size) {
@@ -820,7 +803,7 @@ public:
     enum { BufferSize = 4096 };
 
 private:
-    typedef boost::asio::ssl::stream<boost::asio::ip::tcp::socket> 
+    typedef boost::asio::ssl::stream<boost::asio::ip::tcp::socket&> 
         ssl_stream_type;
 
 public:
@@ -926,6 +909,7 @@ private:
 
         if (client_state_ == SSL_CONNECTION_REQUEST) {
             turnon_ssl();
+            ssl_desicion_determined_ = true;
         } else if (client_state_ > SSL_CONNECTION_REQUEST) {
             /* no ssl */
             ssl_desicion_determined_ = true;
@@ -933,22 +917,40 @@ private:
     }
 
     void turnon_ssl() {
+#ifdef DEBUG
+        fprintf(stderr, "Switching to ssl\n");
+#endif
         client_context_.set_options(
             boost::asio::ssl::context::default_workarounds
             | boost::asio::ssl::context::no_sslv2
             | boost::asio::ssl::context::single_dh_use);
+
         client_context_.use_certificate_chain_file(settings_.server_cert);
         client_context_.use_private_key_file(
             settings_.server_key, boost::asio::ssl::context::pem);
         client_context_.use_tmp_dh_file(settings_.dh_file);
 
-        client_socket_ssl_stream_.reset(
-            new ssl_stream_type(io_service_, client_context_));
-        server_socket_ssl_stream_.reset(
-            new ssl_stream_type(io_service_, server_context_));
+        /*
+        server_context_.use_certificate_chain_file(settings_.client_cert);
+        server_context_.use_private_key_file(
+            settings_.client_key, boost::asio::ssl::context::pem);
+        server_context_.use_tmp_dh_file(settings_.dh_file);
+        */
 
-        client_socket_ssl_stream_->handshake(boost::asio::ssl::stream_base::server);
-        server_socket_ssl_stream_->handshake(boost::asio::ssl::stream_base::client);
+        server_context_.set_options(
+            boost::asio::ssl::context::default_workarounds
+            | boost::asio::ssl::context::no_sslv2
+            | boost::asio::ssl::context::single_dh_use);
+
+        client_socket_ssl_stream_.reset(
+            new ssl_stream_type(client_socket_, client_context_));
+        server_socket_ssl_stream_.reset(
+            new ssl_stream_type(server_socket_, server_context_));
+
+        client_socket_ssl_stream_->handshake(
+                boost::asio::ssl::stream_base::server);
+        server_socket_ssl_stream_->handshake(
+                boost::asio::ssl::stream_base::client);
 
         in_ssl_ = true;
     }
@@ -973,6 +975,11 @@ private:
     void on_client_read(const boost::system::error_code& error,
             std::size_t bytes_transferred) 
     {
+        /* we sometimes cancel requests */
+        if (error == boost::asio::error::operation_aborted) {
+            return;
+        }
+
         if (!bytes_transferred
                 && !(error.value() == boost::system::posix::operation_would_block 
            || error.value() == boost::system::posix::resource_unavailable_try_again
@@ -992,7 +999,15 @@ private:
 
         flush_toserver_queue();
 
+        bool old_in_ssl = in_ssl_;
+
         maybe_turnon_ssl();
+
+        /* turned on ssl  */
+        if (!old_in_ssl && in_ssl_) {
+            server_socket_.cancel();
+            init_server_read(); 
+        }
 
         init_client_read();
     }
@@ -1101,6 +1116,7 @@ private:
                 res = write_nbytes_to_connection(
                     server_socket_, data, write_len);
             }
+            output_stream->reset_packets();
         }
     }
 
@@ -1116,6 +1132,7 @@ private:
                 res = write_nbytes_to_connection(
                     client_socket_, data, write_len);
             }
+            output_stream->reset_packets();
         }
     }
 
@@ -1136,9 +1153,16 @@ private:
         }
     }
 
+    
+
     void on_server_read(const boost::system::error_code& error,
             std::size_t bytes_transferred) 
     {
+        /* we sometimes cancel requests */
+        if (error == boost::asio::error::operation_aborted) {
+            return;
+        }
+
         if (!bytes_transferred
                 && !(error.value() == boost::system::posix::operation_would_block 
            || error.value() == boost::system::posix::resource_unavailable_try_again
@@ -1149,9 +1173,10 @@ private:
         }
 
         server_input_stream_->feed_data((uchar*)server_buffer_.begin(), 
-                bytes_transferred);
+            bytes_transferred);
         while (server_input_stream_->packet_count()) {
-            boost::shared_ptr<packet_t> packet = server_input_stream_->packet_top();
+            boost::shared_ptr<packet_t> packet 
+                = server_input_stream_->packet_top();
             on_server_packet(packet.get());
             server_input_stream_->packet_pop();
         }
@@ -1172,13 +1197,6 @@ private:
             mysql_protocol_handshake_packet initial_handshake;
             initial_handshake.unpack(packet->get_pointer(), 
                 packet->get_pointer() + packet->get_size());
-    
-    #ifdef DEBUG
-            fprintf(stderr, "%x, %x, server capabilities: %x\n", 
-                initial_handshake.proto_version.b,
-                initial_handshake.filler.b,
-                initial_handshake.capability_flags.b);
-    #endif
     
             server_capabilities_ = initial_handshake.capability_flags.b;
             send_to_client(packet);
