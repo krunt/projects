@@ -5,8 +5,6 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <assert.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
 
 #include "mysqlcommon.h"
 
@@ -14,11 +12,13 @@
 #include <deque>
 #include <vector>
 #include <fstream>
+#include <set>
 
 #include <boost/shared_ptr.hpp>
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
 #include <boost/bind.hpp>
+#include <boost/date_time.hpp>
 
 const int MAX_PACKET_LENGTH = 256L*256L*256L-1;
 
@@ -861,6 +861,10 @@ public:
         init_server_read();
     }
 
+    void set_shutdown_callback(const boost::function<void()> &cb) {
+        shutdown_callback_ = cb;
+    }
+
 private:
 
     void maybe_turnon_compression() {
@@ -884,7 +888,8 @@ private:
         fprintf(stderr, "Switching to compression\n");
 #endif
         boost::shared_ptr<mysql_packet_seqid> seqid(new mysql_packet_seqid());
-        boost::shared_ptr<mysql_packet_seqid> compressed_seqid(new mysql_packet_seqid());
+        boost::shared_ptr<mysql_packet_seqid> compressed_seqid(
+                new mysql_packet_seqid());
 
         client_input_stream_.reset(new mysql_packet_input_stream_compressed());
         client_output_stream_.reset(new mysql_packet_output_stream_compressed(seqid,
@@ -931,6 +936,11 @@ private:
         client_context_.use_tmp_dh_file(settings_.dh_file);
 
         /*
+        client_context_.load_verify_file(settings_.server_ca_file);
+        client_context_.set_verify_mode(
+                boost::asio::ssl::context_base::verify_peer); */
+
+        /*
         server_context_.use_certificate_chain_file(settings_.client_cert);
         server_context_.use_private_key_file(
             settings_.client_key, boost::asio::ssl::context::pem);
@@ -941,7 +951,6 @@ private:
             boost::asio::ssl::context::default_workarounds
             | boost::asio::ssl::context::no_sslv2
             | boost::asio::ssl::context::single_dh_use);
-
         client_socket_ssl_stream_.reset(
             new ssl_stream_type(client_socket_, client_context_));
         server_socket_ssl_stream_.reset(
@@ -1230,13 +1239,11 @@ private:
     }
 
     void disconnect() {
-        try {
-            client_socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
-            client_socket_.close();
-            server_socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
-            server_socket_.close();
-        } catch (...) {
-        }
+        client_socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
+        client_socket_.close();
+        server_socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
+        server_socket_.close();
+        shutdown_callback_();
     }
 
 private:
@@ -1269,9 +1276,14 @@ private:
     bool compression_decision_determined_;
     bool ssl_desicion_determined_;
     bool in_ssl_;
+
+    boost::function<void()> shutdown_callback_;
 };
 
 class mysqlproxy {
+public:
+    enum { TICK_INTERVAL = 3 };
+
 public:
     mysqlproxy(
         const std::string &bind_host,
@@ -1281,7 +1293,8 @@ public:
       bind_port_(bind_port),
       settings_(settings),
       io_service_(),
-      acceptor_(io_service_)
+      acceptor_(io_service_),
+      on_tick_timer_(io_service_)
     {
         namespace ip = boost::asio::ip;
         ip::tcp::endpoint endpoint(ip::address::from_string(bind_host_), bind_port_);
@@ -1298,6 +1311,10 @@ public:
         }
 
         new_connection_->init();
+        new_connection_->set_shutdown_callback(
+                boost::bind(&mysqlproxy::on_connection_shutdown,
+                this, new_connection_));
+        current_connections_.insert(new_connection_);
 
         start_accept();
     }
@@ -1305,11 +1322,30 @@ public:
     void run() { io_service_.run(); }
 
 private:
+    void on_connection_shutdown(
+        const boost::shared_ptr<mysql_connection> &connection) 
+    { 
+        purge_queue_.push_back(connection); 
+        current_connections_.erase(connection);
+    }
+
+    void init_on_tick_interval() {
+        on_tick_timer_.expires_from_now(
+                boost::posix_time::seconds(TICK_INTERVAL));
+        on_tick_timer_.async_wait(boost::bind(&mysqlproxy::on_tick, this));
+    }
+
+    void on_tick() {
+        std::vector<boost::shared_ptr<mysql_connection> >().swap(purge_queue_);
+        init_on_tick_interval();
+    }
+
     void start_accept() {
-        new_connection_ = new mysql_connection(settings_, io_service_); //TODO
+        new_connection_.reset(new mysql_connection(settings_, io_service_));
         acceptor_.async_accept(new_connection_->client_socket(),
             boost::bind(&mysqlproxy::on_accept, this,
                 boost::asio::placeholders::error));
+        init_on_tick_interval();
     }
 
 private:
@@ -1320,7 +1356,13 @@ private:
 
     boost::asio::io_service io_service_;
     boost::asio::ip::tcp::acceptor acceptor_;
-    mysql_connection *new_connection_;
+    boost::shared_ptr<mysql_connection> new_connection_;
+
+    std::vector<boost::shared_ptr<mysql_connection> > purge_queue_;
+    std::set<boost::shared_ptr<mysql_connection> > current_connections_;
+
+    boost::asio::basic_deadline_timer<boost::posix_time::ptime>
+        on_tick_timer_;
 };
 
 /* constants */
