@@ -3462,9 +3462,59 @@ int MysqlTableImpl::fields_count() const {
   return (int)table_->s->fields;
 }
 
+static void stub_void_proc() {}
+static void stub_getter(const char *str, int length) {}
+
+void MysqlQueryImpl::set_default_callbacks() {
+    if (!cbs_.union_list_begin) cbs_.union_list_begin = &stub_void_proc;
+    if (!cbs_.union_list_end) cbs_.union_list_end = &stub_void_proc;
+
+    if (!cbs_.union_list_item_begin) cbs_.union_list_item_begin = &stub_void_proc;
+    if (!cbs_.union_list_item_end) cbs_.union_list_item_end = &stub_void_proc;
+
+    if (!cbs_.item_list_begin) cbs_.item_list_begin = &stub_void_proc;
+    if (!cbs_.item_list_add) cbs_.item_list_add = &stub_getter;
+    if (!cbs_.item_list_end) cbs_.item_list_end = &stub_void_proc;
+
+    if (!cbs_.from_list_begin) cbs_.from_list_begin = &stub_void_proc;
+    if (!cbs_.from_list_on_dual) cbs_.from_list_on_dual = &stub_void_proc;
+    if (!cbs_.from_list_item_begin) cbs_.from_list_item_begin = &stub_void_proc;
+    if (!cbs_.from_list_table_name) cbs_.from_list_table_name = &stub_getter;
+    if (!cbs_.from_list_item_end) cbs_.from_list_item_end = &stub_void_proc;
+    if (!cbs_.from_list_end) cbs_.from_list_end = &stub_void_proc;
+
+    if (!cbs_.where_list_begin) cbs_.where_list_begin = &stub_void_proc;
+    if (!cbs_.where_list_item) cbs_.where_list_item = &stub_getter;
+    if (!cbs_.where_list_end) cbs_.where_list_end = &stub_void_proc;
+
+    if (!cbs_.group_list_begin) cbs_.group_list_begin = &stub_void_proc;
+    if (!cbs_.group_list_item) cbs_.group_list_item = &stub_getter;
+    if (!cbs_.group_list_end) cbs_.group_list_end = &stub_void_proc;
+
+    if (!cbs_.having_list_begin) cbs_.having_list_begin = &stub_void_proc;
+    if (!cbs_.having_list_item) cbs_.having_list_item = &stub_getter;
+    if (!cbs_.having_list_end) cbs_.having_list_end = &stub_void_proc;
+
+    if (!cbs_.order_list_begin) cbs_.order_list_begin = &stub_void_proc;
+    if (!cbs_.order_list_item) cbs_.order_list_item = &stub_getter;
+    if (!cbs_.order_list_end) cbs_.order_list_end = &stub_void_proc;
+
+    if (!cbs_.limit_begin) cbs_.limit_begin = &stub_void_proc;
+    if (!cbs_.limit_str) cbs_.limit_str = &stub_getter;
+    if (!cbs_.limit_end) cbs_.limit_end = &stub_void_proc;
+}
+
 MysqlQueryImpl::MysqlQueryImpl()
     : thd_(NULL)
-{}
+{
+    set_default_callbacks();
+}
+
+MysqlQueryImpl::MysqlQueryImpl(const query_parse_callbacks &cbs)
+    : thd_(NULL), cbs_(cbs)
+{
+    set_default_callbacks();
+}
 
 MysqlQueryImpl::~MysqlQueryImpl()
 {}
@@ -3492,7 +3542,6 @@ int MysqlQueryImpl::init(const char *query) {
   LEX_STRING db_str= { (char *) "test", 4 };
   mysql_change_db(thd_, &db_str, FALSE);
 
-
   Parser_state parser_state;
   bool err;
   if (!(err= parser_state.init(thd_, thd_->query(), thd_->query_length())))
@@ -3507,8 +3556,7 @@ int MysqlQueryImpl::init(const char *query) {
       return 1;                               /* purecov: inspected */
     thd_->send_explain_fields(result);
     mysql_explain_union(thd_, &thd_->lex->unit, result);
-    if (1)
-    {
+    if (1) {
       char buff[1024];
       String str(buff,(uint32) sizeof(buff), system_charset_info);
       str.length(0);
@@ -3522,22 +3570,181 @@ int MysqlQueryImpl::init(const char *query) {
   return 0;
 }
 
-const char *MysqlQueryImpl::to_string() {
-    /*
-  SELECT_LEX_UNIT *unit = &thd_->lex->unit;
-  for (SELECT_LEX *sl= unit->first_select(); sl; sl = sl->next_select())
-  {
-    sl->print(thd_, &thd_->query_printable_form, QT_ORDINARY);
-  }
-  fprintf(stderr, "`%s' `%d' %d %p %p %p %p\n", thd_->query_printable_form.ptr(),
-            thd_->query_printable_form.length(),
-            unit->first_select()->table_list.elements,
-            unit,
-            unit->master_unit(),
-            unit->next_unit(),
-            unit->first_select()->next_select());
-            */
+void MysqlQueryImpl::parse_unit_with_callbacks(SELECT_LEX_UNIT *unit) {
+    (*cbs_.union_list_begin)();
+    for (SELECT_LEX *sl = unit->first_select(); sl ; sl = sl->next_select()) {
+        (*cbs_.union_list_item_begin)();
+        parse_lex_with_callbacks(sl);
+        (*cbs_.union_list_item_end)();
+    }
+    (*cbs_.union_list_end)();
+}
 
+void MysqlQueryImpl::parse_table_list_element_with_callbacks(SELECT_LEX *sl,
+    TABLE_LIST *elem) 
+{
+    (*cbs_.from_list_item_begin)();
+    if (elem->nested_join) {
+        parse_join_list_with_callbacks(sl, &elem->nested_join->join_list);
+    } else {
+        String str;
+        if (elem->view_name.str) {
+            if (!(elem->belong_to_view &&
+                elem->belong_to_view->compact_view_format))
+            {
+                append_identifier(thd_, &str, 
+                        elem->view_db.str, elem->view_db.length);
+                str.append('.');
+            }
+            append_identifier(thd_, &str, 
+                    elem->view_name.str, elem->view_name.length);
+            (*cbs_.from_list_table_name)(str.ptr(), str.length());
+        } else if (elem->derived) {
+            parse_unit_with_callbacks(elem->derived);
+        } else {
+            String str;
+            if (!(elem->belong_to_view &&
+                  elem->belong_to_view->compact_view_format))
+            {
+                append_identifier(thd_, &str, elem->db, elem->db_length);
+                str.append('.');
+            }
+            if (elem->schema_table)
+            {
+                append_identifier(thd_, &str, elem->schema_table_name,
+                                strlen(elem->schema_table_name));
+            }
+            else
+            {
+                append_identifier(thd_, &str, 
+                        elem->table_name, elem->table_name_length);
+            }
+
+            (*cbs_.from_list_table_name)(str.ptr(), str.length());
+        }
+    }
+    (*cbs_.from_list_item_end)();
+}
+
+void MysqlQueryImpl::parse_join_list_with_callbacks(SELECT_LEX *sl,
+    List<TABLE_LIST> *tables) 
+{
+    List_iterator_fast<TABLE_LIST> ti(*tables);
+    for (int i = 0; i < tables->elements; ++i) {
+        TABLE_LIST *curr= ti++;
+        parse_table_list_element_with_callbacks(sl, curr);
+    }
+}
+
+void MysqlQueryImpl::parse_limit_with_callbacks(SELECT_LEX *sl) {
+    (*cbs_.limit_begin)();
+    if (sl->explicit_limit) {
+        String str;
+        if (sl->offset_limit) {
+            sl->offset_limit->print(&str, QT_ORDINARY);
+            str.append(',');
+        }
+        sl->select_limit->print(&str, QT_ORDINARY);
+        (*cbs_.limit_str)(str.ptr(), str.length());
+    }
+    (*cbs_.limit_end)();
+}
+
+void MysqlQueryImpl::parse_order_with_callbacks(SELECT_LEX *sl, ORDER *order) {
+    for (; order; order= order->next)
+    {
+        String str;
+        if (order->counter_used) {
+            char buffer[20];
+            size_t length= my_snprintf(buffer, 20, "%d", order->counter);
+            str.append(buffer, (uint) length);
+        }
+        else
+            (*order->item)->print(&str, QT_ORDINARY);
+        if (!order->asc)
+            str.append(STRING_WITH_LEN(" desc"));
+        (*cbs_.group_list_item)(str.ptr(), str.length());
+    }
+}
+
+void MysqlQueryImpl::parse_lex_with_callbacks(SELECT_LEX *sl) {
+    /* item list */
+    bool first= 1;
+    List_iterator_fast<Item> it(sl->item_list);
+    Item *item;
+
+    (*cbs_.item_list_begin)();
+    while ((item= it++)) {
+        String str;
+        if (sl->master_unit()->item && item->is_autogenerated_name)
+        {
+            item->print(&str, QT_ORDINARY);
+        }
+        else
+            item->print_item_w_name(&str, QT_ORDINARY);
+        (*cbs_.item_list_add)(str.ptr(), str.length());
+    }
+
+    (*cbs_.item_list_end)();
+
+    (*cbs_.from_list_begin)();
+    if (sl->table_list.elements) {
+        parse_join_list_with_callbacks(sl, &sl->top_join_list);
+    } else {
+        (*cbs_.from_list_on_dual)();
+    }
+    (*cbs_.from_list_end)();
+
+    /* where */
+    Item *cur_where= sl->where;
+    (*cbs_.where_list_begin)();
+    if (cur_where || sl->cond_value != Item::COND_UNDEF)
+    {
+        String str;
+        if (cur_where)
+            cur_where->print(&str, QT_ORDINARY);
+        else
+            str.append(sl->cond_value != Item::COND_FALSE ? "1" : "0");
+        (*cbs_.where_list_item)(str.ptr(), str.length());
+    }
+    (*cbs_.where_list_end)();
+
+    /* group by */
+    (*cbs_.group_list_begin)();
+    if (sl->group_list.elements) {
+        parse_order_with_callbacks(sl, sl->group_list.first);
+    }
+    (*cbs_.group_list_end)();
+
+    /* having part */
+    Item *cur_having= sl->having;
+    (*cbs_.having_list_begin)();
+    if (cur_having || sl->having_value != Item::COND_UNDEF) {
+        String str;
+        if (cur_having)
+            cur_having->print(&str, QT_ORDINARY);
+        else
+            str.append(sl->having_value != Item::COND_FALSE ? "1" : "0");
+        (*cbs_.having_list_item)(str.ptr(), str.length());
+    }
+    (*cbs_.having_list_end)();
+
+    (*cbs_.order_list_begin)();
+    /* order by */
+    if (sl->order_list.elements) {
+        parse_order_with_callbacks(sl, sl->order_list.first);
+    }
+    (*cbs_.order_list_end)();
+
+    /* limit clause */
+    parse_limit_with_callbacks(sl);
+}
+
+void MysqlQueryImpl::parse_with_callbacks() {
+    parse_unit_with_callbacks(&thd_->lex->unit);
+}
+
+const char *MysqlQueryImpl::to_string() {
   return thd_->query_printable_form.ptr();
 }
 
@@ -3558,7 +3765,7 @@ int mysqldlib_initialize_library(struct MysqlConfig *config) {
   argv[5]= NULL;
 
   MY_INIT(argv[0]);
-  DBUG_PUSH("d:t:o,/tmp/myisamlib.trace");
+  /* DBUG_PUSH("d:t:o,/tmp/myisamlib.trace"); */
 
   /*
     Perform basic logger initialization logger. Should be called after

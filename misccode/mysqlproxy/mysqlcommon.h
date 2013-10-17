@@ -50,6 +50,8 @@ bool my_uncompress(uchar *packet, size_t len, size_t *complen);
 
 //#define DEBUG
 //#define VERBOSE
-#define HAVE_OPENSSL 
+//#define HAVE_OPENSSL 
+
+#define SERVER_MORE_RESULTS_EXISTS 8
 
 #endif /* MYSQLCOMMON_H_ */
