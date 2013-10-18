@@ -5,83 +5,31 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <assert.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
 
 #include "mysqlcommon.h"
-#include "mysqlvio.h"
 
-#include <event.h>
 #include <string>
 #include <deque>
 #include <vector>
+#include <set>
 #include <fstream>
 
-/* mysql-commands types */
-enum enum_server_command
-{
-  COM_SLEEP, COM_QUIT, COM_INIT_DB, COM_QUERY, COM_FIELD_LIST,
-  COM_CREATE_DB, COM_DROP_DB, COM_REFRESH, COM_SHUTDOWN, COM_STATISTICS,
-  COM_PROCESS_INFO, COM_CONNECT, COM_PROCESS_KILL, COM_DEBUG, COM_PING,
-  COM_TIME, COM_DELAYED_INSERT, COM_CHANGE_USER, COM_BINLOG_DUMP,
-  COM_TABLE_DUMP, COM_CONNECT_OUT, COM_REGISTER_SLAVE,
-  COM_STMT_PREPARE, COM_STMT_EXECUTE, COM_STMT_SEND_LONG_DATA, COM_STMT_CLOSE,
-  COM_STMT_RESET, COM_SET_OPTION, COM_STMT_FETCH, COM_DAEMON,
-  /* Must be last */
-  COM_END
-};
+#include <MyIsamLib.h>
+#include <Query.h>
 
-static const char *server_command_str[] = {
-  "SLEEP", "QUIT", "INIT_DB", "QUERY", "FIELD_LIST", "CREATE_DB", "DROP_DB",
-  "REFRESH", "SHUTDOWN", "STATISTICS", "PROCESS_INFO", "CONNECT", "PROCESS_KILL",
-  "DEBUG", "PING", "TIME", "DELAYED_INSERT", "CHANGE_USER", "BINLOG_DUMP",
-  "TABLE_DUMP", "CONNECT_OUT", "REGISTER_SLAVE", "STMT_PREPARE", "STMT_EXECUTE",
-  "STMT_SEND_LONG_DATA", "STMT_CLOSE", "STMT_RESET", "SET_OPTION",
-  "STMT_FETCH", "DAEMON", NULL,
-};
+#include <boost/shared_ptr.hpp>
+#include <boost/asio.hpp>
+#include <boost/asio/ssl.hpp>
+#include <boost/bind.hpp>
+#include <boost/date_time.hpp>
+#include <boost/filesystem/operations.hpp>
+
+extern "C" {
+#include <EXTERN.h>
+#include <perl.h>
+}
 
 const int MAX_PACKET_LENGTH = 256L*256L*256L-1;
-
-namespace {
-template <int step = -1>
-class hexdumper {
-    static char hexcodes[16+1];
-public:
-    hexdumper(const std::string &logname)
-        : fs(logname.c_str(), std::ios_base::out),
-          decoded(0)
-    {}
-
-    void flush() {
-        fs.flush();
-    }
-
-    void write(char *buf, int size) {
-        for (int i = 0; i < size; ++i) {
-            fs.put(hexcodes[(buf[i] & 0xF0) >> 4]);
-            fs.put(hexcodes[buf[i] & 0x0F]);
-            //fs.put(' ');
-
-            if (step == -1) {
-                fs.put(' ');
-                decoded++;
-            } else {
-                fs.put(++decoded % step == 0 ? '\n' : ' ');
-            }
-        }
-    }
-
-    int get_decoded() const { 
-        return decoded; 
-    }
-
-private:
-    std::fstream fs;
-    int decoded;
-};
-
-template <int x>
-char hexdumper<x>::hexcodes[16+1] = "0123456789abcdef";
 
 struct fragment_t {
     fragment_t():
@@ -248,8 +196,12 @@ struct packet_t {
     ~packet_t() 
     {}
 
-    void append(fragment_t *fragment) {
+    void append(const boost::shared_ptr<fragment_t> &fragment) {
         packet_data.append(fragment->get_pointer(), fragment->get_size());
+    }
+
+    void set_content(const std::string &content) {
+        packet_data = content;
     }
 
     char *get_pointer() const {
@@ -262,38 +214,6 @@ struct packet_t {
 
 private:
     std::string packet_data;
-};
-} /* namespace */
-
-/* constants */
-const char *k_mysql_server = "127.0.0.1";
-const int k_proxy_listen_port = 19999;
-const int k_mysql_server_port = 40000;
-
-const char *client_key = "certsdir/client-key.pem";
-const char *client_cert = "certsdir/client-cert.pem";
-const char *client_ca_file = "certsdir/ca-cert.pem";
-
-const char *server_key = "certsdir/server-key.pem";
-const char *server_cert = "certsdir/server-cert.pem";
-const char *server_ca_file = "certsdir/ca-cert.pem";
-
-enum ClientFlags {
-    CLIENT_NONE,
-    AWAIT_INITIAL_HANDSHAKE_FROM_SERVER,  
-    SSL_CONNECTION_REQUEST,
-    HANDSHAKE_RESPONSE_PACKET,
-    STATUS_PACKET_FROM_SERVER,
-    CLIENT_COMMAND_PHASE,
-};
-
-enum ServerFlags {
-    SERVER_NONE,
-    INITIAL_HANDSHAKE_FROM_SERVER,  
-    AWAIT_SSL_CONNECTION_REQUEST,
-    AWAIT_HANDSHAKE_RESPONSE_PACKET,
-    AWAIT_STATUS_PACKET_FROM_SERVER,
-    SERVER_COMMAND_PHASE,
 };
 
 class mysql_packet_seqid {
@@ -312,8 +232,12 @@ private:
 
 class packet_output_stream {
 public:
-    packet_output_stream(mysql_packet_seqid *aseqid, 
-            mysql_packet_seqid *acompressedseqid = NULL) 
+    packet_output_stream(boost::shared_ptr<mysql_packet_seqid> aseqid)
+        : seqid(aseqid)
+    {}
+
+    packet_output_stream(boost::shared_ptr<mysql_packet_seqid> aseqid, 
+            boost::shared_ptr<mysql_packet_seqid> acompressedseqid) 
         : seqid(aseqid), compressed_seqid(acompressedseqid)
     {}
 
@@ -328,30 +252,25 @@ public:
 
     void reset_seqid() { 
         seqid->reset(); 
-        if (compressed_seqid) {
+        if (compressed_seqid.get()) {
             compressed_seqid->reset(); 
         }
     }
 
 protected:
-    mysql_packet_seqid *seqid;
-    mysql_packet_seqid *compressed_seqid;
-
-#ifdef DEBUG
-public:
-    std::vector<std::pair<int, int> > output_packet_offsets;
-#endif
-
+    boost::shared_ptr<mysql_packet_seqid> seqid;
+    boost::shared_ptr<mysql_packet_seqid> compressed_seqid;
 };
 
 class mysql_packet_handler {
 public:
+    ~mysql_packet_handler() {}
     virtual void handle(packet_t *packet) = 0;
 };
 
 class mysql_write_handler: public mysql_packet_handler {
 public:
-    mysql_write_handler(packet_output_stream *s)
+    mysql_write_handler(const boost::shared_ptr<packet_output_stream> &s)
         : output_stream(s)
     {}
 
@@ -360,42 +279,12 @@ public:
     }
 
 private:
-    packet_output_stream *output_stream;
-};
-
-class mysql_statistics_handler: public mysql_packet_handler {
-public:
-    struct statistics {
-        statistics() { memset(command_counters, 0, COM_END); }
-        int command_counters[COM_END];
-    };
-
-public:
-    mysql_statistics_handler()
-    {}
-
-    void handle(packet_t *packet) {
-        int command_type = packet->get_pointer()[0];
-        if (command_type < COM_END) {
-            ++stat.command_counters[command_type];
-        }
-    }
-
-    void print_statistics() const {
-        for (int i = 0; i < COM_END; ++i) {
-            fprintf(stderr, "%s: %d,", 
-                server_command_str[i], stat.command_counters[i]);
-        }
-        fprintf(stderr, "\n");
-    }
-
-private:
-    statistics stat;
+    boost::shared_ptr<packet_output_stream> output_stream;
 };
 
 class mysql_packet_output_stream: public packet_output_stream {
 public:
-    mysql_packet_output_stream(mysql_packet_seqid *aseqid) 
+    mysql_packet_output_stream(const boost::shared_ptr<mysql_packet_seqid> &aseqid) 
         : packet_output_stream(aseqid),
           output_packet_count(0), 
           output_packet_fragments_count(0)
@@ -409,10 +298,6 @@ public:
         while (len >= MAX_PACKET_LENGTH) {
             int3store(packet_header, MAX_PACKET_LENGTH);
             packet_header[3] = (uchar)seqid->get();
-#ifdef DEBUG
-            output_packet_offsets.push_back(std::make_pair(
-                        output.size(), MAX_PACKET_LENGTH));
-#endif
             output.append((char*)packet_header, sizeof(packet_header));
             output.append((char*)data, MAX_PACKET_LENGTH);
 
@@ -425,10 +310,6 @@ public:
         int3store(packet_header, len);
         packet_header[3] = (uchar)(*seqid)++;
 
-#ifdef DEBUG
-        output_packet_offsets.push_back(std::make_pair(output.size(), len));
-#endif
-
         output.append((char*)packet_header, sizeof(packet_header));
         output.append((char*)data, len);
 
@@ -440,9 +321,6 @@ public:
         output.clear();
         output_packet_count = 0;
         output_packet_fragments_count = 0;
-#ifdef DEBUG
-        output_packet_offsets.clear();
-#endif
     }
 
     void get_packets(char **packet_begin, size_t *write_size) {
@@ -462,8 +340,9 @@ private:
 
 class mysql_packet_output_stream_compressed: public packet_output_stream {
 public:
-    mysql_packet_output_stream_compressed(mysql_packet_seqid *aseqid, 
-            mysql_packet_seqid *acompressedseqid) 
+    mysql_packet_output_stream_compressed(
+            const boost::shared_ptr<mysql_packet_seqid> &aseqid, 
+            const boost::shared_ptr<mysql_packet_seqid> &acompressedseqid) 
         : packet_output_stream(aseqid, acompressedseqid),
           output_packet_count(0), 
           output_packet_fragments_count(0)
@@ -567,12 +446,11 @@ private:
 class packet_input_stream {
 public:
     virtual void feed_data(uchar *data, size_t len) = 0;
-    virtual packet_t *packet_top() const = 0;
+    virtual boost::shared_ptr<packet_t> packet_top() const = 0;
     virtual void packet_pop() = 0;
     virtual int  packet_count() const = 0;
 };
 
-/* TODO: leaking memory when freeing list */
 class mysql_packet_input_stream: public packet_input_stream  {
 public:
     mysql_packet_input_stream() 
@@ -583,11 +461,12 @@ public:
 
     void feed_data(uchar *data, size_t len) {
         if (pending_fragments.empty()) {
-            pending_fragments.push_back(new fragment_t());
+            pending_fragments.push_back(
+                boost::shared_ptr<fragment_t>(new fragment_t()));
         }
 
         while (len) {
-            fragment_t *fragment = pending_fragments.back();
+            boost::shared_ptr<fragment_t> fragment = pending_fragments.back();
 
             uchar *newdata = (uchar*)fragment->append((char*)data, len);
             len -= newdata - data;
@@ -600,14 +479,15 @@ public:
                     continue;
                 }
                 add_fragment_to_output(fragment);
-                pending_fragments.push_back(new fragment_t());
+                pending_fragments.push_back(
+                    boost::shared_ptr<fragment_t>(new fragment_t()));
             }
         }
     }
 
-    packet_t *packet_top() const {
+    boost::shared_ptr<packet_t> packet_top() const {
         assert(packet_count() > 0);
-        return output_packets[0];
+        return output_packets.front();
     }
 
     void packet_pop() {
@@ -620,7 +500,7 @@ public:
     }
 
 private:
-    void add_fragment_to_output(fragment_t *fragment) {
+    void add_fragment_to_output(const boost::shared_ptr<fragment_t> &fragment) {
         assert(fragment->is_complete());
         if (fragment->is_last()) {
             flush_pending_fragments_to_output();
@@ -628,7 +508,7 @@ private:
     }
 
     void flush_pending_fragments_to_output() {
-        packet_t *packet = new packet_t();
+        boost::shared_ptr<packet_t> packet(new packet_t());
         for (int i = 0; i < pending_fragments.size(); ++i) {
             packet->append(pending_fragments[i]);
         }
@@ -637,8 +517,8 @@ private:
     }
 
 private:
-    std::deque<packet_t *> output_packets;
-    std::deque<fragment_t *> pending_fragments;
+    std::deque<boost::shared_ptr<packet_t> > output_packets;
+    std::deque<boost::shared_ptr<fragment_t> > pending_fragments;
 };
 
 
@@ -652,11 +532,13 @@ public:
 
     void feed_data(uchar *data, size_t len) {
         if (compressed_pending_fragments.empty()) {
-            compressed_pending_fragments.push_back(new compressed_fragment_t());
+            compressed_pending_fragments.push_back(
+                boost::shared_ptr<compressed_fragment_t>(new compressed_fragment_t()));
         }
 
         while (len) {
-            compressed_fragment_t *fragment = compressed_pending_fragments.back();
+            boost::shared_ptr<compressed_fragment_t> fragment 
+                = compressed_pending_fragments.back();
 
             uchar *newdata = (uchar*)fragment->append((char*)data, len);
             len -= newdata - data;
@@ -664,14 +546,16 @@ public:
 
             if (fragment->is_complete()) {
                 add_fragment_to_pending(fragment);
-                compressed_pending_fragments.push_back(new compressed_fragment_t());
+                compressed_pending_fragments.push_back(
+                    boost::shared_ptr<compressed_fragment_t>(
+                        new compressed_fragment_t()));
             }
         }
     }
 
-    packet_t *packet_top() const {
+    boost::shared_ptr<packet_t> packet_top() const {
         assert(packet_count() > 0);
-        return output_packets[0];
+        return output_packets.front();
     }
 
     void packet_pop() {
@@ -684,7 +568,7 @@ public:
     }
 
 private:
-    void add_fragment_to_pending(compressed_fragment_t *fragment) {
+    void add_fragment_to_pending(boost::shared_ptr<compressed_fragment_t> fragment) {
         assert(fragment->is_complete());
         if (fragment->is_last()) {
             flush_compressed_pending_fragments_to_pending_fragments();
@@ -693,16 +577,18 @@ private:
 
     void flush_compressed_pending_fragments_to_pending_fragments() {
         for (int i = 0; i < compressed_pending_fragments.size(); ++i) {
-            compressed_fragment_t *fragment = compressed_pending_fragments[i];
+            boost::shared_ptr<compressed_fragment_t> fragment 
+                = compressed_pending_fragments[i];
 
             char *pointer = fragment->get_pointer();
             size_t uncompressed_size = fragment->get_uncompressed_size();
             while (uncompressed_size) {
                 if (pending_fragments.empty()) {
-                    pending_fragments.push_back(new fragment_t());
+                    pending_fragments.push_back(
+                        boost::shared_ptr<fragment_t>(new fragment_t()));
                 }
 
-                fragment_t *result = pending_fragments.back();
+                boost::shared_ptr<fragment_t> result = pending_fragments.back();
                 char *new_pointer = result->append(pointer, uncompressed_size);
                 uncompressed_size -= new_pointer - pointer;
                 pointer = new_pointer;
@@ -714,19 +600,19 @@ private:
         compressed_pending_fragments.clear();
     }
 
-    void add_fragment_to_output(fragment_t *fragment) {
+    void add_fragment_to_output(const boost::shared_ptr<fragment_t> &fragment) {
         assert(fragment->is_complete());
         if (fragment->is_last()) {
             flush_pending_fragments_to_output();
         } else {
-            pending_fragments.push_back(new fragment_t());
+            pending_fragments.push_back(boost::shared_ptr<fragment_t>(new fragment_t()));
         }
     }
 
     void flush_pending_fragments_to_output() {
-        packet_t *packet = new packet_t();
+        boost::shared_ptr<packet_t> packet(new packet_t());
         for (int i = 0; i < pending_fragments.size(); ++i) {
-            fragment_t *fragment = pending_fragments[i];
+            boost::shared_ptr<fragment_t> fragment = pending_fragments[i];
             packet->append(fragment);
         }
         output_packets.push_back(packet);
@@ -734,191 +620,22 @@ private:
     }
 
 private:
-    std::deque<packet_t *> output_packets;
-    std::deque<fragment_t *> pending_fragments;
-    std::deque<compressed_fragment_t *> compressed_pending_fragments;
+    std::deque<boost::shared_ptr<packet_t> > output_packets;
+    std::deque<boost::shared_ptr<fragment_t> > pending_fragments;
+    std::deque<boost::shared_ptr<compressed_fragment_t> > compressed_pending_fragments;
 };
 
-struct connection_t;
-static void drain_output_stream(connection_t *conn);
-
-struct acceptor_t {
-    int fd;
-    struct event event;
-};
-
-struct connection_t {
-    connection_t():
-        fd(0), vio(NULL), state(0),
-        protocol41(false), compress(false),
-        ssl(false), compression_was_switched(false),
-        input_stream(NULL),
-        output_stream(NULL)
-#ifdef HAVE_OPENSSL
-        ,ssl_connector(NULL)
-#endif
-    {}
-
-    void handle(packet_t *packet) {
-        for (int i = 0; i < packet_handlers.size(); ++i) {
-            packet_handlers[i]->handle(packet);
-        }
-    }
-
-    int fd;
-    struct event event;
-    Vio *vio;
-    int state;
-    bool protocol41;
-    bool compress;
-    bool ssl;
-    bool compression_was_switched;
-
-    packet_input_stream *input_stream;
-    packet_output_stream *output_stream;
-
-    std::vector<mysql_packet_handler *> packet_handlers;
-
-#ifdef DEBUG
-    hexdumper<> *dumper;
-    hexdumper<> *packet_dumper;
-    hexdumper<8> *packet_offset_dumper;
-#endif
-
-#ifdef HAVE_OPENSSL
-    struct st_VioSSLFd *ssl_connector;
-#endif
-
-};
-
-struct connector_t {
-    connection_t ccon;
-    connection_t scon;
-};
-
-int create_listener_socket(int port) {
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd == -1) {
-        return fd;
-    }
-
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = INADDR_ANY;
-
-    const int one = 1;
-    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (void*)&one, sizeof(one)) == -1) {
-        return -1;
-    }
-
-    if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
-        return -1;
-    }
-
-    if (listen(fd, 127) == -1) {
-        return -1;
-    }
-
-    return fd;
-}
-
-int connect_to_peer(const char *vhost, int port) {
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd == -1) {
-        return fd;
-    }
-    struct sockaddr_in saddr;
-    memset((void *)&saddr, 0, sizeof(saddr));
-    saddr.sin_family = AF_INET;
-    saddr.sin_port = htons(port);
-    saddr.sin_addr.s_addr = inet_addr(vhost);
-    if (connect(fd, (const struct sockaddr *)&saddr, sizeof(saddr)) == -1) {
-        return -1;
-    }
-    return fd;
-}
-
-static void
-regenerate_acceptor_event(acceptor_t *acceptor) {
-    event_add(&acceptor->event, NULL);
-}
-
-static void
-regenerate_connector_event(connector_t *connector) {
-    event_add(&connector->ccon.event, NULL);
-    event_add(&connector->scon.event, NULL);
-}
-
-static void
-finalize_connector(connector_t *connector) {
-#ifdef VERBOSE
-    if (connector->ccon.packet_handlers.size() > 1) {
-    dynamic_cast<mysql_statistics_handler *>(connector->ccon.packet_handlers[0])
-        ->print_statistics();
-    }
-#endif
-    event_del(&connector->ccon.event);
-    event_del(&connector->scon.event);
-    close(connector->ccon.fd);
-    close(connector->scon.fd);
-    delete connector;
-}
-
-static int
-write_nbytes_to_connection(Vio *vio, char *buf, size_t size) {
-    size_t left = size;
-    while (left) {
-        int written_bytes = vio_write(vio, (const uchar*)buf, left);
-        if (written_bytes <= 0) {
-            if (written_bytes < 0 && (errno == EINTR || errno == EAGAIN))
-                continue;
-            return 1;
-        }
-        buf += written_bytes;
-        left -= written_bytes;
-    }
-    return 0;
-}
-
-void
-drain_output_stream(connection_t *conn) {
-    packet_output_stream *output_stream = conn->output_stream; 
-    if (output_stream->packet_count()) {
-        char *data; size_t write_len; int res;
-        output_stream->get_packets(&data, &write_len);
-        res = write_nbytes_to_connection(conn->vio, data, write_len);
-
-#ifdef DEBUG
-        fprintf(stderr, "write: %d\n", res);
-
-        if (conn->state == CLIENT_COMMAND_PHASE
-                || conn->state == SERVER_COMMAND_PHASE)
-        {
-            int offset = conn->packet_dumper->get_decoded();
-
-            conn->packet_dumper->write(data, write_len);
-            conn->packet_dumper->flush();
-
-            const std::vector<std::pair<int, int> > &offsets 
-                = output_stream->output_packet_offsets;
-            for (int i = 0; i < offsets.size(); ++i) {
-                int final_offset = offset + offsets[i].first;
-                conn->packet_offset_dumper->write((char*)&final_offset, 4);
-                conn->packet_offset_dumper->write((char*)&offsets[i].second, 4);
-                conn->packet_offset_dumper->flush();
-            }
-
-        }
-#endif
-        output_stream->reset_packets();
-    }
-}
 
 /* mysql protocol types 
  * TODO: bounds checking and leaks
 */
+
+template <typename T>
+static char *unpack_from_packet(T &dstpacket, packet_t *packet) {
+    return dstpacket.unpack(packet->get_pointer(), 
+            packet->get_pointer() + packet->get_size());
+}
+
 struct mysql_protocol_itemtype {
     virtual char *pack(char *p, char *end) = 0;
     virtual char *unpack(char *p, char *end) = 0;
@@ -953,6 +670,40 @@ struct fixed_integer8: public mysql_protocol_itemtype {
     char *unpack(char *p, char *end) { b = uint8korr(p); return p + 8;}
     ulonglong b;
 };
+struct length_encoded_integer: public mysql_protocol_itemtype {
+    char *pack(char *p, char *end) {
+        if (b < 251) {
+            *p++ = static_cast<char>(b);
+        } else if (b < 1<<16) {
+            *p++ = 0xfc;
+            int2store(p, b);
+            p += 2;
+        } else if (b < 1<<24) {
+            *p++ = 0xfd;
+            int3store(p, b);
+            p += 3;
+        } else {
+            *p++ = 0xfe;
+            int8store(p, b);
+            p += 8;
+        }
+        return p;
+    }
+
+    char *unpack(char *p, char *end) {
+        unsigned char len = static_cast<unsigned char>(*p);
+        if (len < 0xfb) { b = len; p++; }
+        else {
+            p++;
+            if (len == 0xfc) { b = uint2korr(p); p += 2; }
+            else if (len == 0xfd) { b = uint3korr(p); p += 3; }
+            else if (len == 0xfe) { b = uint8korr(p); p += 8; }
+        }
+        return p;
+    }
+    
+    ulonglong b;
+};
 
 template <int n>
 struct fixedlen_string: public mysql_protocol_itemtype {
@@ -961,7 +712,25 @@ struct fixedlen_string: public mysql_protocol_itemtype {
     uchar b[n];
 };
 
+struct length_encoded_string: public mysql_protocol_itemtype {
+    char *pack(char *p, char *end) { 
+        p = length.pack(p, end);
+        memcpy(p, b.c_str(), length.b);
+        return p + length.b;
+    }
+    char *unpack(char *p, char *end) { 
+        p = length.unpack(p, end);
+        b = std::string(p, p + length.b);
+        return p + length.b;
+    }
+    length_encoded_integer length;
+    std::string b;
+};
+
 struct nullterminated_string: public mysql_protocol_itemtype {
+    nullterminated_string(): b(NULL) 
+    {}
+
     char *pack(char *p, char *end) { 
         int len = strlen(p);
         memcpy(p, b, len);
@@ -978,6 +747,9 @@ struct nullterminated_string: public mysql_protocol_itemtype {
 };
 
 struct eof_string: public mysql_protocol_itemtype {
+    eof_string() : b(NULL), size(0)
+    {}
+
     char *pack(char *p, char *end) { 
         memcpy(p, b, size);
         return p + size;
@@ -990,6 +762,18 @@ struct eof_string: public mysql_protocol_itemtype {
     }
     char *b;
     size_t size;
+};
+
+struct mysql_procotol_com_query_packet: public mysql_protocol_itemtype {
+    char *pack(char *p, char *end) {
+        return query_string.pack(com_id.pack(p, end), end);
+    }
+    char *unpack(char *p, char *end) {
+        return query_string.unpack(com_id.unpack(p, end), end);
+    }
+
+    fixed_integer1 com_id;
+    eof_string query_string;
 };
 
 struct mysql_protocol_handshake_packet: public mysql_protocol_itemtype {
@@ -1052,378 +836,1176 @@ struct mysql_protocol_err_packet: public mysql_protocol_itemtype {
 };
 
 struct mysql_protocol_eof_packet: public mysql_protocol_itemtype {
-    char *pack(char *p, char *end) { return b.pack(p, end); }
-    char *unpack(char *p, char *end) { return b.unpack(p, end); }
+    char *pack(char *p, char *end) { 
+        return status_flags.pack(
+            warning_count.pack(
+            b.pack(p, end), end), end);
+
+    }
+    char *unpack(char *p, char *end) { 
+        return status_flags.unpack(
+            warning_count.unpack(
+            b.unpack(p, end), end), end);
+    }
+
     fixed_integer1 b;
+    fixed_integer2 warning_count;
+    fixed_integer2 status_flags;
 };
 
-
-/* return true if connection is still need to keep alive,
- * otherwise stop it */
-static void
-client_connector_processor(connector_t *connector, packet_t *packet) {
-    connection_t *cconn = &connector->ccon;
-    connection_t *sconn = &connector->scon;
-    switch (cconn->state) {
-    case CLIENT_NONE: {
-        break;
+struct mysql_protocol_column_definition: public mysql_protocol_itemtype {
+    char *pack(char *p, char *end) {
+        return org_name.pack(name.pack(org_table.pack(
+            table.pack(schema.pack(catalog.pack(p, 
+            end), end), end), end), end), end);
     }
-    case AWAIT_INITIAL_HANDSHAKE_FROM_SERVER: {
-        /* determine ssl_connection_request or handshake_response_packet */
-        bool is_ssl_handshake_request = packet->get_size() == 4 + 4 + 1 + 23;
-        if (is_ssl_handshake_request) {
-            mysql_protocol_ssl_request_packet ssl_request;
-            ssl_request.unpack(packet->get_pointer(), 
-                    packet->get_pointer() + packet->get_size());
-            cconn->protocol41 = ssl_request.capability_flags.b & CLIENT_PROTOCOL_41;
-            cconn->compress = ssl_request.capability_flags.b & CLIENT_COMPRESS;
-            cconn->ssl = ssl_request.capability_flags.b & CLIENT_SSL;
-
-            /* flush immediately, cause switching to ssl */
-            cconn->handle(packet);
-            drain_output_stream(sconn);
-
-#ifdef HAVE_OPENSSL
-            /* switch to ssl */
-            vio_reset(sconn->vio, VIO_TYPE_SSL, sconn->fd, 1);
-            vio_reset(cconn->vio, VIO_TYPE_SSL, cconn->fd, 1);
-
-            char *cipher = NULL;
-            cconn->ssl_connector = new_VioSSLAcceptorFd(server_key, 
-                    server_cert, NULL, NULL, NULL);
-            sconn->ssl_connector = new_VioSSLConnectorFd(NULL, 
-                    NULL, NULL, NULL, NULL);
-
-            if (sslaccept(cconn->ssl_connector, cconn->vio, 60L)) {
-#ifdef VERBOSE
-                fprintf(stderr, "ssl accept failed\n");
-#endif
-            }
-            
-            if (sslconnect(sconn->ssl_connector, sconn->vio, 60L)) { 
-#ifdef VERBOSE
-                fprintf(stderr, "ssl connect failed\n");
-#endif
-            }
-
-            vio_blocking(cconn->vio, 0);
-            vio_blocking(sconn->vio, 0);
-#endif
-
-            cconn->state = SSL_CONNECTION_REQUEST;
-            return;
-        }
-        /* else handshake_response is there, just fall through */
+    char *unpack(char *p, char *end) {
+        return org_name.unpack(name.unpack(org_table.unpack(
+            table.unpack(schema.unpack(catalog.unpack(p, 
+            end), end), end), end), end), end);
     }
-    case SSL_CONNECTION_REQUEST:
-    case HANDSHAKE_RESPONSE_PACKET: {
-        /* do not initialize twice */
-        if (cconn->state != SSL_CONNECTION_REQUEST) {
-            mysql_protocol_handshake_response_packet response;
-            response.unpack(packet->get_pointer(), 
-                    packet->get_pointer() + packet->get_size());
-            cconn->protocol41 = response.capability_flags.b & CLIENT_PROTOCOL_41;
-            cconn->compress = response.capability_flags.b & CLIENT_COMPRESS;
-            cconn->ssl = response.capability_flags.b & CLIENT_SSL;
-        }
-        cconn->state = STATUS_PACKET_FROM_SERVER;
-        sconn->state = AWAIT_STATUS_PACKET_FROM_SERVER;
-        cconn->handle(packet);
-        break;
+
+    length_encoded_string catalog;
+    length_encoded_string schema;
+    length_encoded_string table;
+    length_encoded_string org_table;
+    length_encoded_string name;
+    length_encoded_string org_name;
+};
+
+struct connection_settings {
+    connection_settings()
+      : mysqlserver_port(0)
+    {}
+
+    std::string mysqlserver_address;
+    int mysqlserver_port;
+
+    std::string client_key;
+    std::string client_cert;
+    std::string client_ca_file;
+
+    std::string server_key;
+    std::string server_cert;
+    std::string server_ca_file;
+
+    std::string  dh_file;
+};
+
+enum enum_server_command
+{
+  COM_SLEEP, COM_QUIT, COM_INIT_DB, COM_QUERY, COM_FIELD_LIST,
+  COM_CREATE_DB, COM_DROP_DB, COM_REFRESH, COM_SHUTDOWN, COM_STATISTICS,
+  COM_PROCESS_INFO, COM_CONNECT, COM_PROCESS_KILL, COM_DEBUG, COM_PING,
+  COM_TIME, COM_DELAYED_INSERT, COM_CHANGE_USER, COM_BINLOG_DUMP,
+  COM_TABLE_DUMP, COM_CONNECT_OUT, COM_REGISTER_SLAVE,
+  COM_STMT_PREPARE, COM_STMT_EXECUTE, COM_STMT_SEND_LONG_DATA, COM_STMT_CLOSE,
+  COM_STMT_RESET, COM_SET_OPTION, COM_STMT_FETCH, COM_DAEMON,
+  /* Must be last */
+  COM_END
+};
+
+static const char *server_command_str[] = {
+  "SLEEP", "QUIT", "INIT_DB", "QUERY", "FIELD_LIST", "CREATE_DB", "DROP_DB",
+  "REFRESH", "SHUTDOWN", "STATISTICS", "PROCESS_INFO", "CONNECT", "PROCESS_KILL",
+  "DEBUG", "PING", "TIME", "DELAYED_INSERT", "CHANGE_USER", "BINLOG_DUMP",
+  "TABLE_DUMP", "CONNECT_OUT", "REGISTER_SLAVE", "STMT_PREPARE", "STMT_EXECUTE",
+  "STMT_SEND_LONG_DATA", "STMT_CLOSE", "STMT_RESET", "SET_OPTION",
+  "STMT_FETCH", "DAEMON", NULL,
+};
+
+struct connection_statistics {
+    connection_statistics() { memset(m, 0, COM_END * sizeof(int)); }
+
+    void increment(enum_server_command type) {
+        m[type]++;
     }
-    case STATUS_PACKET_FROM_SERVER: {
-        break;
-    }
-    case CLIENT_COMMAND_PHASE: {
-        sconn->output_stream->reset_seqid();
-        cconn->handle(packet);
-        break;
-    }
+
+    int m[COM_END];
+};
+
+class mysql_connection;
+class mysql_statistics_handler: public mysql_packet_handler {
+public:
+    mysql_statistics_handler(mysql_connection &conn)
+        : conn_(conn)
+    {}
+
+    void handle(packet_t *packet);
+
+private:
+    mysql_connection &conn_;
+};
+
+class mysql_client_query_logger: public mysql_packet_handler {
+public:
+    mysql_client_query_logger(mysql_connection &conn, 
+            const std::string &logpath)
+        : conn_(conn), fs_(logpath.c_str(), std::ios_base::out)
+    {}
+
+    void handle(packet_t *packet);
+
+private:
+    mysql_connection &conn_;
+    std::fstream fs_;
+};
+
+class mysql_password_interceptor {
+public:
+    enum ClientFlags {
+        CLIENT_NONE,
+        CLIENT_QUERY_SENT
     };
-}
 
-static void
-server_connector_processor(connector_t *connector, packet_t *packet) {
-    connection_t *cconn = &connector->ccon;
-    connection_t *sconn = &connector->scon;
-    switch (sconn->state) {
-    case SERVER_NONE: {
-        sconn->state = INITIAL_HANDSHAKE_FROM_SERVER;
-        cconn->state = AWAIT_INITIAL_HANDSHAKE_FROM_SERVER;
-
-        mysql_protocol_handshake_packet initial_handshake;
-        initial_handshake.unpack(packet->get_pointer(), 
-            packet->get_pointer() + packet->get_size());
-
-#ifdef DEBUG
-        fprintf(stderr, "%x, %x, server capabilities: %x\n", 
-            initial_handshake.proto_version.b,
-            initial_handshake.filler.b,
-            initial_handshake.capability_flags.b);
-#endif
-
-        sconn->protocol41 = initial_handshake.capability_flags.b 
-            & CLIENT_PROTOCOL_41;
-        sconn->ssl = initial_handshake.capability_flags.b & CLIENT_SSL;
-        sconn->compress = initial_handshake.capability_flags.b & CLIENT_COMPRESS;
-        sconn->handle(packet);
-        break;
-    }
-    case INITIAL_HANDSHAKE_FROM_SERVER: {
-        break;
-    }
-    case AWAIT_SSL_CONNECTION_REQUEST: {
-        break;
-    }
-    case AWAIT_HANDSHAKE_RESPONSE_PACKET: {
-        break;
-    }
-    case AWAIT_STATUS_PACKET_FROM_SERVER: {
-        /* is err-packet */
-        if (packet->get_pointer()[0] == 0xff) {
-            return;
-        } else {
-            /* ok-packet arrived, switch to command-phase */
-            sconn->state = SERVER_COMMAND_PHASE;
-            cconn->state = CLIENT_COMMAND_PHASE;
-
-            /* flush immediately, cause turning on compression */
-            sconn->handle(packet);
-            drain_output_stream(cconn);
-        }
-        break;
-    }
-    case SERVER_COMMAND_PHASE: {
-        sconn->handle(packet);
-        break;
-    }
+    enum ServerFlags {
+        SERVER_NONE,
+        READING_COLUMNS,
+        READING_ROWS,
     };
-}
 
-static void 
-maybe_switch_connector_to_compression(connector_t *conn) {
-    connection_t *cconn = &conn->ccon;
-    connection_t *sconn = &conn->scon;
-    if (!cconn->compression_was_switched
-        && sconn->state == SERVER_COMMAND_PHASE
-        && cconn->state == CLIENT_COMMAND_PHASE
-        && sconn->compress && cconn->compress)
+public:
+    mysql_password_interceptor(mysql_connection &conn)
+        : conn_(conn)
+    { reset_state(); }
+
+    mysql_password_interceptor(mysql_connection &conn, 
+            const std::vector<std::string> &columns_to_intercept)
+        : conn_(conn), columns_to_intercept_(columns_to_intercept)
+    { reset_state(); }
+
+    void handle_from_client(packet_t *packet);
+    void handle_from_server(packet_t *packet);
+    void reset_state();
+
+private:
+    void compute_intercept_indices();
+    void perform_intercept();
+
+    mysql_connection &conn_;
+    ClientFlags client_state_;
+    ServerFlags server_state_;
+
+    ulonglong table_columns_count_;
+    ulonglong columns_to_read_;
+
+    std::vector<std::string> columns_to_intercept_;
+    std::vector<int> columns_to_intercept_indices_;
+
+    std::vector<std::string> column_definitions_;
+    std::vector<std::string> current_row_;
+    std::vector<bool> current_row_null_fields_;
+};
+
+class mysql_client_password_interceptor: public mysql_packet_handler {
+public:
+    mysql_client_password_interceptor(
+        const boost::shared_ptr<mysql_password_interceptor> &interceptor)
+        : interceptor_(interceptor)
+    {}
+
+    void handle(packet_t *packet) {
+        interceptor_->handle_from_client(packet);
+    }
+
+private:
+    boost::shared_ptr<mysql_password_interceptor> interceptor_;
+};
+
+class mysql_server_password_interceptor: public mysql_packet_handler {
+public:
+    mysql_server_password_interceptor(
+        const boost::shared_ptr<mysql_password_interceptor> &interceptor)
+        : interceptor_(interceptor)
+    {}
+
+    void handle(packet_t *packet) {
+        interceptor_->handle_from_server(packet);
+    }
+
+private:
+    boost::shared_ptr<mysql_password_interceptor> interceptor_;
+};
+
+class perl_interpreter {
+public:
+    perl_interpreter(const std::string &funclib_filename)
     {
+        int argc = 2;
+        const char *argv[] = { "stub", funclib_filename.c_str(), NULL, };
+        PERL_SYS_INIT3(&argc, reinterpret_cast<char***>(&argv), NULL);
+        my_perl= perl_alloc();
+        perl_construct(my_perl);
+        perl_parse(my_perl, NULL, argc, reinterpret_cast<char**>(
+                    const_cast<char**>(argv)), NULL);
+        PL_exit_flags |= PERL_EXIT_DESTRUCT_END;
+    }
+
+    ~perl_interpreter() {
+        perl_destruct(my_perl);
+        perl_free(my_perl);
+    }
+
+    std::string call(const std::string &funcname, const std::string &arg) 
+    {
+        int count;
+        std::string result; 
+        char *result_cstr; STRLEN result_length;
+
+        dSP;
+
+        ENTER;
+        SAVETMPS;
+
+        PUSHMARK(SP);
+        XPUSHs(sv_2mortal(newSVpv(arg.c_str(), arg.length())));
+        PUTBACK;
+
+        count = call_pv(const_cast<char*>(funcname.c_str()), G_SCALAR);
+
+        SPAGAIN;
+
+        SV *s = POPs;
+        result_cstr = SvPV(s, result_length);
+        result = std::string(result_cstr, result_length);
+
+        PUTBACK;
+        FREETMPS;
+        LEAVE;
+
+        return result;
+    }
+
+    std::string call(const std::string &funcname, SV *query_repr) 
+    {
+        int count;
+        std::string result; 
+        char *result_cstr; STRLEN result_length;
+
+        dSP;
+
+        ENTER;
+        SAVETMPS;
+
+        PUSHMARK(SP);
+        XPUSHs(sv_2mortal(query_repr));
+        PUTBACK;
+
+        count = call_pv(const_cast<char*>(funcname.c_str()), G_SCALAR);
+
+        SPAGAIN;
+
+        SV *s = POPs;
+        result_cstr = SvPV(s, result_length);
+        result = std::string(result_cstr, result_length);
+
+        PUTBACK;
+        FREETMPS;
+        LEAVE;
+
+        return result;
+    }
+
+    SV *string2sv(const std::string &str) {
+        return newSVpvn(str.c_str(), str.size());
+    }
+    
+    SV *transform_query_union_to_perlsv(const myisamlib::QueryUnion &q) {
+        AV *av = newAV(); 
+        for (int i = 0; i < q.query_union_list_.size(); ++i) {
+            av_push(av, transform_query_to_perlhv(q.query_union_list_[0]));
+        }
+        return newRV(reinterpret_cast<SV*>(av));
+    }
+    
+    SV *transform_query_to_perlhv(const myisamlib::Query &q) {
+        HV *hv = newHV(); 
+    
+        struct {
+            const char *key;
+            std::vector<std::string> myisamlib::Query::* p; 
+        } lists[] = {
+            { "items", &myisamlib::Query::item_list_ },
+            { "where", &myisamlib::Query::where_list_ },
+            { "group", &myisamlib::Query::group_list_ },
+            { "having", &myisamlib::Query::having_list_ },
+            { "order", &myisamlib::Query::order_list_ },
+            { "limit", &myisamlib::Query::limit_list_ } 
+        };
+    
+        for (int i = 0; i < sizeof(lists)/sizeof(lists[0]); ++i) {
+            AV *av = newAV();
+    
+            const std::vector<std::string> &vlist = q.*(lists[i].p);
+            for (int j = 0; j < vlist.size(); ++j) {
+                av_push(av, string2sv(vlist[j]));
+            }
+    
+            hv_store(hv, lists[i].key, strlen(lists[i].key), 
+                    newRV(reinterpret_cast<SV*>(av)), 0);
+        }
+        return newRV(reinterpret_cast<SV*>(hv));
+    }
+
+private:
+    PerlInterpreter *my_perl;
+};
+
+class mysql_query_perl_processor: public mysql_packet_handler  {
+public:
+    mysql_query_perl_processor(mysql_connection &conn,
+        const std::string &funclib_filename)
+        : conn_(conn), p_(funclib_filename)
+    {}
+
+    void handle(packet_t *packet);
+
+private:
+    mysql_connection &conn_;
+    perl_interpreter p_;
+};
+
+class mysql_connection {
+public:
+    enum ClientFlags {
+        CLIENT_NONE,
+        AWAIT_INITIAL_HANDSHAKE_FROM_SERVER,  
+        SSL_CONNECTION_REQUEST,
+        HANDSHAKE_RESPONSE_PACKET,
+        STATUS_PACKET_FROM_SERVER,
+        CLIENT_COMMAND_PHASE,
+    };
+    
+    enum ServerFlags {
+        SERVER_NONE,
+        INITIAL_HANDSHAKE_FROM_SERVER,  
+        AWAIT_SSL_CONNECTION_REQUEST,
+        AWAIT_HANDSHAKE_RESPONSE_PACKET,
+        AWAIT_STATUS_PACKET_FROM_SERVER,
+        SERVER_COMMAND_PHASE,
+    };
+    
+    enum { BufferSize = 4096 };
+
+private:
+    typedef boost::asio::ssl::stream<boost::asio::ip::tcp::socket&> 
+        ssl_stream_type;
+
+public:
+    mysql_connection(connection_settings settings, 
+            boost::asio::io_service &io_service)
+        : 
+          io_service_(io_service),
+          settings_(settings),
+          client_socket_(io_service),
+          server_socket_(io_service),
+          client_context_(io_service, boost::asio::ssl::context::tlsv1),
+          server_context_(io_service, boost::asio::ssl::context::tlsv1)
+    {}
+
+    boost::asio::ip::tcp::socket &client_socket() {
+        return client_socket_;
+    }
+
+    boost::asio::ip::tcp::socket &server_socket() {
+        return server_socket_;
+    }
+
+    void init() {
+        namespace ip = boost::asio::ip;
+        ip::tcp::endpoint endpoint(ip::address::from_string(
+                    settings_.mysqlserver_address), settings_.mysqlserver_port);
+        server_socket_.connect(endpoint);
+
+        client_capabilities_ = 0;
+        server_capabilities_ = 0;
+
+        client_state_ = CLIENT_NONE;
+        server_state_ = SERVER_NONE;
+
+        boost::shared_ptr<mysql_packet_seqid> seqid(new mysql_packet_seqid());
+        client_input_stream_.reset(new mysql_packet_input_stream());
+        client_output_stream_.reset(new mysql_packet_output_stream(seqid));
+
+        server_input_stream_.reset(new mysql_packet_input_stream());
+        server_output_stream_.reset(new mysql_packet_output_stream(seqid));
+
+        std::vector<std::string> fields_to_intercept;
+        fields_to_intercept.push_back("user");
+        fields_to_intercept.push_back("password");
+
+        boost::shared_ptr<mysql_password_interceptor> interceptor(
+                new mysql_password_interceptor(*this, fields_to_intercept));
+
+        client_packet_handlers_.clear();
+        client_packet_handlers_.push_back(boost::shared_ptr<mysql_packet_handler>(
+                    new mysql_client_password_interceptor(interceptor)));
+        client_packet_handlers_.push_back(boost::shared_ptr<mysql_packet_handler>(
+                    new mysql_query_perl_processor(*this, 
+                        "/home/akuts/mysqlproxy/handle.pl")));
+        client_packet_handlers_.push_back(boost::shared_ptr<mysql_packet_handler>(
+                    new mysql_client_query_logger(*this, "query.log")));
+        client_packet_handlers_.push_back(boost::shared_ptr<mysql_packet_handler>(
+                    new mysql_statistics_handler(*this)));
+        client_packet_handlers_.push_back(boost::shared_ptr<mysql_packet_handler>(
+                    new mysql_write_handler(server_output_stream_)));
+
+        server_packet_handlers_.clear();
+        server_packet_handlers_.push_back(boost::shared_ptr<mysql_packet_handler>(
+                    new mysql_server_password_interceptor(interceptor)));
+        server_packet_handlers_.push_back(boost::shared_ptr<mysql_packet_handler>(
+                    new mysql_write_handler(client_output_stream_)));
+
+        compression_decision_determined_ = false;
+        ssl_desicion_determined_ = false;
+        in_ssl_ = false;
+
+        init_client_read();
+        init_server_read();
+    }
+
+    void set_shutdown_callback(const boost::function<void()> &cb) {
+        shutdown_callback_ = cb;
+    }
+
+    bool in_command_phase() const {
+        return client_state_ == CLIENT_COMMAND_PHASE
+            && server_state_ == SERVER_COMMAND_PHASE;
+    }
+
+    connection_statistics &getstat() {
+        return stat_;
+    }
+
+private:
+
+    void maybe_turnon_compression() {
+        if (compression_decision_determined_)
+            return;
+
+        if (server_state_ == SERVER_COMMAND_PHASE
+            && client_state_ == CLIENT_COMMAND_PHASE)
+        {
+            if (server_capabilities_ & CLIENT_COMPRESS
+                && client_capabilities_ & CLIENT_COMPRESS)
+            {
+                turnon_compression();
+            }
+            compression_decision_determined_ = true;
+        }
+    }
+
+    void turnon_compression() {
 #ifdef DEBUG
         fprintf(stderr, "Switching to compression\n");
 #endif
-        mysql_packet_seqid *seqid = new mysql_packet_seqid();
-        mysql_packet_seqid *compressed_seqid = new mysql_packet_seqid();
-        sconn->input_stream = new mysql_packet_input_stream_compressed();
-        sconn->output_stream = new mysql_packet_output_stream_compressed(
-            seqid, compressed_seqid);
-        cconn->input_stream = new mysql_packet_input_stream_compressed();
-        cconn->output_stream = new mysql_packet_output_stream_compressed(
-                seqid, compressed_seqid);
+        boost::shared_ptr<mysql_packet_seqid> seqid(new mysql_packet_seqid());
+        boost::shared_ptr<mysql_packet_seqid> compressed_seqid(
+                new mysql_packet_seqid());
 
-        sconn->packet_handlers.clear();
-        cconn->packet_handlers.clear();
+        client_input_stream_.reset(new mysql_packet_input_stream_compressed());
+        client_output_stream_.reset(new mysql_packet_output_stream_compressed(
+                    seqid, compressed_seqid));
 
-        sconn->packet_handlers.push_back(new mysql_write_handler(
-            cconn->output_stream));
+        server_input_stream_.reset(new mysql_packet_input_stream_compressed());
+        server_output_stream_.reset(new mysql_packet_output_stream_compressed(
+                    seqid, compressed_seqid));
 
-        cconn->packet_handlers.push_back(new mysql_write_handler(
-            sconn->output_stream));
+        client_packet_handlers_.back().reset(
+                new mysql_write_handler(server_output_stream_));
 
-        cconn->compression_was_switched = sconn->compression_was_switched = true;
+        server_packet_handlers_.back().reset(
+                    new mysql_write_handler(client_output_stream_));
+    }
+
+    void maybe_turnon_ssl() {
+        if (ssl_desicion_determined_)
+            return;
+
+        if (client_state_ == SSL_CONNECTION_REQUEST) {
+            turnon_ssl();
+            ssl_desicion_determined_ = true;
+        } else if (client_state_ > SSL_CONNECTION_REQUEST) {
+            /* no ssl */
+            ssl_desicion_determined_ = true;
+        }
+    }
+
+    void turnon_ssl() {
+#ifdef DEBUG
+        fprintf(stderr, "Switching to ssl\n");
+#endif
+        client_context_.set_options(
+            boost::asio::ssl::context::default_workarounds
+            | boost::asio::ssl::context::no_sslv2
+            | boost::asio::ssl::context::single_dh_use);
+
+        client_context_.use_certificate_chain_file(settings_.server_cert);
+        client_context_.use_private_key_file(
+            settings_.server_key, boost::asio::ssl::context::pem);
+        client_context_.use_tmp_dh_file(settings_.dh_file);
+
+        /*
+        client_context_.load_verify_file(settings_.server_ca_file);
+        client_context_.set_verify_mode(
+                boost::asio::ssl::context_base::verify_peer); */
+
+        /*
+        server_context_.use_certificate_chain_file(settings_.client_cert);
+        server_context_.use_private_key_file(
+            settings_.client_key, boost::asio::ssl::context::pem);
+        server_context_.use_tmp_dh_file(settings_.dh_file);
+        */
+
+        server_context_.set_options(
+            boost::asio::ssl::context::default_workarounds
+            | boost::asio::ssl::context::no_sslv2
+            | boost::asio::ssl::context::single_dh_use);
+        client_socket_ssl_stream_.reset(
+            new ssl_stream_type(client_socket_, client_context_));
+        server_socket_ssl_stream_.reset(
+            new ssl_stream_type(server_socket_, server_context_));
+
+        client_socket_ssl_stream_->handshake(
+                boost::asio::ssl::stream_base::server);
+        server_socket_ssl_stream_->handshake(
+                boost::asio::ssl::stream_base::client);
+
+        in_ssl_ = true;
+    }
+
+    void init_client_read() {
+        if (in_ssl_) {
+            client_socket_ssl_stream_->async_read_some(
+                boost::asio::buffer(client_buffer_),
+                boost::bind(&mysql_connection::on_client_read, this,
+                    boost::asio::placeholders::error, 
+                    boost::asio::placeholders::bytes_transferred));
+        } else {
+            boost::asio::async_read(client_socket_,
+                boost::asio::buffer(client_buffer_),
+                boost::asio::transfer_at_least(1),
+                boost::bind(&mysql_connection::on_client_read, this,
+                    boost::asio::placeholders::error, 
+                    boost::asio::placeholders::bytes_transferred));
+        }
+    }
+
+    void on_client_read(const boost::system::error_code& error,
+            std::size_t bytes_transferred) 
+    {
+        /* we sometimes cancel requests */
+        if (error == boost::asio::error::operation_aborted) {
+            return;
+        }
+
+        if (!bytes_transferred
+                && !(error.value() == boost::system::posix::operation_would_block 
+           || error.value() == boost::system::posix::resource_unavailable_try_again
+           || error.value() == boost::system::posix::interrupted))
+        {
+            disconnect();
+            return;
+        }
+
+        client_input_stream_->feed_data((uchar*)client_buffer_.begin(),
+                bytes_transferred);
+        while (client_input_stream_->packet_count()) {
+            boost::shared_ptr<packet_t> packet = client_input_stream_->packet_top();
+            on_client_packet(packet.get());
+            client_input_stream_->packet_pop();
+        }
+
+        flush_toserver_queue();
+
+        bool old_in_ssl = in_ssl_;
+
+        maybe_turnon_ssl();
+
+        /* turned on ssl  */
+        if (!old_in_ssl && in_ssl_) {
+            server_socket_.cancel();
+            init_server_read(); 
+        }
+
+        init_client_read();
+    }
+
+    void on_client_packet(packet_t *packet) {
+        switch (client_state_) {
+        case CLIENT_NONE: {
+            break;
+        }
+        case AWAIT_INITIAL_HANDSHAKE_FROM_SERVER: {
+            /* determine ssl_connection_request or handshake_response_packet */
+            bool is_ssl_handshake_request = packet->get_size() == 4 + 4 + 1 + 23;
+            if (is_ssl_handshake_request) {
+                mysql_protocol_ssl_request_packet ssl_request;
+                unpack_from_packet(ssl_request, packet);
+                client_capabilities_ = ssl_request.capability_flags.b;
+    
+                /* flush immediately, cause switching to ssl */
+                send_to_server(packet);
+    
+                client_state_ = SSL_CONNECTION_REQUEST;
+                return;
+            }
+            /* else handshake_response is there, just fall through */
+        }
+        case SSL_CONNECTION_REQUEST:
+        case HANDSHAKE_RESPONSE_PACKET: {
+            /* do not initialize twice */
+            if (client_state_ != SSL_CONNECTION_REQUEST) {
+                mysql_protocol_handshake_response_packet response;
+                unpack_from_packet(response, packet);
+                client_capabilities_ = response.capability_flags.b;
+            }
+            client_state_ = STATUS_PACKET_FROM_SERVER;
+            server_state_ = AWAIT_STATUS_PACKET_FROM_SERVER;
+            send_to_server(packet);
+            break;
+        }
+        case STATUS_PACKET_FROM_SERVER: {
+            break;
+        }
+        case CLIENT_COMMAND_PHASE: {
+            server_output_stream_->reset_seqid();
+            send_to_server(packet);
+            break;
+        }};
+    }
+
+    void send_to_server(packet_t *packet) {
+        for (int i = 0; i < client_packet_handlers_.size(); ++i) {
+            client_packet_handlers_[i]->handle(packet);
+        }
+    }
+
+    void send_to_client(packet_t *packet) {
+        for (int i = 0; i < server_packet_handlers_.size(); ++i) {
+            server_packet_handlers_[i]->handle(packet);
+        }
+    }
+
+    int write_nbytes_to_connection(boost::asio::ip::tcp::socket &sk,
+            char *buf, size_t size) 
+    {
+        size_t left = size;
+        while (left) {
+            size_t written_bytes = sk.write_some(boost::asio::buffer(buf, left));
+            if (!written_bytes || written_bytes == static_cast<size_t>(-1)) {
+                if (written_bytes && (errno == EINTR || errno == EAGAIN))
+                    continue;
+                return 1;
+            }
+            buf += written_bytes;
+            left -= written_bytes;
+        }
+        return 0;
+    }
+
+    int write_nbytes_to_connection_ssl(ssl_stream_type &sk,
+            char *buf, size_t size) 
+    {
+        size_t left = size;
+        while (left) {
+            size_t written_bytes = sk.write_some(boost::asio::buffer(buf, left));
+            if (!written_bytes || written_bytes == static_cast<size_t>(-1)) {
+                if (written_bytes && (errno == EINTR || errno == EAGAIN))
+                    continue;
+                return 1;
+            }
+            buf += written_bytes;
+            left -= written_bytes;
+        }
+        return 0;
+    }
+
+    void flush_toserver_queue() {
+        packet_output_stream *output_stream = server_output_stream_.get();
+        if (output_stream->packet_count()) {
+            char *data; size_t write_len; int res;
+            output_stream->get_packets(&data, &write_len);
+            if (in_ssl_) {
+                res = write_nbytes_to_connection_ssl(
+                    *(server_socket_ssl_stream_.get()), data, write_len);
+            } else {
+                res = write_nbytes_to_connection(
+                    server_socket_, data, write_len);
+            }
+            output_stream->reset_packets();
+        }
+    }
+
+    void flush_toclient_queue() {
+        packet_output_stream *output_stream = client_output_stream_.get();
+        if (output_stream->packet_count()) {
+            char *data; size_t write_len; int res;
+            output_stream->get_packets(&data, &write_len);
+            if (in_ssl_) {
+                res = write_nbytes_to_connection_ssl(
+                    *(client_socket_ssl_stream_.get()), data, write_len);
+            } else {
+                res = write_nbytes_to_connection(
+                    client_socket_, data, write_len);
+            }
+            output_stream->reset_packets();
+        }
+    }
+
+    void init_server_read() {
+        if (in_ssl_) {
+            server_socket_ssl_stream_->async_read_some(
+                boost::asio::buffer(server_buffer_),
+                boost::bind(&mysql_connection::on_server_read, this,
+                boost::asio::placeholders::error, 
+                boost::asio::placeholders::bytes_transferred));
+        } else {
+            boost::asio::async_read(server_socket_,
+                boost::asio::buffer(server_buffer_),
+                boost::asio::transfer_at_least(1),
+                boost::bind(&mysql_connection::on_server_read, this,
+                    boost::asio::placeholders::error, 
+                    boost::asio::placeholders::bytes_transferred));
+        }
+    }
+
+    
+
+    void on_server_read(const boost::system::error_code& error,
+            std::size_t bytes_transferred) 
+    {
+        /* we sometimes cancel requests */
+        if (error == boost::asio::error::operation_aborted) {
+            return;
+        }
+
+        if (!bytes_transferred
+                && !(error.value() == boost::system::posix::operation_would_block 
+           || error.value() == boost::system::posix::resource_unavailable_try_again
+           || error.value() == boost::system::posix::interrupted))
+        {
+            disconnect();
+            return;
+        }
+
+        server_input_stream_->feed_data((uchar*)server_buffer_.begin(), 
+            bytes_transferred);
+        while (server_input_stream_->packet_count()) {
+            boost::shared_ptr<packet_t> packet 
+                = server_input_stream_->packet_top();
+            on_server_packet(packet.get());
+            server_input_stream_->packet_pop();
+        }
+
+        flush_toclient_queue();
+
+        maybe_turnon_compression();
+
+        init_server_read();
+    }
+
+    void on_server_packet(packet_t *packet) {
+        switch (server_state_) {
+        case SERVER_NONE: {
+            server_state_ = INITIAL_HANDSHAKE_FROM_SERVER;
+            client_state_ = AWAIT_INITIAL_HANDSHAKE_FROM_SERVER;
+    
+            mysql_protocol_handshake_packet initial_handshake;
+            unpack_from_packet(initial_handshake, packet);
+    
+            server_capabilities_ = initial_handshake.capability_flags.b;
+            send_to_client(packet);
+            break;
+        }
+        case INITIAL_HANDSHAKE_FROM_SERVER: {
+            break;
+        }
+        case AWAIT_SSL_CONNECTION_REQUEST: {
+            break;
+        }
+        case AWAIT_HANDSHAKE_RESPONSE_PACKET: {
+            break;
+        }
+        case AWAIT_STATUS_PACKET_FROM_SERVER: {
+            /* is err-packet */
+            if (packet->get_pointer()[0] == 0xff) {
+                return;
+            } else {
+                /* ok-packet arrived, switch to command-phase */
+                server_state_ = SERVER_COMMAND_PHASE;
+                client_state_ = CLIENT_COMMAND_PHASE;
+                send_to_client(packet);
+            }
+            break;
+        }
+        case SERVER_COMMAND_PHASE: {
+            send_to_client(packet);
+            break;
+        }};
+    }
+
+    void disconnect() {
+        client_socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
+        client_socket_.close();
+        server_socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
+        server_socket_.close();
+        shutdown_callback_();
+    }
+
+private:
+    boost::asio::io_service &io_service_;
+
+    connection_settings settings_;
+    boost::asio::ip::tcp::socket client_socket_;
+    boost::asio::ip::tcp::socket server_socket_;
+
+    boost::shared_ptr<ssl_stream_type> client_socket_ssl_stream_;
+    boost::shared_ptr<ssl_stream_type> server_socket_ssl_stream_;
+
+    uint client_capabilities_;
+    ClientFlags client_state_;
+    std::vector<boost::shared_ptr<mysql_packet_handler> > client_packet_handlers_;
+    boost::shared_ptr<packet_input_stream> client_input_stream_;
+    boost::shared_ptr<packet_output_stream> client_output_stream_;
+    boost::array<char, BufferSize> client_buffer_;
+
+    uint server_capabilities_;
+    ServerFlags server_state_;
+    std::vector<boost::shared_ptr<mysql_packet_handler> > server_packet_handlers_;
+    boost::shared_ptr<packet_input_stream> server_input_stream_;
+    boost::shared_ptr<packet_output_stream> server_output_stream_;
+    boost::array<char, BufferSize> server_buffer_;
+
+    boost::asio::ssl::context client_context_;
+    boost::asio::ssl::context server_context_;
+
+    bool compression_decision_determined_;
+    bool ssl_desicion_determined_;
+    bool in_ssl_;
+
+    boost::function<void()> shutdown_callback_;
+    connection_statistics stat_;
+};
+
+void mysql_query_perl_processor::handle(packet_t *packet) {
+    if (conn_.in_command_phase()) {
+        enum_server_command cmd = static_cast<enum_server_command>(
+            packet->get_pointer()[0]);
+        /*
+        if (cmd == COM_QUERY) {
+            mysql_procotol_com_query_packet query;
+            unpack_from_packet(query, packet);
+            std::string transformed = p_.call("handle", 
+                std::string(query.query_string.b, query.query_string.size));
+            packet->set_content(static_cast<char>(cmd) + transformed);
+        }
+        */
+        if (cmd == COM_QUERY) {
+            mysql_procotol_com_query_packet query;
+            unpack_from_packet(query, packet);
+            if (query.query_string.size >= 6
+                    && !strncasecmp("select", query.query_string.b, 6))
+            {
+                std::string query_str(query.query_string.b, 
+                        query.query_string.size);
+                myisamlib::QueryUnion q 
+                    = myisamlib::ConstructQueryObject(query_str.c_str());
+
+                SV *qunion = p_.transform_query_union_to_perlsv(q);
+                std::string transformed = p_.call("handle", qunion);
+                std::cerr << transformed << std::endl;
+            }
+        }
     }
 }
 
-static void
-server_connector_handler(int fd, short event, void *arg) {
-    bool finalize = false;
-    size_t was_read; uchar buf[1024];
-    connector_t *connector = (connector_t *)arg;
 
-    do {
-        was_read = vio_read(connector->scon.vio, buf, sizeof(buf));
-        if (was_read == (size_t)-1 || !was_read) { 
-            if (was_read == (size_t)-1 && (errno == EAGAIN || errno == EINTR)) {
-                continue;
-            } else {
-                finalize = true;
-                break;
+void mysql_statistics_handler::handle(packet_t *packet) {
+    if (conn_.in_command_phase()) {
+        conn_.getstat().increment(static_cast<enum_server_command>(
+            packet->get_pointer()[0]));
+    }
+}
+
+void mysql_client_query_logger::handle(packet_t *packet) {
+    if (conn_.in_command_phase()) {
+        enum_server_command cmd = static_cast<enum_server_command>(
+            packet->get_pointer()[0]);
+        if (cmd == COM_QUERY) {
+            mysql_procotol_com_query_packet query;
+            unpack_from_packet(query, packet);
+
+            if (query.query_string.size >= 6
+                    && !strncasecmp("select", query.query_string.b, 6))
+            {
+                std::string query_str(query.query_string.b, 
+                        query.query_string.size);
+                myisamlib::QueryUnion q 
+                    = myisamlib::ConstructQueryObject(query_str.c_str());
+                std::string qstr = q.to_string();
+                fs_ << q.to_string() << std::endl;
+                std::cerr << q.to_string() << std::endl;
             }
         }
 
-        connector->scon.input_stream->feed_data(buf, was_read);
-    } while (was_read == sizeof(buf));
-
-#ifdef DEBUG
-    fprintf(stderr, "got %d bytes from server\n", was_read);
-    fprintf(stderr, "client state: %d\n", connector->ccon.state);
-    fprintf(stderr, "server state: %d\n", connector->scon.state);
-    fprintf(stderr, "server queue size: %d\n", 
-            connector->scon.input_stream->packet_count());
-#endif
-
-    while (connector->scon.input_stream->packet_count()) {
-        packet_t *packet = connector->scon.input_stream->packet_top();
-        server_connector_processor(connector, packet);
-        connector->scon.input_stream->packet_pop();
     }
-    event_add(&connector->scon.event, NULL);
-
-#ifdef DEBUG
-    fprintf(stderr, "toclient output queue size: %d\n", 
-            connector->ccon.output_stream->packet_count());
-#endif
-
-    drain_output_stream(&connector->ccon);
-
-#ifdef DEBUG
-    fprintf(stderr, "toclient output queue size: %d\n", 
-            connector->ccon.output_stream->packet_count());
-    fprintf(stderr, "server queue size: %d\n", 
-            connector->scon.input_stream->packet_count());
-#endif
-
-    maybe_switch_connector_to_compression(connector);
-    if (finalize) { finalize_connector(connector); }
 }
 
-static void
-client_connector_handler(int fd, short event, void *arg) {
-    bool finalize = false;
-    size_t was_read; uchar buf[1024];
-    connector_t *connector = (connector_t *)arg;
+void mysql_password_interceptor::reset_state() {
+    client_state_ = CLIENT_NONE;
+    server_state_ = SERVER_NONE;
+    table_columns_count_ = 0;
+    columns_to_read_ = 0;
 
-    do {
-        was_read = vio_read(connector->ccon.vio, buf, sizeof(buf));
-        if (was_read == (size_t)-1 || !was_read) { 
-            if (was_read == (size_t)-1 && (errno == EAGAIN || errno == EINTR)) {
-                continue;
-            } else {
-                finalize = true;
-                break;
+    columns_to_intercept_indices_.clear();
+    column_definitions_.clear();
+}
+
+void mysql_password_interceptor::compute_intercept_indices() {
+    for (int i = 0; i < column_definitions_.size(); ++i) {
+        for (int j = 0; j < columns_to_intercept_.size(); ++j) {
+            if (!strcasecmp(column_definitions_[i].c_str(),
+                    columns_to_intercept_[j].c_str()))
+            { 
+                columns_to_intercept_indices_.push_back(i); 
+                break; 
             }
         }
-
-        connector->ccon.input_stream->feed_data(buf, was_read);
-    } while (was_read == sizeof(buf));
-
-#ifdef DEBUG
-    fprintf(stderr, "got %d bytes from client\n", was_read);
-    fprintf(stderr, "client state: %d\n", connector->ccon.state);
-    fprintf(stderr, "server state: %d\n", connector->scon.state);
-    fprintf(stderr, "client queue size: %d\n", 
-            connector->ccon.input_stream->packet_count());
-#endif
-
-    while (connector->ccon.input_stream->packet_count()) {
-        client_connector_processor(connector,
-                connector->ccon.input_stream->packet_top());
-        connector->ccon.input_stream->packet_pop();
     }
-    event_add(&connector->ccon.event, NULL);
-
-#ifdef DEBUG
-    fprintf(stderr, "toserver output queue size: %d\n", 
-            connector->scon.output_stream->packet_count());
-#endif
-
-    drain_output_stream(&connector->scon);
-
-#ifdef DEBUG
-    fprintf(stderr, "toserver output queue size: %d\n", 
-            connector->scon.output_stream->packet_count());
-    fprintf(stderr, "client queue size: %d\n", 
-            connector->ccon.input_stream->packet_count());
-#endif
-    if (finalize) { finalize_connector(connector); }
 }
 
-static void 
-acceptor_handler(int fd, short event, void *arg) {
-    acceptor_t *acceptor = (acceptor_t *)arg;
-    int peer_fd = accept(acceptor->fd, NULL, NULL);
-    if (peer_fd < 0) {
+void mysql_password_interceptor::perform_intercept() {
+    for (int i = 0; i < columns_to_intercept_indices_.size(); ++i) {
+        int index = columns_to_intercept_indices_[i];
+        std::cerr << column_definitions_[index] << ": `";
+        std::cerr << (current_row_null_fields_[index] 
+            ? "NULL" : current_row_[index]) << "'\t";
+    }
+    if (!columns_to_intercept_indices_.empty()) { 
+        std::cerr << std::endl; 
+    }
+}
+
+void mysql_password_interceptor::handle_from_client(packet_t *packet) {
+    switch (client_state_) {
+    case CLIENT_NONE: {
+        enum_server_command cmd = static_cast<enum_server_command>(
+            packet->get_pointer()[0]);
+        if (cmd == COM_QUERY) { 
+            client_state_ = CLIENT_QUERY_SENT; 
+        }
+        break;
+    }
+
+    case CLIENT_QUERY_SENT: /* do nothing */ break;
+    };
+}
+
+void mysql_password_interceptor::handle_from_server(packet_t *packet) {
+    if (!packet->get_size() || client_state_ != CLIENT_QUERY_SENT)
         return;
+
+    switch (server_state_) {
+    case SERVER_NONE: {
+        length_encoded_integer number_of_columns;
+        unpack_from_packet(number_of_columns, packet);
+        table_columns_count_ = columns_to_read_ = number_of_columns.b;
+        server_state_ = READING_COLUMNS; 
+        break;
     }
 
-    connector_t *connector = new connector_t();
-    connector->ccon.fd = peer_fd;
-
-    int server_fd;
-    if ((server_fd = connect_to_peer(k_mysql_server, k_mysql_server_port)) >= 0) {
-        connector->scon.fd = server_fd; 
-
-        /* flags=1 localhost here */
-        connector->ccon.vio = vio_new(connector->ccon.fd, VIO_TYPE_TCPIP, 1);
-        connector->scon.vio = vio_new(connector->scon.fd, VIO_TYPE_TCPIP, 1);
-
-        /* setting as nonblocking and keepalive */
-        vio_blocking(connector->ccon.vio, 0);
-        vio_blocking(connector->scon.vio, 0);
-        vio_keepalive(connector->ccon.vio, 1);
-        vio_keepalive(connector->scon.vio, 1);
-
-        mysql_packet_seqid *seqid = new mysql_packet_seqid();
-
-        connector->scon.input_stream = new mysql_packet_input_stream();
-        connector->scon.output_stream = new mysql_packet_output_stream(seqid);
-
-        connector->ccon.input_stream = new mysql_packet_input_stream();
-        connector->ccon.output_stream = new mysql_packet_output_stream(seqid);
-
-        connector->ccon.state = CLIENT_NONE;
-        connector->scon.state = SERVER_NONE;
-
-        connector->ccon.packet_handlers.push_back(new mysql_statistics_handler());
-        connector->ccon.packet_handlers.push_back(new mysql_write_handler(
-            connector->scon.output_stream));
-
-        connector->scon.packet_handlers.push_back(new mysql_write_handler(
-            connector->ccon.output_stream));
-
-#ifdef DEBUG
-        connector->ccon.dumper = new hexdumper<>("toclient.log");
-        connector->scon.dumper = new hexdumper<>("toserver.log");
-
-        connector->ccon.packet_dumper = new hexdumper<>("mytoclient.log");
-        connector->scon.packet_dumper = new hexdumper<>("mytoserver.log");
-
-        connector->ccon.packet_offset_dumper = new hexdumper<8>("offset_dumper_to_client.log");
-        connector->scon.packet_offset_dumper = new hexdumper<8>("offset_dumper_to_server.log");
-#endif
-        event_set(&connector->ccon.event, connector->ccon.fd, 
-            EV_READ, client_connector_handler, (void *)connector);
-        event_set(&connector->scon.event, connector->scon.fd, 
-            EV_READ, server_connector_handler, (void *)connector);
-        regenerate_connector_event(connector);
-    } else {
-        close(peer_fd);
-        delete connector;
+    case READING_COLUMNS: {
+        if (!columns_to_read_--) {
+            /* there must be an eof packet */ 
+            mysql_protocol_eof_packet eof_packet;
+            unpack_from_packet(eof_packet, packet);
+            server_state_ = READING_ROWS;
+            compute_intercept_indices();
+        } else {
+            mysql_protocol_column_definition column_definition;
+            unpack_from_packet(column_definition, packet);
+            column_definitions_.push_back(column_definition.name.b);
+        }
+        break;
     }
-    regenerate_acceptor_event(acceptor);
+
+    case READING_ROWS: {
+        uchar c = static_cast<uchar>(packet->get_pointer()[0]);
+
+        /* eof-packet */
+        if (c == 0xfe) {
+            mysql_protocol_eof_packet eof_packet;
+            unpack_from_packet(eof_packet, packet);
+            if (eof_packet.status_flags.b & SERVER_MORE_RESULTS_EXISTS) {
+                server_state_ = SERVER_NONE; /* TODO client_protocol41 check */
+            } else {
+                reset_state();
+            }
+            return;
+        }
+
+        /* error-packet */
+        if (c == 0xff) {
+            reset_state();
+            return;
+        }
+        
+        /* reading rows from here */
+        current_row_.resize(table_columns_count_);
+        current_row_null_fields_.resize(table_columns_count_);
+
+        char *p = packet->get_pointer();
+        char *end = p + packet->get_size();
+        for (int i = 0; i < table_columns_count_; ++i) {
+            /* if is null */
+            if (*p == 0xfb) {
+                current_row_null_fields_[i] = true;
+                p++;
+            } else {
+                length_encoded_string column_row_item;
+                p = column_row_item.unpack(p,
+                        packet->get_pointer() + packet->get_size());
+                current_row_[i] = column_row_item.b;
+                current_row_null_fields_[i] = false;
+            }
+        }
+
+        perform_intercept();
+
+        break;
+    }
+    };
 }
 
-int
-initialize_acceptor(acceptor_t *acceptor, int port) {
-    acceptor->fd = create_listener_socket(port);
-    if (acceptor->fd == -1) {
-        return -1;
+class mysqlproxy {
+public:
+    enum { TICK_INTERVAL = 3 };
+
+public:
+    mysqlproxy(
+        const std::string &bind_host,
+        int bind_port,
+        const connection_settings &settings)
+    : bind_host_(bind_host),
+      bind_port_(bind_port),
+      settings_(settings),
+      io_service_(),
+      acceptor_(io_service_),
+      on_tick_timer_(io_service_)
+    {
+        namespace ip = boost::asio::ip;
+        ip::tcp::endpoint endpoint(ip::address::from_string(bind_host_), bind_port_);
+        acceptor_.open(endpoint.protocol());
+        acceptor_.set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
+        acceptor_.bind(endpoint);
+        acceptor_.listen();
+        start_accept();
     }
-    event_set(&acceptor->event, acceptor->fd, 
-                EV_READ | EV_PERSIST, acceptor_handler, (void *)acceptor);
-    event_add(&acceptor->event, NULL);
-    return acceptor->fd;
-}
+
+    void on_accept(const boost::system::error_code& error) {
+        if (error) {
+            return;
+        }
+
+        new_connection_->init();
+        new_connection_->set_shutdown_callback(
+                boost::bind(&mysqlproxy::on_connection_shutdown,
+                this, new_connection_));
+        current_connections_.insert(new_connection_);
+
+        start_accept();
+    }
+
+    void run() { io_service_.run(); }
+
+private:
+    void on_connection_shutdown(
+        const boost::shared_ptr<mysql_connection> &connection) 
+    { 
+        purge_queue_.push_back(connection); 
+        current_connections_.erase(connection);
+    }
+
+    void init_on_tick_interval() {
+        on_tick_timer_.expires_from_now(
+                boost::posix_time::seconds(TICK_INTERVAL));
+        on_tick_timer_.async_wait(boost::bind(&mysqlproxy::on_tick, this,
+            boost::asio::placeholders::error));
+    }
+
+    void on_tick(const boost::system::error_code& e) {
+        if (e != boost::asio::error::operation_aborted) {
+            std::vector<boost::shared_ptr<mysql_connection> >().swap(purge_queue_);
+            init_on_tick_interval();
+        }
+    }
+
+    void start_accept() {
+        new_connection_.reset(new mysql_connection(settings_, io_service_));
+        acceptor_.async_accept(new_connection_->client_socket(),
+            boost::bind(&mysqlproxy::on_accept, this,
+                boost::asio::placeholders::error));
+        init_on_tick_interval();
+    }
+
+private:
+    std::string bind_host_;
+    int bind_port_;
+
+    connection_settings settings_;
+
+    boost::asio::io_service io_service_;
+    boost::asio::ip::tcp::acceptor acceptor_;
+    boost::shared_ptr<mysql_connection> new_connection_;
+
+    std::vector<boost::shared_ptr<mysql_connection> > purge_queue_;
+    std::set<boost::shared_ptr<mysql_connection> > current_connections_;
+
+    boost::asio::basic_deadline_timer<boost::posix_time::ptime>
+        on_tick_timer_;
+};
+
+/* constants */
+const char *k_mysql_server = "127.0.0.1";
+const char *k_proxy_listen_address = "127.0.0.1";
+const int k_proxy_listen_port = 19999;
+const int k_mysql_server_port = 40000;
+
+const char *k_client_key = "certsdir/client-key.pem";
+const char *k_client_cert = "certsdir/client-cert.pem";
+const char *k_client_ca_file = "certsdir/ca-cert.pem";
+
+const char *k_server_key = "certsdir/server-key.pem";
+const char *k_server_cert = "certsdir/server-cert.pem";
+const char *k_server_ca_file = "certsdir/ca-cert.pem";
+
+const char *k_dh_file = "certsdir/dh512.pem";
 
 int main(int argc, char **argv) {
-    event_init();
+    myisamlib::MyIsamLib library;
 
-    acceptor_t acceptor;
-    if (initialize_acceptor(&acceptor, k_proxy_listen_port) < 0) {
-        return 1;
-    }
+    const char *testdir_path 
+        = "/home/akuts/stuff/experiments/mysql-5.1.65/build/datadir/test";
+    boost::filesystem::remove_all(library.tmpdirname() 
+            + "/support_files/datadir/test");
+    boost::filesystem::create_symlink(testdir_path,
+        library.tmpdirname() + "/support_files/datadir/test");
 
-    event_dispatch();
+    connection_settings settings;
+    settings.mysqlserver_address = k_mysql_server;
+    settings.mysqlserver_port = k_mysql_server_port;
+    settings.client_key = k_client_key;
+    settings.client_cert = k_client_cert;
+    settings.client_ca_file = k_client_ca_file;
+    settings.server_key = k_server_key;
+    settings.server_cert = k_server_cert;
+    settings.server_ca_file = k_server_ca_file;
+    settings.dh_file = k_dh_file;
+
+    mysqlproxy proxy(k_proxy_listen_address, k_proxy_listen_port, settings);
+    proxy.run();
+
     return 0;
 }
 
