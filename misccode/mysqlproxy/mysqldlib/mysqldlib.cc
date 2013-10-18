@@ -196,8 +196,6 @@ typedef fp_except fp_except_t;
 # endif
 #endif
 
-#include "mysqldlib.h"
-
 extern "C" my_bool reopen_fstreams(const char *filename,
                                    FILE *outstream, FILE *errstream);
 
@@ -1045,20 +1043,46 @@ void clean_up(bool print_message)
   if (cleanup_done++)
     return; /* purecov: inspected */
 
+  stop_handle_manager();
+  release_ddl_log();
+
   /*
     make sure that handlers finish up
     what they have that is dependent on the binlog
   */
+  ha_binlog_end(current_thd);
+
+  logger.cleanup_base();
+
+  injector::free_instance();
+  mysql_bin_log.cleanup();
+
+#ifdef HAVE_REPLICATION
+  if (use_slave_mask)
+    bitmap_free(&slave_error_mask);
+#endif
   my_tz_free();
   my_database_names_free();
+#ifndef NO_EMBEDDED_ACCESS_CHECKS
+  servers_free(1);
+  acl_free(1);
+  grant_free();
+#endif
   query_cache_destroy();
   table_cache_free();
+  /* table_def_free(); */
   hostname_cache_free();
   item_user_lock_free();
   lex_free();				/* Free some memory */
   item_create_cleanup();
   set_var_free();
   free_charsets();
+  if (!opt_noacl)
+  {
+#ifdef HAVE_DLOPEN
+    udf_free();
+#endif
+  }
   plugin_shutdown();
   ha_end();
   if (tc_log)
@@ -1082,16 +1106,35 @@ void clean_up(bool print_message)
   my_free(sys_var_general_log_path.value, MYF(MY_ALLOW_ZERO_PTR));
   my_free(sys_var_slow_log_path.value, MYF(MY_ALLOW_ZERO_PTR));
   free_tmpdir(&mysql_tmpdir_list);
+#ifdef HAVE_REPLICATION
+  my_free(slave_load_tmpdir,MYF(MY_ALLOW_ZERO_PTR));
+#endif
   x_free(opt_bin_logname);
   x_free(opt_relay_logname);
   x_free(opt_secure_file_priv);
   bitmap_free(&temp_pool);
   free_max_user_conn();
+#ifdef HAVE_REPLICATION
+  end_slave_list();
+#endif
   delete binlog_filter;
   delete rpl_filter;
+#ifndef EMBEDDED_LIBRARY
+  end_ssl();
+#endif
   vio_end();
+#ifdef USE_REGEX
+  my_regex_end();
+#endif
+#if defined(ENABLED_DEBUG_SYNC)
+  /* End the debug sync facility. See debug_sync.cc. */
+  debug_sync_end();
+#endif /* defined(ENABLED_DEBUG_SYNC) */
+
+#if !defined(EMBEDDED_LIBRARY)
   if (!opt_bootstrap)
     (void) my_delete(pidfile_name,MYF(0));	// This may not always exist
+#endif
   if (print_message && errmesg && server_start_time)
     sql_print_information(ER(ER_SHUTDOWN_COMPLETE),my_progname);
   thread_scheduler.end();
@@ -2694,6 +2737,7 @@ SHOW_VAR com_status_vars[]= {
   {"drop_view",            (char*) offsetof(STATUS_VAR, com_stat[(uint) SQLCOM_DROP_VIEW]), SHOW_LONG_STATUS},
   {"empty_query",          (char*) offsetof(STATUS_VAR, com_stat[(uint) SQLCOM_EMPTY_QUERY]), SHOW_LONG_STATUS},
   {"execute_sql",          (char*) offsetof(STATUS_VAR, com_stat[(uint) SQLCOM_EXECUTE]), SHOW_LONG_STATUS},
+  {"fieldinfo",            (char*) offsetof(STATUS_VAR, com_stat[(uint) SQLCOM_SHOW_FIELDINFO]), SHOW_LONG_STATUS},
   {"flush",                (char*) offsetof(STATUS_VAR, com_stat[(uint) SQLCOM_FLUSH]), SHOW_LONG_STATUS},
   {"grant",                (char*) offsetof(STATUS_VAR, com_stat[(uint) SQLCOM_GRANT]), SHOW_LONG_STATUS},
   {"ha_close",             (char*) offsetof(STATUS_VAR, com_stat[(uint) SQLCOM_HA_CLOSE]), SHOW_LONG_STATUS},
@@ -3352,555 +3396,63 @@ static void end_ssl()
 
 #endif /* EMBEDDED_LIBRARY */
 
-class MysqlTableFieldsInternalRepr {
-public:
-  MysqlTableFieldsInternalRepr(int fieldcount) 
-    : fields_(new String[fieldcount]), fieldcount_(fieldcount)
-  {}
-
-  ~MysqlTableFieldsInternalRepr() {
-    delete [] fields_;
-  }
-
-  void stringify_fields(TABLE *table, mysqldlib::MysqlFieldStr *repr_vec) {
-    for (int i= 0 ; i < fieldcount_; ++i) {
-      if (repr_vec[i].need_unpack) {
-        if (table->field[i]->is_null()) {
-          fields_[i].set((const char*)NULL, 0, fields_[i].charset());
-        } else {
-          table->field[i]->val_str(&fields_[i]);
-        }
-      }
-    }
-  }
-
-  void export_fields(mysqldlib::MysqlFieldStr *repr_vec) {
-    for (int i= 0 ; i < fieldcount_; ++i) {
-      if (repr_vec[i].need_unpack) {
-        repr_vec[i].ptr= (void*)fields_[i].ptr();
-        repr_vec[i].length= fields_[i].length();
-      }
-    }
-  }
-
-private:
-  String *fields_;
-  int fieldcount_;
-};
-
-static void test_lc_time_sz();
-static void create_shutdown_thread();
-
-namespace mysqldlib {
-
-MysqlTableImpl::MysqlTableImpl() {
-}
-
-MysqlTableImpl::~MysqlTableImpl() {
-  if (thd_) {
-    close_thread_tables(thd_);
-    my_afree(thd_->thread_stack);
-    delete fields_repr_;
-    delete [] fields_array_;
-    delete tables_;
-    delete thd_;
-  }
-}
-
-int MysqlTableImpl::init(const char *dbname, const char *tablename) {
-  if (!(thd_= new THD) || !(tables_= new TABLE_LIST())) {
+int simple_test_open_table() {
+  int i;
+  const char *sample;
+  uchar record[1024];
+  uchar *data_pointer;
+  THD *new_thd;
+  TABLE *table;
+  TABLE_LIST tables;
+  if (!(new_thd= new THD))
+  {
     sql_print_error("Can't allocate memory for THD-structure");
+    delete new_thd;
     return 1;
   }
 
-  thd_->thread_stack= (char*) my_malloc(1024*1024, MYF(0));
-  thd_->store_globals();
-  lex_start(thd_);
-  thd_->db= my_strdup(dbname, MYF(0));
-  thd_->db_length= strlen(dbname);
-  bzero((uchar*)tables_, sizeof(*tables_));
-  tables_->alias= tables_->table_name= my_strdup(tablename, MYF(0));
-  tables_->lock_type= TL_READ;
-  tables_->db= thd_->db;
+  const char *dbname= "test";
+  const char *tablename= "smile";
 
-  if (simple_open_n_lock_tables(thd_, tables_)) {
+  new_thd->thread_stack= (char*) &tables;
+  new_thd->store_globals();
+  lex_start(new_thd);
+  new_thd->db= my_strdup(dbname, MYF(0));
+  new_thd->db_length= strlen(dbname);
+  bzero((uchar*)&tables, sizeof(tables));
+  tables.alias= tables.table_name= (char*)tablename;
+  tables.lock_type= TL_READ;
+  tables.db= new_thd->db;
+
+  if (simple_open_n_lock_tables(new_thd, &tables)) {
     sql_print_error("Can't open table.");
     return 1;
   }
 
-  table_= tables_->table;
-  bitmap_set_all(table_->read_set);
-  bitmap_set_all(table_->write_set);
-
-  fields_array_= new MysqlFieldStr[(int)table_->s->fields];
-  memset(fields_array_, 0, (int)table_->s->fields * sizeof(MysqlFieldStr));
-  fields_repr_= new MysqlTableFieldsInternalRepr((int)table_->s->fields);
-
-  return 0;
-}
-
-void MysqlTableImpl::unpack_fields() {
-  fields_repr_->stringify_fields(table_, fields_array_);
-  fields_repr_->export_fields(fields_array_);
-}
-
-void *MysqlTableImpl::get_record() const {
-  return (void *)table_->record[0];
-}
-
-void MysqlTableImpl::get_field_names(char **names) {
-  for (int i = 0; i < fields_count(); ++i) {
-    strcpy(names[i], table_->s->field[i]->field_name);
-  }
-}
-
-MysqlFieldStr *MysqlTableImpl::get_fields() const {
-  return fields_array_;
-}
-
-int MysqlTableImpl::fields_count() const {
-  return (int)table_->s->fields;
-}
-
-static void stub_void_proc() {}
-static void stub_getter(const char *str, int length) {}
-
-void MysqlQueryImpl::set_default_callbacks() {
-    if (!cbs_.union_list_begin) cbs_.union_list_begin = &stub_void_proc;
-    if (!cbs_.union_list_end) cbs_.union_list_end = &stub_void_proc;
-
-    if (!cbs_.union_list_item_begin) cbs_.union_list_item_begin = &stub_void_proc;
-    if (!cbs_.union_list_item_end) cbs_.union_list_item_end = &stub_void_proc;
-
-    if (!cbs_.item_list_begin) cbs_.item_list_begin = &stub_void_proc;
-    if (!cbs_.item_list_add) cbs_.item_list_add = &stub_getter;
-    if (!cbs_.item_list_end) cbs_.item_list_end = &stub_void_proc;
-
-    if (!cbs_.from_list_begin) cbs_.from_list_begin = &stub_void_proc;
-    if (!cbs_.from_list_on_dual) cbs_.from_list_on_dual = &stub_void_proc;
-    if (!cbs_.from_list_item_begin) cbs_.from_list_item_begin = &stub_void_proc;
-    if (!cbs_.from_list_table_name) cbs_.from_list_table_name = &stub_getter;
-    if (!cbs_.from_list_item_end) cbs_.from_list_item_end = &stub_void_proc;
-    if (!cbs_.from_list_end) cbs_.from_list_end = &stub_void_proc;
-
-    if (!cbs_.where_list_begin) cbs_.where_list_begin = &stub_void_proc;
-    if (!cbs_.where_list_item) cbs_.where_list_item = &stub_getter;
-    if (!cbs_.where_list_end) cbs_.where_list_end = &stub_void_proc;
-
-    if (!cbs_.group_list_begin) cbs_.group_list_begin = &stub_void_proc;
-    if (!cbs_.group_list_item) cbs_.group_list_item = &stub_getter;
-    if (!cbs_.group_list_end) cbs_.group_list_end = &stub_void_proc;
-
-    if (!cbs_.having_list_begin) cbs_.having_list_begin = &stub_void_proc;
-    if (!cbs_.having_list_item) cbs_.having_list_item = &stub_getter;
-    if (!cbs_.having_list_end) cbs_.having_list_end = &stub_void_proc;
-
-    if (!cbs_.order_list_begin) cbs_.order_list_begin = &stub_void_proc;
-    if (!cbs_.order_list_item) cbs_.order_list_item = &stub_getter;
-    if (!cbs_.order_list_end) cbs_.order_list_end = &stub_void_proc;
-
-    if (!cbs_.limit_begin) cbs_.limit_begin = &stub_void_proc;
-    if (!cbs_.limit_str) cbs_.limit_str = &stub_getter;
-    if (!cbs_.limit_end) cbs_.limit_end = &stub_void_proc;
-}
-
-MysqlQueryImpl::MysqlQueryImpl()
-    : thd_(NULL)
-{
-    set_default_callbacks();
-}
-
-MysqlQueryImpl::MysqlQueryImpl(const query_parse_callbacks &cbs)
-    : thd_(NULL), cbs_(cbs)
-{
-    set_default_callbacks();
-}
-
-MysqlQueryImpl::~MysqlQueryImpl()
-{}
-
-int MysqlQueryImpl::init(const char *query) {
-  if (!(thd_= new THD)) {
-    sql_print_error("Can't allocate memory for THD-structure");
-    return 1;
-  }
-
-  thd_->thread_stack= (char*) my_malloc(1024*1024, MYF(0));
-  thd_->store_globals();
-  if (alloc_query(thd_, query, strlen(query))) {
-    sql_print_error("Can't allocate query");
-    return 1;
-  }
-
-  const char *end_of_stmt = NULL;
-  mysql_parse(thd_, thd_->query(), thd_->query_length(), &end_of_stmt);
-
-  lex_start(thd_);
-  mysql_reset_thd_for_next_command(thd_);
-
-  LEX *lex = thd_->lex;
-  LEX_STRING db_str= { (char *) "test", 4 };
-  mysql_change_db(thd_, &db_str, FALSE);
-
-  Parser_state parser_state;
-  bool err;
-  if (!(err= parser_state.init(thd_, thd_->query(), thd_->query_length())))
-  {
-    err= parse_sql(thd_, &parser_state, NULL);
-  }
-
-  select_result *result=lex->result;
-  if (!err && !thd_->is_error() && lex->sql_command == SQLCOM_SELECT) {
-    TABLE_LIST *all_tables = lex->query_tables;
-    if (!(result= new select_send()))
-      return 1;                               /* purecov: inspected */
-    thd_->send_explain_fields(result);
-    mysql_explain_union(thd_, &thd_->lex->unit, result);
-    if (1) {
-      char buff[1024];
-      String str(buff,(uint32) sizeof(buff), system_charset_info);
-      str.length(0);
-      lex->unit.print(&str, QT_ORDINARY);
-      str.append('\0');
-      thd_->query_printable_form.append(str.ptr(), str.length());
-    }
-    delete result;
-  }
-
-  return 0;
-}
-
-void MysqlQueryImpl::parse_unit_with_callbacks(SELECT_LEX_UNIT *unit) {
-    (*cbs_.union_list_begin)();
-    for (SELECT_LEX *sl = unit->first_select(); sl ; sl = sl->next_select()) {
-        (*cbs_.union_list_item_begin)();
-        parse_lex_with_callbacks(sl);
-        (*cbs_.union_list_item_end)();
-    }
-    (*cbs_.union_list_end)();
-}
-
-void MysqlQueryImpl::parse_table_list_element_with_callbacks(SELECT_LEX *sl,
-    TABLE_LIST *elem) 
-{
-    (*cbs_.from_list_item_begin)();
-    if (elem->nested_join) {
-        parse_join_list_with_callbacks(sl, &elem->nested_join->join_list);
-    } else {
-        String str;
-        if (elem->view_name.str) {
-            if (!(elem->belong_to_view &&
-                elem->belong_to_view->compact_view_format))
-            {
-                append_identifier(thd_, &str, 
-                        elem->view_db.str, elem->view_db.length);
-                str.append('.');
-            }
-            append_identifier(thd_, &str, 
-                    elem->view_name.str, elem->view_name.length);
-            (*cbs_.from_list_table_name)(str.ptr(), str.length());
-        } else if (elem->derived) {
-            parse_unit_with_callbacks(elem->derived);
-        } else {
-            String str;
-            if (!(elem->belong_to_view &&
-                  elem->belong_to_view->compact_view_format))
-            {
-                append_identifier(thd_, &str, elem->db, elem->db_length);
-                str.append('.');
-            }
-            if (elem->schema_table)
-            {
-                append_identifier(thd_, &str, elem->schema_table_name,
-                                strlen(elem->schema_table_name));
-            }
-            else
-            {
-                append_identifier(thd_, &str, 
-                        elem->table_name, elem->table_name_length);
-            }
-
-            (*cbs_.from_list_table_name)(str.ptr(), str.length());
-        }
-    }
-    (*cbs_.from_list_item_end)();
-}
-
-void MysqlQueryImpl::parse_join_list_with_callbacks(SELECT_LEX *sl,
-    List<TABLE_LIST> *tables) 
-{
-    List_iterator_fast<TABLE_LIST> ti(*tables);
-    for (int i = 0; i < tables->elements; ++i) {
-        TABLE_LIST *curr= ti++;
-        parse_table_list_element_with_callbacks(sl, curr);
-    }
-}
-
-void MysqlQueryImpl::parse_limit_with_callbacks(SELECT_LEX *sl) {
-    (*cbs_.limit_begin)();
-    if (sl->explicit_limit) {
-        String str;
-        if (sl->offset_limit) {
-            sl->offset_limit->print(&str, QT_ORDINARY);
-            str.append(',');
-        }
-        sl->select_limit->print(&str, QT_ORDINARY);
-        (*cbs_.limit_str)(str.ptr(), str.length());
-    }
-    (*cbs_.limit_end)();
-}
-
-void MysqlQueryImpl::parse_order_with_callbacks(SELECT_LEX *sl, ORDER *order) {
-    for (; order; order= order->next)
-    {
-        String str;
-        if (order->counter_used) {
-            char buffer[20];
-            size_t length= my_snprintf(buffer, 20, "%d", order->counter);
-            str.append(buffer, (uint) length);
-        }
-        else
-            (*order->item)->print(&str, QT_ORDINARY);
-        if (!order->asc)
-            str.append(STRING_WITH_LEN(" desc"));
-        (*cbs_.group_list_item)(str.ptr(), str.length());
-    }
-}
-
-void MysqlQueryImpl::parse_lex_with_callbacks(SELECT_LEX *sl) {
-    /* item list */
-    bool first= 1;
-    List_iterator_fast<Item> it(sl->item_list);
-    Item *item;
-
-    (*cbs_.item_list_begin)();
-    while ((item= it++)) {
-        String str;
-        if (sl->master_unit()->item && item->is_autogenerated_name)
-        {
-            item->print(&str, QT_ORDINARY);
-        }
-        else
-            item->print_item_w_name(&str, QT_ORDINARY);
-        (*cbs_.item_list_add)(str.ptr(), str.length());
-    }
-
-    (*cbs_.item_list_end)();
-
-    (*cbs_.from_list_begin)();
-    if (sl->table_list.elements) {
-        parse_join_list_with_callbacks(sl, &sl->top_join_list);
-    } else {
-        (*cbs_.from_list_on_dual)();
-    }
-    (*cbs_.from_list_end)();
-
-    /* where */
-    Item *cur_where= sl->where;
-    (*cbs_.where_list_begin)();
-    if (cur_where || sl->cond_value != Item::COND_UNDEF)
-    {
-        String str;
-        if (cur_where)
-            cur_where->print(&str, QT_ORDINARY);
-        else
-            str.append(sl->cond_value != Item::COND_FALSE ? "1" : "0");
-        (*cbs_.where_list_item)(str.ptr(), str.length());
-    }
-    (*cbs_.where_list_end)();
-
-    /* group by */
-    (*cbs_.group_list_begin)();
-    if (sl->group_list.elements) {
-        parse_order_with_callbacks(sl, sl->group_list.first);
-    }
-    (*cbs_.group_list_end)();
-
-    /* having part */
-    Item *cur_having= sl->having;
-    (*cbs_.having_list_begin)();
-    if (cur_having || sl->having_value != Item::COND_UNDEF) {
-        String str;
-        if (cur_having)
-            cur_having->print(&str, QT_ORDINARY);
-        else
-            str.append(sl->having_value != Item::COND_FALSE ? "1" : "0");
-        (*cbs_.having_list_item)(str.ptr(), str.length());
-    }
-    (*cbs_.having_list_end)();
-
-    (*cbs_.order_list_begin)();
-    /* order by */
-    if (sl->order_list.elements) {
-        parse_order_with_callbacks(sl, sl->order_list.first);
-    }
-    (*cbs_.order_list_end)();
-
-    /* limit clause */
-    parse_limit_with_callbacks(sl);
-}
-
-void MysqlQueryImpl::parse_with_callbacks() {
-    parse_unit_with_callbacks(&thd_->lex->unit);
-}
-
-const char *MysqlQueryImpl::to_string() {
-  return thd_->query_printable_form.ptr();
-}
-
-}
-
-int mysqldlib_initialize_library(struct MysqlConfig *config) {
-  const int argc= 5;
-  char *argv[argc+1] = {"stub", NULL};
-
-  for (int i = 1; i < argc; ++i) {
-    argv[i]= (char*)my_malloc(1024, MYF(0));
-  }
-
-  snprintf(argv[1], 1024, "--basedir=%s", config->basedir);
-  snprintf(argv[2], 1024, "--datadir=%s", config->datadir);
-  snprintf(argv[3], 1024, "--language=%s", config->language);
-  snprintf(argv[4], 1024, "--plugin_dir=%s", config->plugin_dir);
-  argv[5]= NULL;
-
-  MY_INIT(argv[0]);
-  /* DBUG_PUSH("d:t:o,/tmp/myisamlib.trace"); */
-
-  /*
-    Perform basic logger initialization logger. Should be called after
-    MY_INIT, as it initializes mutexes. Log tables are inited later.
-  */
-  /* logger.init_base(); */
-
-  if (init_common_variables(MYSQL_CONFIG_NAME,
-			    argc, argv, load_default_groups))
-    return 1;
-
-#if defined(__ia64__) || defined(__ia64)
-  /*
-    Peculiar things with ia64 platforms - it seems we only have half the
-    stack size in reality, so we have to double it here
-  */
-  pthread_attr_setstacksize(&connection_attrib,my_thread_stack_size*2);
-#else
-  pthread_attr_setstacksize(&connection_attrib,my_thread_stack_size);
-#endif
-#ifdef HAVE_PTHREAD_ATTR_GETSTACKSIZE
-  {
-    /* Retrieve used stack size;  Needed for checking stack overflows */
-    size_t stack_size= 0;
-    pthread_attr_getstacksize(&connection_attrib, &stack_size);
-#if defined(__ia64__) || defined(__ia64)
-    stack_size/= 2;
-#endif
-    /* We must check if stack_size = 0 as Solaris 2.9 can return 0 here */
-    if (stack_size && stack_size < my_thread_stack_size)
-    {
-      if (global_system_variables.log_warnings)
-	sql_print_warning("Asked for %lu thread stack, but got %ld",
-			  my_thread_stack_size, (long) stack_size);
-#if defined(__ia64__) || defined(__ia64)
-      my_thread_stack_size= stack_size*2;
-#else
-      my_thread_stack_size= stack_size;
-#endif
-    }
-  }
-#endif
-#ifdef __NETWARE__
-  /* Increasing stacksize of threads on NetWare */
-  pthread_attr_setstacksize(&connection_attrib, NW_THD_STACKSIZE);
-#endif
-
-  (void) thr_setconcurrency(concurrency);	// 10 by default
-
-  select_thread=pthread_self();
-  select_thread_in_use=1;
-
-#ifdef HAVE_LIBWRAP
-  libwrapName= my_progname+dirname_length(my_progname);
-  openlog(libwrapName, LOG_PID, LOG_AUTH);
-#endif
-
-#ifndef DBUG_OFF
-  test_lc_time_sz();
-#endif
-
-  /*
-    We have enough space for fiddling with the argv, continue
-  */
-  check_data_home(mysql_real_data_home);
-  if (my_setwd(mysql_real_data_home,MYF(MY_WME)) && !opt_help)
-    return 1;
-  mysql_data_home= mysql_data_home_buff;
-  mysql_data_home[0]=FN_CURLIB;		// all paths are relative from here
-  mysql_data_home[1]=0;
-  mysql_data_home_len= 2;
-
-  /*
-    We need to call each of these following functions to ensure that
-    all things are initialized so that unireg_abort() doesn't fail
-  */
-  if (table_cache_init() | table_def_init() | hostname_cache_init())
-    return 1;
-
-  query_cache_result_size_limit(query_cache_limit);
-  query_cache_set_min_res_unit(query_cache_min_res_unit);
-  query_cache_init();
-  query_cache_resize(query_cache_size);
-  randominit(&sql_rand,(ulong) server_start_time,(ulong) server_start_time/2);
-  setup_fpu();
-  init_thr_lock();
-
-  if (xid_cache_init())
-  {
-    sql_print_error("Out of memory");
-    return 1;
-  }
-
-  /* call ha_init_key_cache() on all key caches to init them */
-  process_key_caches(&ha_init_key_cache);
-
-  /* Allow storage engine to give real error messages */
-  if (ha_init_errors()) {
-    return 1;
-  }
-
-  { 
-    if (plugin_init(&defaults_argc, defaults_argv,
-		    (opt_noacl ? PLUGIN_INIT_SKIP_PLUGIN_TABLE : 0) |
-		    (opt_help ? PLUGIN_INIT_SKIP_INITIALIZATION : 0)))
-    {
-      sql_print_error("Failed to initialize plugins.");
-      return 1;
-    }
-    plugins_are_initialized= TRUE;  /* Don't separate from init function */
-  }
-
-  /*
-   Initialize my_str_malloc() and my_str_free()
-  */
-  my_str_malloc= &my_str_malloc_mysqld;
-  my_str_free= &my_str_free_mysqld;
-
-  /*
-    init signals & alarm
-    After this we can't quit by a simple unireg_abort
-  */
-  error_handler_hook= my_message_sql;
-
-  for (int i = 1; i < argc; ++i) {
-    my_free(argv[i], MYF(0));
+  /* sample= "\xf9\x6\x0\x0\x0\x5\x0\x0\x0"; */
+  sample= "\x6\x0\x0\x0\x5\x0\x0\x0";
+  memcpy(record, sample, sizeof(sample) - 1);
+
+  table= tables.table;
+  table->record[0]= table->record[1]= record;
+  fprintf(stderr, "got table-handler: <%p> <%p>\n", 
+          (void*)table, record);
+
+  String field_repr;
+  data_pointer= record;
+  bitmap_set_all(table->read_set);
+  for (i= 0; i < (int)table->s->fields; ++i) {
+    table->s->field[i]->table= table;
+    data_pointer= (uchar *)table->s->field[i]->unpack(
+        table->s->field[i]->ptr, (const uchar *)data_pointer);
+    fprintf(stderr, "%d: <%p> <%p> <%s>\n", 
+            i, table->s->field[i],
+            table->s->field[i]->ptr,
+            table->s->field[i]->val_str(&field_repr)->c_ptr());
   }
   return 0;
 }
 
-void mysqldlib_shutdown_library() {
-  clean_up(1);
-  clean_up_mutexes();
-  my_end(0);
-}
 
 #ifndef EMBEDDED_LIBRARY
 
@@ -4031,6 +3583,468 @@ static void test_lc_time_sz()
 #endif//DBUG_OFF
 
 
+int initialize_library(int argc, char **argv) {
+  DBUG_ENTER("initialize_library");
+
+  MY_INIT(argv[0]);
+
+  /* Set signal used to kill MySQL */
+#if defined(SIGUSR2)
+  thr_kill_signal= thd_lib_detected == THD_LIB_LT ? SIGINT : SIGUSR2;
+#else
+  thr_kill_signal= SIGINT;
+#endif
+
+  /*
+    Perform basic logger initialization logger. Should be called after
+    MY_INIT, as it initializes mutexes. Log tables are inited later.
+  */
+  logger.init_base();
+
+  if (init_common_variables(MYSQL_CONFIG_NAME,
+			    argc, argv, load_default_groups))
+    unireg_abort(1);				// Will do exit
+
+  init_signals();
+  if (!(opt_specialflag & SPECIAL_NO_PRIOR))
+    my_pthread_setprio(pthread_self(),CONNECT_PRIOR);
+#if defined(__ia64__) || defined(__ia64)
+  /*
+    Peculiar things with ia64 platforms - it seems we only have half the
+    stack size in reality, so we have to double it here
+  */
+  pthread_attr_setstacksize(&connection_attrib,my_thread_stack_size*2);
+#else
+  pthread_attr_setstacksize(&connection_attrib,my_thread_stack_size);
+#endif
+#ifdef HAVE_PTHREAD_ATTR_GETSTACKSIZE
+  {
+    /* Retrieve used stack size;  Needed for checking stack overflows */
+    size_t stack_size= 0;
+    pthread_attr_getstacksize(&connection_attrib, &stack_size);
+#if defined(__ia64__) || defined(__ia64)
+    stack_size/= 2;
+#endif
+    /* We must check if stack_size = 0 as Solaris 2.9 can return 0 here */
+    if (stack_size && stack_size < my_thread_stack_size)
+    {
+      if (global_system_variables.log_warnings)
+	sql_print_warning("Asked for %lu thread stack, but got %ld",
+			  my_thread_stack_size, (long) stack_size);
+#if defined(__ia64__) || defined(__ia64)
+      my_thread_stack_size= stack_size*2;
+#else
+      my_thread_stack_size= stack_size;
+#endif
+    }
+  }
+#endif
+#ifdef __NETWARE__
+  /* Increasing stacksize of threads on NetWare */
+  pthread_attr_setstacksize(&connection_attrib, NW_THD_STACKSIZE);
+#endif
+
+  (void) thr_setconcurrency(concurrency);	// 10 by default
+
+  select_thread=pthread_self();
+  select_thread_in_use=1;
+
+#ifdef HAVE_LIBWRAP
+  libwrapName= my_progname+dirname_length(my_progname);
+  openlog(libwrapName, LOG_PID, LOG_AUTH);
+#endif
+
+#ifndef DBUG_OFF
+  test_lc_time_sz();
+#endif
+
+  /*
+    We have enough space for fiddling with the argv, continue
+  */
+  check_data_home(mysql_real_data_home);
+  if (my_setwd(mysql_real_data_home,MYF(MY_WME)) && !opt_help)
+    unireg_abort(1);				/* purecov: inspected */
+  mysql_data_home= mysql_data_home_buff;
+  mysql_data_home[0]=FN_CURLIB;		// all paths are relative from here
+  mysql_data_home[1]=0;
+  mysql_data_home_len= 2;
+
+  if ((user_info= check_user(mysqld_user)))
+  {
+#if defined(HAVE_MLOCKALL) && defined(MCL_CURRENT)
+    if (locked_in_memory) // getuid() == 0 here
+      set_effective_user(user_info);
+    else
+#endif
+      set_user(mysqld_user, user_info);
+  }
+
+  if (opt_bin_log && !server_id)
+  {
+    server_id= !master_host ? 1 : 2;
+#ifdef EXTRA_DEBUG
+    switch (server_id) {
+    case 1:
+      sql_print_warning("\
+You have enabled the binary log, but you haven't set server-id to \
+a non-zero value: we force server id to 1; updates will be logged to the \
+binary log, but connections from slaves will not be accepted.");
+      break;
+    case 2:
+      sql_print_warning("\
+You should set server-id to a non-0 value if master_host is set; \
+we force server id to 2, but this MySQL server will not act as a slave.");
+      break;
+    }
+#endif
+  }
+
+  /*
+    We need to call each of these following functions to ensure that
+    all things are initialized so that unireg_abort() doesn't fail
+  */
+  if (table_cache_init() | table_def_init() | hostname_cache_init())
+    unireg_abort(1);
+
+  query_cache_result_size_limit(query_cache_limit);
+  query_cache_set_min_res_unit(query_cache_min_res_unit);
+  query_cache_init();
+  query_cache_resize(query_cache_size);
+  randominit(&sql_rand,(ulong) server_start_time,(ulong) server_start_time/2);
+  setup_fpu();
+  init_thr_lock();
+#ifdef HAVE_REPLICATION
+  init_slave_list();
+#endif
+
+  /* Setup logs */
+
+  /*
+    Enable old-fashioned error log, except when the user has requested
+    help information. Since the implementation of plugin server
+    variables the help output is now written much later.
+  */
+  if (opt_error_log && !opt_help)
+  {
+    if (!log_error_file_ptr[0])
+      fn_format(log_error_file, pidfile_name, mysql_data_home, ".err",
+                MY_REPLACE_EXT); /* replace '.<domain>' by '.err', bug#4997 */
+    else
+      fn_format(log_error_file, log_error_file_ptr, mysql_data_home, ".err",
+                MY_UNPACK_FILENAME | MY_SAFE_PATH);
+    if (!log_error_file[0])
+      opt_error_log= 1;				// Too long file name
+    else
+    {
+      my_bool res;
+#ifndef EMBEDDED_LIBRARY
+      res= reopen_fstreams(log_error_file, stdout, stderr);
+#else
+      res= reopen_fstreams(log_error_file, NULL, stderr);
+#endif
+
+      if (!res)
+        setbuf(stderr, NULL);
+    }
+  }
+
+  if (xid_cache_init())
+  {
+    sql_print_error("Out of memory");
+    unireg_abort(1);
+  }
+
+  /* need to configure logging before initializing storage engines */
+  if (opt_update_log)
+  {
+    /*
+      Update log is removed since 5.0. But we still accept the option.
+      The idea is if the user already uses the binlog and the update log,
+      we completely ignore any option/variable related to the update log, like
+      if the update log did not exist. But if the user uses only the update
+      log, then we translate everything into binlog for him (with warnings).
+      Implementation of the above :
+      - If mysqld is started with --log-update and --log-bin,
+      ignore --log-update (print a warning), push a warning when SQL_LOG_UPDATE
+      is used, and turn off --sql-bin-update-same.
+      This will completely ignore SQL_LOG_UPDATE
+      - If mysqld is started with --log-update only,
+      change it to --log-bin (with the filename passed to log-update,
+      plus '-bin') (print a warning), push a warning when SQL_LOG_UPDATE is
+      used, and turn on --sql-bin-update-same.
+      This will translate SQL_LOG_UPDATE to SQL_LOG_BIN.
+
+      Note that we tell the user that --sql-bin-update-same is deprecated and
+      does nothing, and we don't take into account if he used this option or
+      not; but internally we give this variable a value to have the behaviour
+      we want (i.e. have SQL_LOG_UPDATE influence SQL_LOG_BIN or not).
+      As sql-bin-update-same, log-update and log-bin cannot be changed by the
+      user after starting the server (they are not variables), the user will
+      not later interfere with the settings we do here.
+    */
+    if (opt_bin_log)
+    {
+      opt_sql_bin_update= 0;
+      sql_print_error("The update log is no longer supported by MySQL in \
+version 5.0 and above. It is replaced by the binary log.");
+    }
+    else
+    {
+      opt_sql_bin_update= 1;
+      opt_bin_log= 1;
+      if (opt_update_logname)
+      {
+        /* as opt_bin_log==0, no need to free opt_bin_logname */
+        if (!(opt_bin_logname= my_strdup(opt_update_logname, MYF(MY_WME))))
+        {
+          sql_print_error("Out of memory");
+          return EXIT_OUT_OF_MEMORY;
+        }
+        sql_print_error("The update log is no longer supported by MySQL in \
+version 5.0 and above. It is replaced by the binary log. Now starting MySQL \
+with --log-bin='%s' instead.",opt_bin_logname);
+      }
+      else
+        sql_print_error("The update log is no longer supported by MySQL in \
+version 5.0 and above. It is replaced by the binary log. Now starting MySQL \
+with --log-bin instead.");
+    }
+  }
+  if (opt_log_slave_updates && !opt_bin_log)
+  {
+    sql_print_error("You need to use --log-bin to make "
+                    "--log-slave-updates work.");
+    unireg_abort(1);
+  }
+  if (!opt_bin_log)
+  {
+    if (opt_binlog_format_id != BINLOG_FORMAT_UNSPEC)
+    {
+      sql_print_error("You need to use --log-bin to make "
+                      "--binlog-format work.");
+      unireg_abort(1);
+    }
+    else
+    {
+      global_system_variables.binlog_format= BINLOG_FORMAT_STMT;
+    }
+  }
+  else
+    if (opt_binlog_format_id == BINLOG_FORMAT_UNSPEC)
+      global_system_variables.binlog_format= BINLOG_FORMAT_STMT;
+    else
+    { 
+      DBUG_ASSERT(global_system_variables.binlog_format != BINLOG_FORMAT_UNSPEC);
+    }
+
+  /* Check that we have not let the format to unspecified at this point */
+  DBUG_ASSERT((uint)global_system_variables.binlog_format <=
+              array_elements(binlog_format_names)-1);
+
+#ifdef HAVE_REPLICATION
+  if (opt_log_slave_updates && replicate_same_server_id)
+  {
+    sql_print_error("\
+using --replicate-same-server-id in conjunction with \
+--log-slave-updates is impossible, it would lead to infinite loops in this \
+server.");
+    unireg_abort(1);
+  }
+#endif
+
+  if (opt_bin_log)
+  {
+    /* Reports an error and aborts, if the --log-bin's path 
+       is a directory.*/
+    if (opt_bin_logname && 
+        opt_bin_logname[strlen(opt_bin_logname) - 1] == FN_LIBCHAR)
+    {
+      sql_print_error("Path '%s' is a directory name, please specify \
+a file name for --log-bin option", opt_bin_logname);
+      unireg_abort(1);
+    }
+
+    /* Reports an error and aborts, if the --log-bin-index's path 
+       is a directory.*/
+    if (opt_binlog_index_name && 
+        opt_binlog_index_name[strlen(opt_binlog_index_name) - 1] 
+        == FN_LIBCHAR)
+    {
+      sql_print_error("Path '%s' is a directory name, please specify \
+a file name for --log-bin-index option", opt_binlog_index_name);
+      unireg_abort(1);
+    }
+
+    char buf[FN_REFLEN];
+    const char *ln;
+    ln= mysql_bin_log.generate_name(opt_bin_logname, "-bin", 1, buf);
+    if (!opt_bin_logname && !opt_binlog_index_name)
+    {
+      /*
+        User didn't give us info to name the binlog index file.
+        Picking `hostname`-bin.index like did in 4.x, causes replication to
+        fail if the hostname is changed later. So, we would like to instead
+        require a name. But as we don't want to break many existing setups, we
+        only give warning, not error.
+      */
+      sql_print_warning("No argument was provided to --log-bin, and "
+                        "--log-bin-index was not used; so replication "
+                        "may break when this MySQL server acts as a "
+                        "master and has his hostname changed!! Please "
+                        "use '--log-bin=%s' to avoid this problem.", ln);
+    }
+    if (ln == buf)
+    {
+      my_free(opt_bin_logname, MYF(MY_ALLOW_ZERO_PTR));
+      opt_bin_logname=my_strdup(buf, MYF(0));
+    }
+    if (mysql_bin_log.open_index_file(opt_binlog_index_name, ln, TRUE))
+    {
+      unireg_abort(1);
+    }
+  }
+
+  /* call ha_init_key_cache() on all key caches to init them */
+  process_key_caches(&ha_init_key_cache);
+
+  /* Allow storage engine to give real error messages */
+  if (ha_init_errors())
+    DBUG_RETURN(1);
+
+  { 
+    if (plugin_init(&defaults_argc, defaults_argv,
+		    (opt_noacl ? PLUGIN_INIT_SKIP_PLUGIN_TABLE : 0) |
+		    (opt_help ? PLUGIN_INIT_SKIP_INITIALIZATION : 0)))
+    {
+      sql_print_error("Failed to initialize plugins.");
+      unireg_abort(1);
+    }
+    plugins_are_initialized= TRUE;  /* Don't separate from init function */
+  }
+
+  init_ssl();
+  network_init();
+
+  /*
+   Initialize my_str_malloc() and my_str_free()
+  */
+  my_str_malloc= &my_str_malloc_mysqld;
+  my_str_free= &my_str_free_mysqld;
+
+  /*
+    init signals & alarm
+    After this we can't quit by a simple unireg_abort
+  */
+  error_handler_hook= my_message_sql;
+  start_signal_handler();				// Creates pidfile
+
+  if (mysql_rm_tmp_tables() || acl_init(opt_noacl) ||
+      my_tz_init((THD *)0, default_tz_name, opt_bootstrap))
+  {
+    abort_loop=1;
+    select_thread_in_use=0;
+#ifndef __NETWARE__
+    (void) pthread_kill(signal_thread, MYSQL_KILL_SIGNAL);
+#endif /* __NETWARE__ */
+
+    if (!opt_bootstrap)
+      (void) my_delete(pidfile_name,MYF(MY_WME));	// Not needed anymore
+
+    if (unix_sock != INVALID_SOCKET)
+      unlink(mysqld_unix_port);
+    exit(1);
+  }
+  if (!opt_noacl)
+    (void) grant_init();
+
+  if (!opt_bootstrap)
+    servers_init(0);
+
+  if (!opt_noacl)
+  {
+#ifdef HAVE_DLOPEN
+    udf_init();
+#endif
+  }
+
+  init_status_vars();
+  if (opt_bootstrap) /* If running with bootstrap, do not start replication. */
+    opt_skip_slave_start= 1;
+  /*
+    init_slave() must be called after the thread keys are created.
+    Some parts of the code (e.g. SHOW STATUS LIKE 'slave_running' and other
+    places) assume that active_mi != 0, so let's fail if it's 0 (out of
+    memory); a message has already been printed.
+  */
+  if (init_slave() && !active_mi)
+  {
+    unireg_abort(1);
+  }
+
+  execute_ddl_log_recovery();
+
+  if (Events::init(opt_noacl || opt_bootstrap))
+    unireg_abort(1);
+
+  if (opt_bootstrap)
+  {
+    select_thread_in_use= 0;                    // Allow 'kill' to work
+    bootstrap(stdin);
+    unireg_abort(bootstrap_error ? 1 : 0);
+  }
+  if (opt_init_file)
+  {
+    if (read_init_file(opt_init_file))
+      unireg_abort(1);
+  }
+
+  create_shutdown_thread();
+  start_handle_manager();
+
+  sql_print_information(ER(ER_STARTUP),my_progname,server_version,
+                        ((unix_sock == INVALID_SOCKET) ? (char*) ""
+                                                       : mysqld_unix_port),
+                         mysqld_port,
+                         MYSQL_COMPILATION_COMMENT);
+#if defined(_WIN32) && !defined(EMBEDDED_LIBRARY)
+  Service.SetRunning();
+#endif
+
+  /* Signal threads waiting for server to be started */
+  pthread_mutex_lock(&LOCK_server_started);
+  mysqld_server_started= 1;
+  pthread_cond_signal(&COND_server_started);
+  pthread_mutex_unlock(&LOCK_server_started);
+
+  DBUG_RETURN(0);
+}
+
+void shutdown_library() {
+  clean_up(1);
+  wait_for_signal_thread_to_end();
+  clean_up_mutexes();
+  my_end(opt_endinfo ? MY_CHECK_ERROR | MY_GIVE_INFO : 0);
+}
+
+int xmain(int argc, char **argv)
+{
+  int ret;
+
+  if ((ret=initialize_library(argc, argv))) {
+    return ret;
+  }
+
+  if (simple_test_open_table())
+    exit(1);
+
+  exit(0);
+
+  kill_server((void *)SIGTERM);
+  shutdown_library();
+
+  exit(0);
+  return(0);					/* purecov: deadcode */
+}
 
 #endif /* EMBEDDED_LIBRARY */
 
@@ -4243,7 +4257,7 @@ int main(int argc, char **argv)
   create MySQL privilege tables without having to start a full MySQL server.
 */
 
-static void mybootstrap(FILE *file)
+static void bootstrap(FILE *file)
 {
   DBUG_ENTER("bootstrap");
 
@@ -4289,7 +4303,7 @@ static bool read_init_file(char *file_name)
   DBUG_PRINT("enter",("name: %s",file_name));
   if (!(file=my_fopen(file_name,O_RDONLY,MYF(MY_WME))))
     DBUG_RETURN(TRUE);
-  mybootstrap(file);
+  bootstrap(file);
   (void) my_fclose(file,MYF(MY_WME));
   DBUG_RETURN(FALSE);
 }
@@ -8680,7 +8694,7 @@ ulong ndb_extra_logging;
 *****************************************************************************/
 
 #ifdef HAVE_EXPLICIT_TEMPLATE_INSTANTIATION
-/* Used templates 
+/* Used templates */
 template class I_List<THD>;
 template class I_List_iterator<THD>;
 template class I_List<i_string>;
@@ -8688,5 +8702,4 @@ template class I_List<i_string_pair>;
 template class I_List<NAMED_LIST>;
 template class I_List<Statement>;
 template class I_List_iterator<Statement>;
-*/
 #endif
