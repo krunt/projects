@@ -8,6 +8,7 @@ file(GLOB_RECURSE TORRENT_SOURCES src/*.cc)
 include_directories(./)
 add_library(btorrent ${TORRENT_SOURCES})
 
+add_subdirectory(support)
 add_subdirectory(tests)
 
 enable_testing()
