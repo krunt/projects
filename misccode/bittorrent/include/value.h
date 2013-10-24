@@ -1,6 +1,11 @@
+#ifndef VALUE_DEF_
+#define VALUE_DEF_
+
 #include <include/types.h>
 
+#include <string>
 #include <vector>
+#include <map>
 
 namespace btorrent {
 
@@ -9,8 +14,8 @@ class bad_value_cast_exception: public std::exception {
 
 class value_t {
 public:
-    typedef std::map<std::string, value> dictionary_type;
-    typedef std::vector<value> list_type;
+    typedef std::map<std::string, value_t> dictionary_type;
+    typedef std::vector<value_t> list_type;
     typedef std::string string_type;
     typedef size_type integer_type;
 
@@ -20,32 +25,56 @@ public:
     value_t(const dictionary_type &d) : m_current_type(t_dictionary), m_dict(d) {}
     value_t(const list_type &lst) : m_current_type(t_list), m_list(lst) {}
     value_t(const string_type &str) : m_current_type(t_string), m_string(str) {}
-    value_t(const integer_type &i) : m_current_type(t_string), m_integer(i) {}
+    value_t(const integer_type &i) : m_current_type(t_integer), m_int(i) {}
 
-    dictionary_type &to_dict() const {
+    type_t get_type() const {
+        return m_current_type;
+    }
+
+    const dictionary_type &to_dict() const {
         check_conversion(t_dictionary);
         return m_dict;
     }
 
-    list_type &to_list() const {
+    const list_type &to_list() const {
         check_conversion(t_list);
         return m_list;
     }
 
-    string_type &to_string() const {
+    const string_type &to_string() const {
         check_conversion(t_string);
         return m_string;
     }
 
-    integer_type &to_int() const {
+    const integer_type &to_int() const {
+        check_conversion(t_integer);
+        return m_int;
+    }
+
+    dictionary_type &to_dict() {
+        check_conversion(t_dictionary);
+        return m_dict;
+    }
+
+    list_type &to_list() {
+        check_conversion(t_list);
+        return m_list;
+    }
+
+    string_type &to_string() {
+        check_conversion(t_string);
+        return m_string;
+    }
+
+    integer_type &to_int() {
         check_conversion(t_integer);
         return m_int;
     }
 
 private:
-    void check_conversion(type_t destination_type) {
+    void check_conversion(type_t destination_type) const {
         if (destination_type != m_current_type)
-            throw detail::bad_value_cast_exception();
+            throw bad_value_cast_exception();
     }
 
     type_t m_current_type;
@@ -57,3 +86,5 @@ private:
 };
 
 }
+
+#endif //VALUE_DEF_

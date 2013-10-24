@@ -1,12 +1,11 @@
 cmake_minimum_required(VERSION 2.8)
 
-set (TEST_SOURCES test_values.cc)
+file(GLOB_RECURSE TEST_SOURCES *.cc)
 find_package(Boost COMPONENTS unit_test_framework REQUIRED)
 include_directories(../)
 
-set(TEST test_${PROJECT})
-add_executable(${TEST} ${TEST_SOURCES})
-target_link_libraries(${TEST} ${Boost_LIBRARIES})
+add_definitions(-DBOOST_TEST_DYN_LINK)
 
-enable_testing()
-add_test(${TEST} ${TEST})
+set(TEST run_tests)
+add_executable(${TEST} ${TEST_SOURCES})
+target_link_libraries(${TEST} btorrent ${Boost_LIBRARIES})
