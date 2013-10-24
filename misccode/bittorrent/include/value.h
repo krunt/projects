@@ -7,6 +7,8 @@
 #include <vector>
 #include <map>
 
+#include <stdexcept>
+
 namespace btorrent {
 
 class bad_value_cast_exception: public std::exception {
@@ -29,6 +31,26 @@ public:
 
     type_t get_type() const {
         return m_current_type;
+    }
+
+    const value_t &operator[](int index) const {
+        return to_list()[index];
+    }
+
+    value_t &operator[](int index) {
+        return to_list()[index];
+    }
+
+    const value_t &operator[](const std::string &key) const {
+        dictionary_type::const_iterator it;
+        if ((it = to_dict().find(key)) == to_dict().end()) {
+            throw std::runtime_error("no key found");
+        }
+        return (*it).second;
+    }
+
+    value_t &operator[](const std::string &key) {
+        return to_dict()[key];
     }
 
     const dictionary_type &to_dict() const {
