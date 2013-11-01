@@ -33,6 +33,13 @@ public:
         return m_current_type;
     }
 
+    bool exists(const std::string &key) const {
+        if (to_dict().find(key) == to_dict().end()) {
+            return false;
+        }
+        return true;
+    }
+
     const value_t &operator[](int index) const {
         return to_list()[index];
     }

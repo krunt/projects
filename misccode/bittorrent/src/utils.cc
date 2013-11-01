@@ -1,6 +1,9 @@
 #include <include/value.h>
 #include <boost/lexical_cast.hpp>
 
+#include <fstream>
+#include <iterator>
+
 namespace btorrent {
 
 namespace detail {
@@ -51,6 +54,16 @@ static std::string serialize_to_json(const value_t &v, int indent) {
 
 std::string serialize_to_json(const value_t &v) {
     return detail::serialize_to_json(v, 0);
+}
+
+std::string bloat_file(const std::string &full_path) {
+    std::string contents;
+    std::fstream fs(full_path.c_str(), std::ios_base::in);
+
+    fs.unsetf(std::ios::skipws);
+    std::copy(std::istream_iterator<char>(fs), std::istream_iterator<char>(),
+        std::back_inserter(contents));
+    return contents;
 }
 
 }
