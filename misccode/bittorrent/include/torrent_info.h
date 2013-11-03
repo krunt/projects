@@ -1,6 +1,8 @@
 #ifndef TORRENT_INFO_DEF_
 #define TORRENT_INFO_DEF_
 
+#include <include/common.h>
+
 namespace btorrent {
 
 struct torrent_info_t {

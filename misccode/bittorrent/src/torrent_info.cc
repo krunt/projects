@@ -1,7 +1,5 @@
-#include <include/torrent_info.h>
-#include <include/value.h>
-
-#include <string>
+#include <include/common.h>
+#include <iostream>
 
 namespace btorrent {
 
@@ -22,10 +20,10 @@ torrent_info_t construct_torrent_info(const std::string &filename) {
         const std::string info_str = bencode(v["info"]);
         r.m_info_hash.init();
         r.m_info_hash.update(info_str);
-        r.r.m_info_hash.finalize();
+        r.m_info_hash.finalize();
     }
 
-    r.m_piece_length = v["info"]["piece_length"].to_int();
+    r.m_piece_length = v["info"]["piece length"].to_int();
     const value_t::string_type &pieces = v["info"]["pieces"].to_string();
     for (int i = 0; i < pieces.size() / 20; ++i) {
         r.m_piece_hashes.push_back(sha1_hash_t(

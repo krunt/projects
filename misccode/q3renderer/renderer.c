@@ -303,6 +303,26 @@ typedef enum {
 	SF_MAX = 0x7fffffff			// ensures that sizeof( surfaceType_t ) == sizeof( int )
 } surfaceType_t;
 
+typedef struct drawSurf_s {
+	unsigned			sort;			// bit combination for fast compares
+	surfaceType_t		*surface;		// any of surface*_t
+} drawSurf_t;
+
+typedef struct dlight_s {
+	vec3_t	origin;
+	vec3_t	color;				// range from 0.0 to 1.0, should be color normalized
+	float	radius;
+
+	vec3_t	transformed;		// origin in local coordinate system
+	int		additive;			// texture detail is lost tho when the lightmap is dark
+} dlight_t;
+
+#define	REFENTITYNUM_BITS	10		// can't be increased without changing drawsurf bit packing
+#define	REFENTITYNUM_MASK	((1<<REFENTITYNUM_BITS) - 1)
+#define	MAX_REFENTITIES		((1<<REFENTITYNUM_BITS) - 1)
+#define	REFENTITYNUM_WORLD	((1<<REFENTITYNUM_BITS) - 1)
+
+
 typedef struct msurface_s {
 	int					viewCount;		// if == tr.viewCount, already added
 	struct shader_s		*shader;
@@ -709,6 +729,53 @@ typedef struct {
 	int			ofsEnd;				// end of file
 } md3Header_t;
 
+typedef struct {
+	int		ident;				// 
+
+	char	name[MAX_QPATH];	// polyset name
+
+	int		flags;
+	int		numFrames;			// all surfaces in a model should have the same
+
+	int		numShaders;			// all surfaces in a model should have the same
+	int		numVerts;
+
+	int		numTriangles;
+	int		ofsTriangles;
+
+	int		ofsShaders;			// offset from start of md3Surface_t
+	int		ofsSt;				// texture coords are common for all frames
+	int		ofsXyzNormals;		// numVerts * numFrames
+
+	int		ofsEnd;				// next surface follows
+} md3Surface_t;
+
+typedef struct {
+	int			ident;
+
+	char		name[MAX_QPATH];	// polyset name
+	char		shader[MAX_QPATH];
+	int			shaderIndex;		// for in-game use
+
+	int			ofsHeader;			// this will be a negative number
+
+	int			numVerts;
+	int			ofsVerts;
+
+	int			numTriangles;
+	int			ofsTriangles;
+
+	// Bone references are a set of ints representing all the bones
+	// present in any vertex weights for this surface.  This is
+	// needed because a model may have surfaces that need to be
+	// drawn at different sort times, and we don't want to have
+	// to re-interpolate all the bones for each surface.
+	int			numBoneReferences;
+	int			ofsBoneReferences;
+
+	int			ofsEnd;				// next surface follows
+} md4Surface_t;
+
 #define MD3_MAX_LODS		3
 typedef struct model_s {
 	char		name[MAX_QPATH];
@@ -722,6 +789,19 @@ typedef struct model_s {
 
 	int			 numLods;
 } model_t;
+
+typedef struct {
+	int			originalBrushNumber;
+	vec3_t		bounds[2];
+
+	unsigned	colorInt;				// in packed byte format
+	float		tcScale;				// texture coordinate vector scales
+	fogParms_t	parms;
+
+	// for clipping distance in fog when outside
+	qboolean	hasSurface;
+	float		surface[4];
+} fog_t;
 
 
 typedef struct {
@@ -744,6 +824,9 @@ typedef struct {
 
 	int			nummarksurfaces;
 	msurface_t	**marksurfaces;
+
+	int			numfogs;
+	fog_t		*fogs;
 
 	vec3_t		lightGridOrigin;
 	vec3_t		lightGridSize;
@@ -768,6 +851,79 @@ typedef struct {
 	float		modelMatrix[16];
 } orientationr_t;
 
+typedef enum {
+	STEREO_CENTER,
+	STEREO_LEFT,
+	STEREO_RIGHT
+} stereoFrame_t;
+
+typedef enum {
+	RT_MODEL,
+	RT_POLY,
+	RT_SPRITE,
+	RT_BEAM,
+	RT_RAIL_CORE,
+	RT_RAIL_RINGS,
+	RT_LIGHTNING,
+	RT_PORTALSURFACE,		// doesn't draw anything, just info for portals
+
+	RT_MAX_REF_ENTITY_TYPE
+} refEntityType_t;
+
+typedef int		qhandle_t;
+typedef struct {
+	refEntityType_t	reType;
+	int			renderfx;
+
+	qhandle_t	hModel;				// opaque type outside refresh
+
+	// most recent data
+	vec3_t		lightingOrigin;		// so multi-part models can be lit identically (RF_LIGHTING_ORIGIN)
+	float		shadowPlane;		// projection shadows go here, stencils go slightly lower
+
+	vec3_t		axis[3];			// rotation vectors
+	qboolean	nonNormalizedAxes;	// axis are not normalized, i.e. they have scale
+	float		origin[3];			// also used as MODEL_BEAM's "from"
+	int			frame;				// also used as MODEL_BEAM's diameter
+
+	// previous data for frame interpolation
+	float		oldorigin[3];		// also used as MODEL_BEAM's "to"
+	int			oldframe;
+	float		backlerp;			// 0.0 = current, 1.0 = old
+
+	// texturing
+	int			skinNum;			// inline skin index
+	qhandle_t	customSkin;			// NULL for default skin
+	qhandle_t	customShader;		// use one image for the entire thing
+
+	// misc
+	byte		shaderRGBA[4];		// colors used by rgbgen entity shaders
+	float		shaderTexCoord[2];	// texture coordinates used by tcMod entity modifiers
+	float		shaderTime;			// subtracted from refdef time to control effect start times
+
+	// extra sprite information
+	float		radius;
+	float		rotation;
+} refEntity_t;
+
+typedef struct {
+	refEntity_t	e;
+
+	float		axisLength;		// compensate for non-normalized axis
+
+	qboolean	needDlights;	// true for bmodels that touch a dlight
+	qboolean	lightingCalculated;
+	vec3_t		lightDir;		// normalized direction towards light
+	vec3_t		ambientLight;	// color normalized to 0-255
+	int			ambientLightInt;	// 32 bit rgba packed
+	vec3_t		directedLight;
+} trRefEntity_t;
+
+#define	SHADER_MAX_VERTEXES	1000
+#define	SHADER_MAX_INDEXES	(6*SHADER_MAX_VERTEXES)
+#define	MAX_MAP_AREA_BYTES		32		// bit vector of area visibility
+#define	MAX_RENDER_STRINGS			8
+#define	MAX_RENDER_STRING_LENGTH	32
 typedef struct {
 	int			x, y, width, height;
 	float		fov_x, fov_y;
@@ -804,6 +960,44 @@ typedef struct {
 } trRefdef_t;
 
 typedef struct {
+	orientationr_t	or;
+	orientationr_t	world;
+	vec3_t		pvsOrigin;			// may be different than or.origin for portals
+	qboolean	isPortal;			// true if this view is through a portal
+	qboolean	isMirror;			// the portal is a mirror, invert the face culling
+	int			frameSceneNum;		// copied from tr.frameSceneNum
+	int			frameCount;			// copied from tr.frameCount
+	cplane_t	portalPlane;		// clip anything behind this if mirroring
+	int			viewportX, viewportY, viewportWidth, viewportHeight;
+	float		fovX, fovY;
+	float		projectionMatrix[16];
+	cplane_t	frustum[4];
+	vec3_t		visBounds[2];
+	float		zFar;
+	stereoFrame_t	stereoFrame;
+} viewParms_t;
+
+typedef struct {
+	int		c_sphere_cull_patch_in, c_sphere_cull_patch_clip, c_sphere_cull_patch_out;
+	int		c_box_cull_patch_in, c_box_cull_patch_clip, c_box_cull_patch_out;
+	int		c_sphere_cull_md3_in, c_sphere_cull_md3_clip, c_sphere_cull_md3_out;
+	int		c_box_cull_md3_in, c_box_cull_md3_clip, c_box_cull_md3_out;
+
+	int		c_leafs;
+	int		c_dlightSurfaces;
+	int		c_dlightSurfacesCulled;
+} frontEndCounters_t;
+
+#define SHADERNUM_BITS	14
+#define MAX_SHADERS		(1<<SHADERNUM_BITS)
+#define	MAX_DRAWIMAGES			2048
+#define	MAX_MOD_KNOWN	1024
+#define	MAX_DRAWSURFS			0x10000
+#define	DRAWSURF_MASK			(MAX_DRAWSURFS-1)
+#define	QSORT_FOGNUM_SHIFT	2
+#define	QSORT_REFENTITYNUM_SHIFT	7
+#define	QSORT_SHADERNUM_SHIFT	(QSORT_REFENTITYNUM_SHIFT+REFENTITYNUM_BITS)
+typedef struct {
 	int						visCount;		// incremented every time a new vis cluster is entered
 	int						frameCount;		// incremented every frame
 	int						sceneCount;		// incremented every scene
@@ -835,15 +1029,20 @@ typedef struct {
 	int						numLightmaps;
 	image_t					**lightmaps;
 
+	trRefEntity_t			*currentEntity;
+	trRefEntity_t			worldEntity;		// point currentEntity at this when rendering world
+
 	int						currentEntityNum;
 	int						shiftedEntityNum;	// currentEntityNum << QSORT_REFENTITYNUM_SHIFT
 	model_t					*currentModel;
 
+	orientationr_t			or;					// for current entity
+
+	viewParms_t				viewParms;
+
 	float					identityLight;		// 1.0 / ( 1 << overbrightBits )
 	int						identityLightByte;	// identityLight * 255
 	int						overbrightBits;		// r_overbrightBits->integer, but set to 0 if no hw gamma
-
-	orientationr_t			or;					// for current entity
 
 	trRefdef_t				refdef;
 
@@ -858,21 +1057,20 @@ typedef struct {
 	// put large tables at the end, so most elements will be
 	// within the +/32K indexed range on risc processors
 	//
-#define	MAX_MOD_KNOWN	1024
 	model_t					*models[MAX_MOD_KNOWN];
 	int						numModels;
-#define	MAX_DRAWIMAGES			2048
 	int						numImages;
 	image_t					*images[MAX_DRAWIMAGES];
 
 	// shader indexes from other modules will be looked up in tr.shaders[]
 	// shader indexes from drawsurfs will be looked up in sortedShaders[]
 	// lower indexed sortedShaders must be rendered first (opaque surfaces before translucent)
-#define SHADERNUM_BITS	14
-#define MAX_SHADERS		(1<<SHADERNUM_BITS)
 	int						numShaders;
 	shader_t				*shaders[MAX_SHADERS];
 	shader_t				*sortedShaders[MAX_SHADERS];
+
+
+	frontEndCounters_t		pc;
 
 #define	MAX_DRAWIMAGES			2048
 #define	MAX_SKINS				1024
@@ -1023,6 +1221,35 @@ typedef struct {
 	qboolean				smpActive;		// UNUSED, present for compatibility
 } glconfig_t;
 
+typedef struct {
+	int			planeNum;			// positive plane side faces out of the leaf
+	int			shaderNum;
+} dbrushside_t;
+
+typedef struct {
+	int			firstSide;
+	int			numSides;
+	int			shaderNum;		// the shader that determines the contents flags
+} dbrush_t;
+
+typedef struct {
+	char		shader[MAX_QPATH];
+	int			brushNum;
+	int			visibleSide;	// the brush side that ray tests need to clip against (-1 == none)
+} dfog_t;
+
+
+#define QALIGN(x) 
+
+typedef unsigned int glIndex_t;
+typedef byte color4ub_t[4];
+
+typedef struct stageVars
+{
+	color4ub_t	colors[SHADER_MAX_VERTEXES];
+	vec2_t		texcoords[NUM_TEXTURE_BUNDLES][SHADER_MAX_VERTEXES];
+} stageVars_t;
+
 typedef struct shaderCommands_s 
 {
 	glIndex_t	indexes[SHADER_MAX_INDEXES] QALIGN(16);
@@ -1058,6 +1285,9 @@ static char *fileBase;
 static glconfig_t glConfig;
 static unsigned char s_gammatable[256];
 static byte			 s_intensitytable[256];
+static shaderCommands_t	tess;
+static qboolean	setArraysOnce;
+static vec3_t	vec3_origin = {0,0,0};
 
 shader_t *R_FindShader( const char *name, int lightmapIndex, qboolean mipRawImage );
 static shader_t *ShaderForShaderNum( int shaderNum, int lightmapNum ) {
@@ -3180,26 +3410,18 @@ void RB_StageIteratorGeneric( void )
 	RB_DeformTessGeometry();
 
 	//
-	// log this call
-	//
-	if ( r_logFile->integer ) 
-	{
-		// don't just call LogComment, or we will get
-		// a call to va() every frame!
-		GLimp_LogComment( va("--- RB_StageIteratorGeneric( %s ) ---\n", tess.shader->name) );
-	}
-
-	//
 	// set face culling appropriately
 	//
 	GL_Cull( shader->cullType );
 
 	// set polygon offset if necessary
+    /*
 	if ( shader->polygonOffset )
 	{
 		qglEnable( GL_POLYGON_OFFSET_FILL );
 		qglPolygonOffset( r_offsetFactor->value, r_offsetUnits->value );
 	}
+    */
 
 	//
 	// if there is only a single pass then we can enable color
@@ -3228,11 +3450,6 @@ void RB_StageIteratorGeneric( void )
 	// lock XYZ
 	//
 	qglVertexPointer (3, GL_FLOAT, 16, input->xyz);	// padded for SIMD
-	if (qglLockArraysEXT)
-	{
-		qglLockArraysEXT(0, input->numVertexes);
-		GLimp_LogComment( "glLockArraysEXT\n" );
-	}
 
 	//
 	// enable color and texcoord arrays after the lock if necessary
@@ -3251,10 +3468,12 @@ void RB_StageIteratorGeneric( void )
 	// 
 	// now do any dynamic lighting needed
 	//
+    /*
 	if ( tess.dlightBits && tess.shader->sort <= SS_OPAQUE
 		&& !(tess.shader->surfaceFlags & (SURF_NODLIGHT | SURF_SKY) ) ) {
 		ProjectDlightTexture();
 	}
+    */
 
 	//
 	// now do fog
@@ -3266,11 +3485,6 @@ void RB_StageIteratorGeneric( void )
 	// 
 	// unlock arrays
 	//
-	if (qglUnlockArraysEXT) 
-	{
-		qglUnlockArraysEXT();
-		GLimp_LogComment( "glUnlockArraysEXT\n" );
-	}
 
 	//
 	// reset polygon offset
@@ -3279,6 +3493,10 @@ void RB_StageIteratorGeneric( void )
 	{
 		qglDisable( GL_POLYGON_OFFSET_FILL );
 	}
+}
+
+void RB_StageIteratorSky( void ) {
+    return;
 }
 
 static void ComputeStageIteratorFunc( void )
@@ -3400,11 +3618,13 @@ static shader_t *FinishShader( void ) {
 	//
 	// if we are in r_vertexLight mode, never use a lightmap texture
 	//
+    /*
 	if ( stage > 1 && ( (r_vertexLight->integer && !r_uiFullScreen->integer) || glConfig.hardwareType == GLHW_PERMEDIA2 ) ) {
 		VertexLightingCollapse();
 		stage = 1;
 		hasLightmapStage = qfalse;
 	}
+    */
 
 	//
 	// look for multitexture potential
@@ -3436,154 +3656,6 @@ static shader_t *FinishShader( void ) {
 	return GeneratePermanentShader();
 }
 
-static
-shader_t *R_FindShader( const char *name, int lightmapIndex, qboolean mipRawImage ) {
-	char		strippedName[MAX_QPATH];
-	int			i, hash;
-	char		*shaderText;
-	image_t		*image;
-	shader_t	*sh;
-
-	if ( name[0] == 0 ) {
-		return tr.defaultShader;
-	}
-
-	// use (fullbright) vertex lighting if the bsp file doesn't have
-	// lightmaps
-	if ( lightmapIndex >= 0 && lightmapIndex >= tr.numLightmaps ) {
-		lightmapIndex = LIGHTMAP_BY_VERTEX;
-	} else if ( lightmapIndex < LIGHTMAP_2D ) {
-		// negative lightmap indexes cause stray pointers (think tr.lightmaps[lightmapIndex])
-		lightmapIndex = LIGHTMAP_BY_VERTEX;
-	}
-
-	COM_StripExtension(name, strippedName, sizeof(strippedName));
-
-	hash = generateShaderHashValue(strippedName, SHADER_FILE_HASH_SIZE);
-
-	//
-	// see if the shader is already loaded
-	//
-	for (sh = shaderHashTable[hash]; sh; sh = sh->next) {
-		// NOTE: if there was no shader or image available with the name strippedName
-		// then a default shader is created with lightmapIndex == LIGHTMAP_NONE, so we
-		// have to check all default shaders otherwise for every call to R_FindShader
-		// with that same strippedName a new default shader is created.
-		if ( (sh->lightmapIndex == lightmapIndex || sh->defaultShader) &&
-		     !Q_stricmp(sh->name, strippedName)) {
-			// match found
-			return sh;
-		}
-	}
-
-	// clear the global shader
-	Com_Memset( &shader, 0, sizeof( shader ) );
-	Com_Memset( &stages, 0, sizeof( stages ) );
-	Q_strncpyz(shader.name, strippedName, sizeof(shader.name));
-	shader.lightmapIndex = lightmapIndex;
-	for ( i = 0 ; i < MAX_SHADER_STAGES ; i++ ) {
-		stages[i].bundle[0].texMods = texMods[i];
-	}
-
-	// FIXME: set these "need" values apropriately
-	shader.needsNormal = qtrue;
-	shader.needsST1 = qtrue;
-	shader.needsST2 = qtrue;
-	shader.needsColor = qtrue;
-
-	//
-	// attempt to define shader from an explicit parameter file
-	//
-	shaderText = FindShaderInShaderText( strippedName );
-	if ( shaderText ) {
-		if ( !ParseShader( &shaderText ) ) {
-			// had errors, so use default shader
-			shader.defaultShader = qtrue;
-		}
-		sh = FinishShader();
-		return sh;
-	}
-
-
-	//
-	// if not defined in the in-memory shader descriptions,
-	// look for a single supported image file
-	//
-	{
-		imgFlags_t flags;
-
-		flags = IMGFLAG_NONE;
-
-		if (mipRawImage)
-		{
-			flags |= IMGFLAG_MIPMAP | IMGFLAG_PICMIP;
-		}
-		else
-		{
-			flags |= IMGFLAG_CLAMPTOEDGE;
-		}
-
-		image = R_FindImageFile( name, IMGTYPE_COLORALPHA, flags );
-		if ( !image ) {
-			shader.defaultShader = qtrue;
-			return FinishShader();
-		}
-	}
-
-	//
-	// create the default shading commands
-	//
-	if ( shader.lightmapIndex == LIGHTMAP_NONE ) {
-		// dynamic colors at vertexes
-		stages[0].bundle[0].image[0] = image;
-		stages[0].active = qtrue;
-		stages[0].rgbGen = CGEN_LIGHTING_DIFFUSE;
-		stages[0].stateBits = GLS_DEFAULT;
-	} else if ( shader.lightmapIndex == LIGHTMAP_BY_VERTEX ) {
-		// explicit colors at vertexes
-		stages[0].bundle[0].image[0] = image;
-		stages[0].active = qtrue;
-		stages[0].rgbGen = CGEN_EXACT_VERTEX;
-		stages[0].alphaGen = AGEN_SKIP;
-		stages[0].stateBits = GLS_DEFAULT;
-	} else if ( shader.lightmapIndex == LIGHTMAP_2D ) {
-		// GUI elements
-		stages[0].bundle[0].image[0] = image;
-		stages[0].active = qtrue;
-		stages[0].rgbGen = CGEN_VERTEX;
-		stages[0].alphaGen = AGEN_VERTEX;
-		stages[0].stateBits = GLS_DEPTHTEST_DISABLE |
-			  GLS_SRCBLEND_SRC_ALPHA |
-			  GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA;
-	} else if ( shader.lightmapIndex == LIGHTMAP_WHITEIMAGE ) {
-		// fullbright level
-		stages[0].bundle[0].image[0] = tr.whiteImage;
-		stages[0].active = qtrue;
-		stages[0].rgbGen = CGEN_IDENTITY_LIGHTING;
-		stages[0].stateBits = GLS_DEFAULT;
-
-		stages[1].bundle[0].image[0] = image;
-		stages[1].active = qtrue;
-		stages[1].rgbGen = CGEN_IDENTITY;
-		stages[1].stateBits |= GLS_SRCBLEND_DST_COLOR | GLS_DSTBLEND_ZERO;
-	} else {
-		// two pass lightmap
-		stages[0].bundle[0].image[0] = tr.lightmaps[shader.lightmapIndex];
-		stages[0].bundle[0].isLightmap = qtrue;
-		stages[0].active = qtrue;
-		stages[0].rgbGen = CGEN_IDENTITY;	// lightmaps are scaled on creation
-													// for identitylight
-		stages[0].stateBits = GLS_DEFAULT;
-
-		stages[1].bundle[0].image[0] = image;
-		stages[1].active = qtrue;
-		stages[1].rgbGen = CGEN_IDENTITY;
-		stages[1].stateBits |= GLS_SRCBLEND_DST_COLOR | GLS_DSTBLEND_ZERO;
-	}
-
-	return FinishShader();
-}
-
 static	void R_LoadFogs( lump_t *l, lump_t *brushesLump, lump_t *sidesLump ) {
 	int			i;
 	fog_t		*out;
@@ -3599,24 +3671,24 @@ static	void R_LoadFogs( lump_t *l, lump_t *brushesLump, lump_t *sidesLump ) {
 
 	fogs = (void *)(fileBase + l->fileofs);
 	if (l->filelen % sizeof(*fogs)) {
-		Ferror ("LoadMap: funny lump size in %s",s_worldData.name);
+		Ferror ("LoadMap: funny lump size in %s",world.name);
 	}
 	count = l->filelen / sizeof(*fogs);
 
 	// create fog strucutres for them
 	world.numfogs = count + 1;
-	world.fogs = Hunk_Alloc( world.numfogs*sizeof(*out));
+	world.fogs = HunkAlloc( world.numfogs*sizeof(*out));
 	out = world.fogs + 1;
 
 	brushes = (void *)(fileBase + brushesLump->fileofs);
 	if (brushesLump->filelen % sizeof(*brushes)) {
-		Ferror("LoadMap: funny lump size in %s",s_worldData.name);
+		Ferror("LoadMap: funny lump size in %s",world.name);
 	}
 	brushesCount = brushesLump->filelen / sizeof(*brushes);
 
 	sides = (void *)(fileBase + sidesLump->fileofs);
 	if (sidesLump->filelen % sizeof(*sides)) {
-		Ferror("LoadMap: funny lump size in %s",s_worldData.name);
+		Ferror("LoadMap: funny lump size in %s",world.name);
 	}
 	sidesCount = sidesLump->filelen / sizeof(*sides);
 
@@ -3853,6 +3925,8 @@ static void R_SetupProjection(viewParms_t *dest, float zProj, qboolean computeFr
 
 	width = xmax - xmin;
 	height = ymax - ymin;
+
+    float stereoSep = 0.1;
 	
 	dest->projectionMatrix[0] = 2 * zProj / width;
 	dest->projectionMatrix[4] = 0;
@@ -3877,13 +3951,6 @@ static void R_SetFarClip( void )
 {
 	float	farthestCornerDistance = 0;
 	int		i;
-
-	// if not rendering the world (icons, menus, etc)
-	// set a 2k far clip plane
-	if ( tr.refdef.rdflags & RDF_NOWORLDMODEL ) {
-		tr.viewParms.zFar = 2048;
-		return;
-	}
 
 	//
 	// set far clipping planes dynamically
@@ -3938,7 +4005,7 @@ static void R_SetupProjectionZ(viewParms_t *dest)
 {
 	float zNear, zFar, depth;
 	
-	zNear	= r_znear->value;
+	zNear	= 0.1;
 	zFar	= dest->zFar;	
 	depth	= zFar - zNear;
 
@@ -4280,10 +4347,6 @@ static void R_RecursiveWorldNode( mnode_t *node, int planeBits, int dlightBits )
 }
 
 void R_AddWorldSurfaces (void) {
-	if ( tr.refdef.rdflags & RDF_NOWORLDMODEL ) {
-		return;
-	}
-
 	tr.currentEntityNum = REFENTITYNUM_WORLD;
 	tr.shiftedEntityNum = tr.currentEntityNum << QSORT_REFENTITYNUM_SHIFT;
 
@@ -4325,6 +4388,93 @@ void R_DecomposeSort( unsigned sort, int *entityNum, shader_t **shader,
 	*dlightMap = sort & 3;
 }
 
+#define	MAX_RENDER_COMMANDS	0x40000
+
+typedef struct {
+	byte	cmds[MAX_RENDER_COMMANDS];
+	int		used;
+} renderCommandList_t;
+typedef struct {
+	vec3_t		xyz;
+	float		st[2];
+	byte		modulate[4];
+} polyVert_t;
+
+
+#define	MAX_DLIGHTS		32		// can't be increased, because bit flags are used on surfaces
+#define	MAX_REFENTITIES		((1<<REFENTITYNUM_BITS) - 1)
+#define RDF_HYPERSPACE		0x0004		// teleportation effect
+typedef struct srfPoly_s {
+	surfaceType_t	surfaceType;
+	qhandle_t		hShader;
+	int				fogIndex;
+	int				numVerts;
+	polyVert_t		*verts;
+} srfPoly_t;
+
+typedef enum {
+	ERR_FATAL,					// exit the entire game with a popup window
+	ERR_DROP,					// print to console and disconnect from game
+	ERR_SERVERDISCONNECT,		// don't kill server
+	ERR_DISCONNECT,				// client disconnected from the server
+	ERR_NEED_CD					// pop up the need-cd dialog
+} errorParm_t;
+
+typedef enum {
+	RC_END_OF_LIST,
+	RC_SET_COLOR,
+	RC_STRETCH_PIC,
+	RC_DRAW_SURFS,
+	RC_DRAW_BUFFER,
+	RC_SWAP_BUFFERS,
+	RC_SCREENSHOT,
+	RC_VIDEOFRAME,
+	RC_COLORMASK,
+	RC_CLEARDEPTH
+} renderCommand_t;
+
+typedef struct {
+	int		commandId;
+	image_t	*image;
+	int		width;
+	int		height;
+	void	*data;
+} subImageCommand_t;
+
+typedef struct {
+	int		commandId;
+} swapBuffersCommand_t;
+
+typedef struct
+{
+	int commandId;
+} clearDepthCommand_t;
+
+typedef struct
+{
+	int commandId;
+
+	GLboolean rgba[4];
+} colorMaskCommand_t;
+
+typedef struct {
+	int		commandId;
+	trRefdef_t	refdef;
+	viewParms_t	viewParms;
+	drawSurf_t *drawSurfs;
+	int		numDrawSurfs;
+} drawSurfsCommand_t;
+
+typedef struct {
+	int		commandId;
+	float	color[4];
+} setColorCommand_t;
+
+typedef struct {
+	int		commandId;
+	int		buffer;
+} drawBufferCommand_t;
+
 typedef struct {
 	drawSurf_t	drawSurfs[MAX_DRAWSURFS];
 	dlight_t	dlights[MAX_DLIGHTS];
@@ -4333,7 +4483,48 @@ typedef struct {
 	polyVert_t	*polyVerts;//[MAX_POLYVERTS];
 	renderCommandList_t	commands;
 } backEndData_t;
+
+typedef struct {
+	int		c_surfaces, c_shaders, c_vertexes, c_indexes, c_totalIndexes;
+	float	c_overDraw;
+	
+	int		c_dlightVertexes;
+	int		c_dlightIndexes;
+
+	int		c_flareAdds;
+	int		c_flareTests;
+	int		c_flareRenders;
+
+	int		msec;			// total msec for backend run
+} backEndCounters_t;
+
+typedef struct {
+	trRefdef_t	refdef;
+	viewParms_t	viewParms;
+	orientationr_t	or;
+	backEndCounters_t	pc;
+	qboolean	isHyperspace;
+	trRefEntity_t	*currentEntity;
+	qboolean	skyRenderedThisView;	// flag for drawing sun
+
+	qboolean	projection2D;	// if qtrue, drawstretchpic doesn't need to change modes
+	byte		color2D[4];
+	qboolean	vertexes2D;		// shader needs to be finished
+	trRefEntity_t	entity2D;	// currentEntity will point at this when doing 2D rendering
+} backEndState_t;
+
 static backEndData_t	*backEndData;
+static backEndState_t	backEnd;
+
+#define PAD(base, alignment)	(((base)+(alignment)-1) & ~((alignment)-1))
+#define PADLEN(base, alignment)	(PAD((base), (alignment)) - (base))
+
+#define PADP(base, alignment)	((void *) PAD((intptr_t) (base), (alignment)))
+
+#define	RF_DEPTHHACK		0x0008		// for view weapon Z crunching
+
+#define RF_CROSSHAIR		0x0010		// This item is a cross hair and will draw over everything similar to
+
 void *R_GetCommandBuffer( int bytes ) {
 	renderCommandList_t	*cmdList;
 
@@ -4411,9 +4602,6 @@ void R_SortDrawSurfs( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 		// if the mirror was completely clipped away, we may need to check another surface
 		if ( R_MirrorViewBySurface( (drawSurfs+i), entityNum) ) {
 			// this is a debug option to see exactly what is being mirrored
-			if ( r_portalOnly->integer ) {
-				return;
-			}
 			break;		// only one mirror view at a time
 		}
 	}
@@ -4454,6 +4642,38 @@ const void *RB_ColorMask(const void *data)
 	return (const void *)(cmd + 1);
 }
 
+void RB_EndSurface( void ) {
+	shaderCommands_t *input;
+
+	input = &tess;
+
+	if (input->numIndexes == 0) {
+		return;
+	}
+
+	if (input->indexes[SHADER_MAX_INDEXES-1] != 0) {
+		Ferror("RB_EndSurface() - SHADER_MAX_INDEXES hit");
+	}	
+	if (input->xyz[SHADER_MAX_VERTEXES-1][0] != 0) {
+		Ferror("RB_EndSurface() - SHADER_MAX_VERTEXES hit");
+	}
+
+	if ( tess.shader == tr.shadowShader ) {
+		RB_ShadowTessEnd();
+		return;
+	}
+
+	//
+	// call off to shader specific tess end function
+	//
+	tess.currentStageIteratorFunc();
+
+	// clear shader so we can tell we don't have any unclosed surfaces
+	tess.numIndexes = 0;
+}
+
+
+
 const void *RB_ClearDepth(const void *data)
 {
 	const clearDepthCommand_t *cmd = data;
@@ -4491,11 +4711,8 @@ void RB_BeginDrawingView (void) {
 	int clearBits = 0;
 
 	// sync with gl if needed
-	if ( r_finish->integer == 1 && !glState.finishCalled ) {
+	if ( !glState.finishCalled ) {
 		qglFinish ();
-		glState.finishCalled = qtrue;
-	}
-	if ( r_finish->integer == 0 ) {
 		glState.finishCalled = qtrue;
 	}
 
@@ -4513,19 +4730,6 @@ void RB_BeginDrawingView (void) {
 	// clear relevant buffers
 	clearBits = GL_DEPTH_BUFFER_BIT;
 
-	if ( r_measureOverdraw->integer || r_shadows->integer == 2 )
-	{
-		clearBits |= GL_STENCIL_BUFFER_BIT;
-	}
-	if ( r_fastsky->integer && !( backEnd.refdef.rdflags & RDF_NOWORLDMODEL ) )
-	{
-		clearBits |= GL_COLOR_BUFFER_BIT;	// FIXME: only if sky shaders have been used
-#ifdef _DEBUG
-		qglClearColor( 0.8f, 0.7f, 0.4f, 1.0f );	// FIXME: get color of sky
-#else
-		qglClearColor( 0.0f, 0.0f, 0.0f, 1.0f );	// FIXME: get color of sky
-#endif
-	}
 	qglClear( clearBits );
 
 	if ( ( backEnd.refdef.rdflags & RDF_HYPERSPACE ) )
@@ -4585,35 +4789,504 @@ void RB_BeginSurface( shader_t *shader, int fogNum ) {
 	}
 }
 
-void RB_EndSurface( void ) {
-	shaderCommands_t *input;
-
-	input = &tess;
-
-	if (input->numIndexes == 0) {
-		return;
-	}
-
-	if (input->indexes[SHADER_MAX_INDEXES-1] != 0) {
-		Ferror(ERR_DROP, "RB_EndSurface() - SHADER_MAX_INDEXES hit");
-	}	
-	if (input->xyz[SHADER_MAX_VERTEXES-1][0] != 0) {
-		Ferror(ERR_DROP, "RB_EndSurface() - SHADER_MAX_VERTEXES hit");
-	}
-
-	if ( tess.shader == tr.shadowShader ) {
-		RB_ShadowTessEnd();
-		return;
-	}
-
-	//
-	// call off to shader specific tess end function
-	//
-	tess.currentStageIteratorFunc();
-
-	// clear shader so we can tell we don't have any unclosed surfaces
-	tess.numIndexes = 0;
+static void RB_SurfaceBad( surfaceType_t *surfType ) {
 }
+
+static void RB_SurfaceSkip( void *surf ) {
+}
+
+static void RB_SurfaceFace( srfSurfaceFace_t *surf ) {
+	int			i;
+	unsigned	*indices, *tessIndexes;
+	float		*v;
+	float		*normal;
+	int			ndx;
+	int			Bob;
+	int			numPoints;
+	int			dlightBits;
+
+	dlightBits = surf->dlightBits;
+	tess.dlightBits |= dlightBits;
+
+	indices = ( unsigned * ) ( ( ( char  * ) surf ) + surf->ofsIndices );
+
+	Bob = tess.numVertexes;
+	tessIndexes = tess.indexes + tess.numIndexes;
+	for ( i = surf->numIndices-1 ; i >= 0  ; i-- ) {
+		tessIndexes[i] = indices[i] + Bob;
+	}
+
+	tess.numIndexes += surf->numIndices;
+
+	numPoints = surf->numPoints;
+
+	if ( tess.shader->needsNormal ) {
+		normal = surf->plane.normal;
+		for ( i = 0, ndx = tess.numVertexes; i < numPoints; i++, ndx++ ) {
+			VectorCopy( normal, tess.normal[ndx] );
+		}
+	}
+
+	for ( i = 0, v = surf->points[0], ndx = tess.numVertexes; i < numPoints; i++, v += VERTEXSIZE, ndx++ ) {
+		VectorCopy( v, tess.xyz[ndx]);
+		tess.texCoords[ndx][0][0] = v[3];
+		tess.texCoords[ndx][0][1] = v[4];
+		tess.texCoords[ndx][1][0] = v[5];
+		tess.texCoords[ndx][1][1] = v[6];
+		* ( unsigned int * ) &tess.vertexColors[ndx] = * ( unsigned int * ) &v[7];
+		tess.vertexDlightBits[ndx] = dlightBits;
+	}
+
+
+	tess.numVertexes += surf->numPoints;
+}
+
+static float	LodErrorForVolume( vec3_t local, float radius ) {
+	vec3_t		world;
+	float		d;
+
+	world[0] = local[0] * backEnd.or.axis[0][0] + local[1] * backEnd.or.axis[1][0] + 
+		local[2] * backEnd.or.axis[2][0] + backEnd.or.origin[0];
+	world[1] = local[0] * backEnd.or.axis[0][1] + local[1] * backEnd.or.axis[1][1] + 
+		local[2] * backEnd.or.axis[2][1] + backEnd.or.origin[1];
+	world[2] = local[0] * backEnd.or.axis[0][2] + local[1] * backEnd.or.axis[1][2] + 
+		local[2] * backEnd.or.axis[2][2] + backEnd.or.origin[2];
+
+	VectorSubtract( world, backEnd.viewParms.or.origin, world );
+	d = DotProduct( world, backEnd.viewParms.or.axis[0] );
+
+	if ( d < 0 ) {
+		d = -d;
+	}
+	d -= radius;
+	if ( d < 1 ) {
+		d = 1;
+	}
+
+	return 1. / d;
+}
+
+static void RB_SurfaceGrid( srfGridMesh_t *cv ) {
+	int		i, j;
+	float	*xyz;
+	float	*texCoords;
+	float	*normal;
+	unsigned char *color;
+	drawVert_t	*dv;
+	int		rows, irows, vrows;
+	int		used;
+	int		widthTable[MAX_GRID_SIZE];
+	int		heightTable[MAX_GRID_SIZE];
+	float	lodError;
+	int		lodWidth, lodHeight;
+	int		numVertexes;
+	int		dlightBits;
+	int		*vDlightBits;
+	qboolean	needsNormal;
+
+	dlightBits = cv->dlightBits;
+	tess.dlightBits |= dlightBits;
+
+	// determine the allowable discrepance
+	lodError = LodErrorForVolume( cv->lodOrigin, cv->lodRadius );
+
+	// determine which rows and columns of the subdivision
+	// we are actually going to use
+	widthTable[0] = 0;
+	lodWidth = 1;
+	for ( i = 1 ; i < cv->width-1 ; i++ ) {
+		if ( cv->widthLodError[i] <= lodError ) {
+			widthTable[lodWidth] = i;
+			lodWidth++;
+		}
+	}
+	widthTable[lodWidth] = cv->width-1;
+	lodWidth++;
+
+	heightTable[0] = 0;
+	lodHeight = 1;
+	for ( i = 1 ; i < cv->height-1 ; i++ ) {
+		if ( cv->heightLodError[i] <= lodError ) {
+			heightTable[lodHeight] = i;
+			lodHeight++;
+		}
+	}
+	heightTable[lodHeight] = cv->height-1;
+	lodHeight++;
+
+
+	// very large grids may have more points or indexes than can be fit
+	// in the tess structure, so we may have to issue it in multiple passes
+
+	used = 0;
+	while ( used < lodHeight - 1 ) {
+		// see how many rows of both verts and indexes we can add without overflowing
+		do {
+			vrows = ( SHADER_MAX_VERTEXES - tess.numVertexes ) / lodWidth;
+			irows = ( SHADER_MAX_INDEXES - tess.numIndexes ) / ( lodWidth * 6 );
+
+			// if we don't have enough space for at least one strip, flush the buffer
+			if ( vrows < 2 || irows < 1 ) {
+				RB_EndSurface();
+				RB_BeginSurface(tess.shader, tess.fogNum );
+			} else {
+				break;
+			}
+		} while ( 1 );
+		
+		rows = irows;
+		if ( vrows < irows + 1 ) {
+			rows = vrows - 1;
+		}
+		if ( used + rows > lodHeight ) {
+			rows = lodHeight - used;
+		}
+
+		numVertexes = tess.numVertexes;
+
+		xyz = tess.xyz[numVertexes];
+		normal = tess.normal[numVertexes];
+		texCoords = tess.texCoords[numVertexes][0];
+		color = ( unsigned char * ) &tess.vertexColors[numVertexes];
+		vDlightBits = &tess.vertexDlightBits[numVertexes];
+		needsNormal = tess.shader->needsNormal;
+
+		for ( i = 0 ; i < rows ; i++ ) {
+			for ( j = 0 ; j < lodWidth ; j++ ) {
+				dv = cv->verts + heightTable[ used + i ] * cv->width
+					+ widthTable[ j ];
+
+				xyz[0] = dv->xyz[0];
+				xyz[1] = dv->xyz[1];
+				xyz[2] = dv->xyz[2];
+				texCoords[0] = dv->st[0];
+				texCoords[1] = dv->st[1];
+				texCoords[2] = dv->lightmap[0];
+				texCoords[3] = dv->lightmap[1];
+				if ( needsNormal ) {
+					normal[0] = dv->normal[0];
+					normal[1] = dv->normal[1];
+					normal[2] = dv->normal[2];
+				}
+				* ( unsigned int * ) color = * ( unsigned int * ) dv->color;
+				*vDlightBits++ = dlightBits;
+				xyz += 4;
+				normal += 4;
+				texCoords += 4;
+				color += 4;
+			}
+		}
+
+
+		// add the indexes
+		{
+			int		numIndexes;
+			int		w, h;
+
+			h = rows - 1;
+			w = lodWidth - 1;
+			numIndexes = tess.numIndexes;
+			for (i = 0 ; i < h ; i++) {
+				for (j = 0 ; j < w ; j++) {
+					int		v1, v2, v3, v4;
+			
+					// vertex order to be reckognized as tristrips
+					v1 = numVertexes + i*lodWidth + j + 1;
+					v2 = v1 - 1;
+					v3 = v2 + lodWidth;
+					v4 = v3 + 1;
+
+					tess.indexes[numIndexes] = v2;
+					tess.indexes[numIndexes+1] = v3;
+					tess.indexes[numIndexes+2] = v1;
+					
+					tess.indexes[numIndexes+3] = v1;
+					tess.indexes[numIndexes+4] = v3;
+					tess.indexes[numIndexes+5] = v4;
+					numIndexes += 6;
+				}
+			}
+
+			tess.numIndexes = numIndexes;
+		}
+
+		tess.numVertexes += rows * lodWidth;
+
+		used += rows - 1;
+	}
+}
+
+static void RB_SurfaceTriangles( srfTriangles_t *srf ) {
+	int			i;
+	drawVert_t	*dv;
+	float		*xyz, *normal, *texCoords;
+	byte		*color;
+	int			dlightBits;
+	qboolean	needsNormal;
+
+	dlightBits = srf->dlightBits;
+	tess.dlightBits |= dlightBits;
+
+	for ( i = 0 ; i < srf->numIndexes ; i += 3 ) {
+		tess.indexes[ tess.numIndexes + i + 0 ] = tess.numVertexes + srf->indexes[ i + 0 ];
+		tess.indexes[ tess.numIndexes + i + 1 ] = tess.numVertexes + srf->indexes[ i + 1 ];
+		tess.indexes[ tess.numIndexes + i + 2 ] = tess.numVertexes + srf->indexes[ i + 2 ];
+	}
+	tess.numIndexes += srf->numIndexes;
+
+	dv = srf->verts;
+	xyz = tess.xyz[ tess.numVertexes ];
+	normal = tess.normal[ tess.numVertexes ];
+	texCoords = tess.texCoords[ tess.numVertexes ][0];
+	color = tess.vertexColors[ tess.numVertexes ];
+	needsNormal = tess.shader->needsNormal;
+
+	for ( i = 0 ; i < srf->numVerts ; i++, dv++, xyz += 4, normal += 4, texCoords += 4, color += 4 ) {
+		xyz[0] = dv->xyz[0];
+		xyz[1] = dv->xyz[1];
+		xyz[2] = dv->xyz[2];
+
+		if ( needsNormal ) {
+			normal[0] = dv->normal[0];
+			normal[1] = dv->normal[1];
+			normal[2] = dv->normal[2];
+		}
+
+		texCoords[0] = dv->st[0];
+		texCoords[1] = dv->st[1];
+
+		texCoords[2] = dv->lightmap[0];
+		texCoords[3] = dv->lightmap[1];
+
+		*(int *)color = *(int *)dv->color;
+	}
+
+	for ( i = 0 ; i < srf->numVerts ; i++ ) {
+		tess.vertexDlightBits[ tess.numVertexes + i] = dlightBits;
+	}
+
+	tess.numVertexes += srf->numVerts;
+}
+
+static void RB_SurfacePolychain( srfPoly_t *p ) {
+	int		i;
+	int		numv;
+
+	// fan triangles into the tess array
+	numv = tess.numVertexes;
+	for ( i = 0; i < p->numVerts; i++ ) {
+		VectorCopy( p->verts[i].xyz, tess.xyz[numv] );
+		tess.texCoords[numv][0][0] = p->verts[i].st[0];
+		tess.texCoords[numv][0][1] = p->verts[i].st[1];
+		*(int *)&tess.vertexColors[numv] = *(int *)p->verts[ i ].modulate;
+
+		numv++;
+	}
+
+	// generate fan indexes into the tess array
+	for ( i = 0; i < p->numVerts-2; i++ ) {
+		tess.indexes[tess.numIndexes + 0] = tess.numVertexes;
+		tess.indexes[tess.numIndexes + 1] = tess.numVertexes + i + 1;
+		tess.indexes[tess.numIndexes + 2] = tess.numVertexes + i + 2;
+		tess.numIndexes += 3;
+	}
+
+	tess.numVertexes = numv;
+}
+
+static void LerpMeshVertexes(md3Surface_t *surf, float backlerp)
+{
+	short	*oldXyz, *newXyz, *oldNormals, *newNormals;
+	float	*outXyz, *outNormal;
+	float	oldXyzScale, newXyzScale;
+	float	oldNormalScale, newNormalScale;
+	int		vertNum;
+	unsigned lat, lng;
+	int		numVerts;
+
+	outXyz = tess.xyz[tess.numVertexes];
+	outNormal = tess.normal[tess.numVertexes];
+
+	newXyz = (short *)((byte *)surf + surf->ofsXyzNormals)
+		+ (backEnd.currentEntity->e.frame * surf->numVerts * 4);
+	newNormals = newXyz + 3;
+
+#define	MD3_XYZ_SCALE		(1.0/64)
+	newXyzScale = MD3_XYZ_SCALE * (1.0 - backlerp);
+	newNormalScale = 1.0 - backlerp;
+
+	numVerts = surf->numVerts;
+
+	if ( backlerp == 0 ) {
+		//
+		// just copy the vertexes
+		//
+		for (vertNum=0 ; vertNum < numVerts ; vertNum++,
+			newXyz += 4, newNormals += 4,
+			outXyz += 4, outNormal += 4) 
+		{
+
+			outXyz[0] = newXyz[0] * newXyzScale;
+			outXyz[1] = newXyz[1] * newXyzScale;
+			outXyz[2] = newXyz[2] * newXyzScale;
+
+			lat = ( newNormals[0] >> 8 ) & 0xff;
+			lng = ( newNormals[0] & 0xff );
+			lat *= (FUNCTABLE_SIZE/256);
+			lng *= (FUNCTABLE_SIZE/256);
+
+			// decode X as cos( lat ) * sin( long )
+			// decode Y as sin( lat ) * sin( long )
+			// decode Z as cos( long )
+
+			outNormal[0] = tr.sinTable[(lat+(FUNCTABLE_SIZE/4))&FUNCTABLE_MASK] * tr.sinTable[lng];
+			outNormal[1] = tr.sinTable[lat] * tr.sinTable[lng];
+			outNormal[2] = tr.sinTable[(lng+(FUNCTABLE_SIZE/4))&FUNCTABLE_MASK];
+		}
+	} else {
+		//
+		// interpolate and copy the vertex and normal
+		//
+		oldXyz = (short *)((byte *)surf + surf->ofsXyzNormals)
+			+ (backEnd.currentEntity->e.oldframe * surf->numVerts * 4);
+		oldNormals = oldXyz + 3;
+
+		oldXyzScale = MD3_XYZ_SCALE * backlerp;
+		oldNormalScale = backlerp;
+
+		for (vertNum=0 ; vertNum < numVerts ; vertNum++,
+			oldXyz += 4, newXyz += 4, oldNormals += 4, newNormals += 4,
+			outXyz += 4, outNormal += 4) 
+		{
+			vec3_t uncompressedOldNormal, uncompressedNewNormal;
+
+			// interpolate the xyz
+			outXyz[0] = oldXyz[0] * oldXyzScale + newXyz[0] * newXyzScale;
+			outXyz[1] = oldXyz[1] * oldXyzScale + newXyz[1] * newXyzScale;
+			outXyz[2] = oldXyz[2] * oldXyzScale + newXyz[2] * newXyzScale;
+
+			// FIXME: interpolate lat/long instead?
+			lat = ( newNormals[0] >> 8 ) & 0xff;
+			lng = ( newNormals[0] & 0xff );
+			lat *= 4;
+			lng *= 4;
+			uncompressedNewNormal[0] = tr.sinTable[(lat+(FUNCTABLE_SIZE/4))&FUNCTABLE_MASK] * tr.sinTable[lng];
+			uncompressedNewNormal[1] = tr.sinTable[lat] * tr.sinTable[lng];
+			uncompressedNewNormal[2] = tr.sinTable[(lng+(FUNCTABLE_SIZE/4))&FUNCTABLE_MASK];
+
+			lat = ( oldNormals[0] >> 8 ) & 0xff;
+			lng = ( oldNormals[0] & 0xff );
+			lat *= 4;
+			lng *= 4;
+
+			uncompressedOldNormal[0] = tr.sinTable[(lat+(FUNCTABLE_SIZE/4))&FUNCTABLE_MASK] * tr.sinTable[lng];
+			uncompressedOldNormal[1] = tr.sinTable[lat] * tr.sinTable[lng];
+			uncompressedOldNormal[2] = tr.sinTable[(lng+(FUNCTABLE_SIZE/4))&FUNCTABLE_MASK];
+
+			outNormal[0] = uncompressedOldNormal[0] * oldNormalScale + uncompressedNewNormal[0] * newNormalScale;
+			outNormal[1] = uncompressedOldNormal[1] * oldNormalScale + uncompressedNewNormal[1] * newNormalScale;
+			outNormal[2] = uncompressedOldNormal[2] * oldNormalScale + uncompressedNewNormal[2] * newNormalScale;
+
+//			VectorNormalize (outNormal);
+		}
+    	VectorArrayNormalize((vec4_t *)tess.normal[tess.numVertexes], numVerts);
+   	}
+}
+
+static void RB_SurfaceMesh(md3Surface_t *surface) {
+	int				j;
+	float			backlerp;
+	int				*triangles;
+	float			*texCoords;
+	int				indexes;
+	int				Bob, Doug;
+	int				numVerts;
+
+	if (  backEnd.currentEntity->e.oldframe == backEnd.currentEntity->e.frame ) {
+		backlerp = 0;
+	} else  {
+		backlerp = backEnd.currentEntity->e.backlerp;
+	}
+
+	LerpMeshVertexes (surface, backlerp);
+
+	triangles = (int *) ((byte *)surface + surface->ofsTriangles);
+	indexes = surface->numTriangles * 3;
+	Bob = tess.numIndexes;
+	Doug = tess.numVertexes;
+	for (j = 0 ; j < indexes ; j++) {
+		tess.indexes[Bob + j] = Doug + triangles[j];
+	}
+	tess.numIndexes += indexes;
+
+	texCoords = (float *) ((byte *)surface + surface->ofsSt);
+
+	numVerts = surface->numVerts;
+	for ( j = 0; j < numVerts; j++ ) {
+		tess.texCoords[Doug + j][0][0] = texCoords[j*2+0];
+		tess.texCoords[Doug + j][0][1] = texCoords[j*2+1];
+		// FIXME: fill in lightmapST for completeness?
+	}
+
+	tess.numVertexes += surface->numVerts;
+}
+
+static void RB_SurfaceFlare(srfFlare_t *surf)
+{}
+
+static void RB_SurfaceEntity( surfaceType_t *surfType ) {
+	switch( backEnd.currentEntity->e.reType ) {
+	case RT_SPRITE:
+		RB_SurfaceSprite();
+		break;
+	case RT_BEAM:
+		RB_SurfaceBeam();
+		break;
+	case RT_RAIL_CORE:
+		RB_SurfaceRailCore();
+		break;
+	case RT_RAIL_RINGS:
+		RB_SurfaceRailRings();
+		break;
+	case RT_LIGHTNING:
+		RB_SurfaceLightningBolt();
+		break;
+	default:
+		RB_SurfaceAxis();
+		break;
+	}
+	return;
+}
+
+typedef struct srfDisplayList_s {
+	surfaceType_t	surfaceType;
+	int				listNum;
+} srfDisplayList_t;
+
+static void RB_SurfaceDisplayList( srfDisplayList_t *surf ) {
+	// all apropriate state must be set in RB_BeginSurface
+	// this isn't implemented yet...
+	qglCallList( surf->listNum );
+}
+
+void (*rb_surfaceTable[SF_NUM_SURFACE_TYPES])( void *) = {
+	(void(*)(void*))RB_SurfaceBad,			// SF_BAD, 
+	(void(*)(void*))RB_SurfaceSkip,			// SF_SKIP, 
+	(void(*)(void*))RB_SurfaceFace,			// SF_FACE,
+	(void(*)(void*))RB_SurfaceGrid,			// SF_GRID,
+	(void(*)(void*))RB_SurfaceTriangles,		// SF_TRIANGLES,
+	(void(*)(void*))RB_SurfacePolychain,		// SF_POLY,
+	(void(*)(void*))RB_SurfaceMesh,			// SF_MD3,
+    NULL,
+    NULL,
+    NULL,
+	//(void(*)(void*))RB_SurfaceAnim,			// SF_MD4,
+	//(void(*)(void*))RB_MDRSurfaceAnim,		// SF_MDR,
+	//(void(*)(void*))RB_IQMSurfaceAnim,		// SF_IQM,
+	(void(*)(void*))RB_SurfaceFlare,		// SF_FLARE,
+	(void(*)(void*))RB_SurfaceEntity,		// SF_ENTITY
+	(void(*)(void*))RB_SurfaceDisplayList		// SF_DISPLAY_LIST
+};
 
 void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 	shader_t		*shader, *oldShader;
@@ -4734,7 +5407,7 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 						{
 							viewParms_t temp = backEnd.viewParms;
 
-							R_SetupProjection(&temp, r_znear->value, qfalse);
+							R_SetupProjection(&temp, 0, qfalse);
 
 							qglMatrixMode(GL_PROJECTION);
 							qglLoadMatrixf(temp.projectionMatrix);
@@ -4806,8 +5479,6 @@ const void	*RB_DrawSurfs( const void *data ) {
 void RB_ExecuteRenderCommands( const void *data ) {
 	int		t1, t2;
 
-	t1 = ri.Milliseconds ();
-
 	while ( 1 ) {
 		data = PADP(data, sizeof(void *));
 
@@ -4845,7 +5516,6 @@ void RB_ExecuteRenderCommands( const void *data ) {
 		case RC_END_OF_LIST:
 		default:
 			// stop rendering
-			t2 = ri.Milliseconds ();
 			backEnd.pc.msec = t2 - t1;
 			return;
 		}
@@ -4887,7 +5557,7 @@ void R_RenderView (viewParms_t *parms) {
 	// set viewParms.world
 	R_RotateForViewer ();
 
-	R_SetupProjection(&tr.viewParms, r_zproj->value, qtrue);
+	R_SetupProjection(&tr.viewParms, 0, qtrue);
 
 	R_GenerateDrawSurfs();
 

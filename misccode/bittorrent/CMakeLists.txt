@@ -3,6 +3,8 @@ project(btorrent)
 
 find_package(Boost COMPONENTS filesystem REQUIRED)
 
+set (CMAKE_CXX_FLAGS -g)
+
 file(GLOB_RECURSE TORRENT_SOURCES src/*.cc)
 
 include_directories(./)

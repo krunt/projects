@@ -1,7 +1,7 @@
 #ifndef HASH_DEF_
 #define HASH_DEF_
 
-#include <string>
+#include <include/common.h>
 
 namespace btorrent {
 
@@ -10,16 +10,24 @@ public:
     sha1_hash_t()
     {}
 
-    sha1_hash_t(const std::string &val)
-        : m_val(val)
-    {}
+    sha1_hash_t(const std::string &digest);
 
-    void init() {}
-    void update(const std::string &s) {}
-    void finalize() {}
+    void init();
+    void update(const char *data, size_type len);
+    void update(const std::string &s);
+    void finalize();
 
-private
-    std::string m_val;
+    std::string get_digest() const;
+
+private:
+    typedef struct AVSHA {
+        u64 count;       ///< number of bytes in buffer
+        u8  buffer[64];  ///< 512-bit buffer of input values used in hash updating
+        u32 state[8];    ///< current hash value
+        u8  digest[20];
+    } AVSHA;
+
+    AVSHA m_ctx;
 };
 
 }

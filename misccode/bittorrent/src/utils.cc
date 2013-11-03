@@ -3,7 +3,6 @@
 
 #include <fstream>
 #include <iterator>
-
 namespace btorrent {
 
 namespace detail {
@@ -64,6 +63,20 @@ std::string bloat_file(const std::string &full_path) {
     std::copy(std::istream_iterator<char>(fs), std::istream_iterator<char>(),
         std::back_inserter(contents));
     return contents;
+}
+
+/* TODO */
+std::string hex_encode(const std::string &s) { 
+    return std::string(20, '\0'); 
+}
+std::string hex_decode(const std::string &s) { 
+    return std::string(20, '\0'); 
+}
+
+void generate_random(char *ptr, size_type sz) {
+    for (int i = 0; i < sz; ++i) {
+        ptr[i] = rand() & 0xFF;
+    }
 }
 
 }
