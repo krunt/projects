@@ -7,7 +7,6 @@ namespace btorrent {
 
 class tracker_connection_t {
 public:
-
     torrent &get_torrent() { return m_torrent; }
 
 private:

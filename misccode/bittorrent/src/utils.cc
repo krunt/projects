@@ -1,5 +1,7 @@
+#include <include/utils.h>
 #include <include/value.h>
 #include <boost/lexical_cast.hpp>
+#include <boost/regex.hpp>
 
 #include <fstream>
 #include <iterator>
@@ -76,6 +78,18 @@ std::string hex_decode(const std::string &s) {
 void generate_random(char *ptr, size_type sz) {
     for (int i = 0; i < sz; ++i) {
         ptr[i] = rand() & 0xFF;
+    }
+}
+
+url_t::url_t(const std::string &url) {
+    const boost::regex url_re("^(http|udp)://([^/:]+)(?::([0-9]+))?(/.*)?$"); 
+    boost::cmatch what;
+    if (boost::regex_match(url.c_str(), what, url_re)) {
+        m_scheme = what[1];
+        m_host = what[2];
+        if (what[3].matched) m_port = boost::lexical_cast<int>(what[3]);
+        else if (m_scheme == "http") m_port = 80;
+        if (what[4].matched) m_path = what[4];
     }
 }
 

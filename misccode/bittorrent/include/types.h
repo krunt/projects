@@ -20,14 +20,14 @@ namespace btorrent {
 #if __BYTE_ORDER == __LITTLE_ENDIAN
 
 #define int2get(T,A)       do { T = (u16)((char*)A)[0] << 8  \
-                            | (u16)((char*)A)[1] } while (0)
+                            | (u16)((char*)A)[1]; } while (0)
 #define int4get(T,A)       do { T = (u32)((char*)A)[0] << 24 | (u32)((char*)A)[1] << 16 \
-                                | (u32)((char*)A)[2] << 8 | (u32)((char*)A)[3] } while (0)
+                                | (u32)((char*)A)[2] << 8 | (u32)((char*)A)[3]; } while (0)
 #define int8get(T,A)       do { T = (u64)((char*)A)[0] << 56 | (u64)((char*)A)[1] << 48 \
                                 | (u64)((char*)A)[2] << 40 | (u64)((char*)A)[3] << 32 \
                                 | (u64)((char*)A)[4] << 24 | (u64)((char*)A)[5] << 16 \
                                 | (u64)((char*)A)[6] << 8 \
-                                | (u64)((char*)A)[7] << 0 } while (0)
+                                | (u64)((char*)A)[7] << 0; } while (0)
 
 #define int2store(T,A)       do { *((char *)(T))=(char) ((A>>8));\
                                   *(((char *)(T))+1)=(char) (((A))); } while(0)
