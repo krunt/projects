@@ -44,6 +44,8 @@ END_METHOD
 DEFINE_METHOD(void, http_tracker_connection_t::finish)
     GLOG->debug("%s/%d", m_host.c_str(), m_port);
 
+    m_socket.close();
+
     m_state = s_none;
 END_METHOD
 
@@ -108,6 +110,7 @@ DEFINE_METHOD(void, http_tracker_connection_t::on_connect,
         boost::bind(&http_tracker_connection_t::on_received_announce_response, this,
                 boost::asio::placeholders::error,
                 boost::asio::placeholders::bytes_transferred));
+
 END_METHOD
 
 

@@ -13,6 +13,7 @@ public:
     boost::asio::io_service &io_service() { return m_io_service; }
 
     void add_peer(const std::string &host, int port);
+    void on_piece_block(
     
     void get_announce_urls(std::vector<url_t> &urls);
     const sha1_hash_t &info_hash() const { return m_torrent_info.m_info_hash; }
