@@ -16,6 +16,7 @@ public:
     void info(const std::string &format, ...) const;
     void warn(const std::string &format, ...) const;
     void error(const std::string &format, ...) const;
+    void set_namespace(const std::string &namespace_name);
 
 private:
 
@@ -24,9 +25,17 @@ private:
             const std::string &format, va_list va) const;
 
     FILE *m_fd;
+    std::string m_namespace;
 };
 
-extern logger_t *glog();
+extern logger_t *glog(const char *method_name = NULL);
+
+#define DEFINE_METHOD(return_type, method_name, ...) \
+    return_type method_name(__VA_ARGS__) { \
+        const char *method_name_str = #method_name;
+#define END_METHOD }
+
+#define GLOG glog(method_name_str)
 
 }
 

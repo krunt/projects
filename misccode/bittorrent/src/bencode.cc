@@ -7,12 +7,6 @@
 
 namespace btorrent {
 
-class bad_encode_decode_exception: public std::runtime_error {
-public:
-    bad_encode_decode_exception(const std::string &str)
-        : std::runtime_error(str) {}
-};
-
 namespace detail {
 
     size_type parse_integer(const std::string &str, int &offs) {

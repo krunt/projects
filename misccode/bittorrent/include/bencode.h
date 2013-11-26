@@ -6,6 +6,13 @@
 
 namespace btorrent {
 
+class bad_encode_decode_exception: public std::runtime_error {
+public:
+    bad_encode_decode_exception(const std::string &str)
+        : std::runtime_error(str) {}
+};
+
+
 value_t bdecode(const std::string &str);
 std::string bencode(const value_t &v);
 

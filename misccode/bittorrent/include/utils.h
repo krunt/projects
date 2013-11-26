@@ -2,6 +2,7 @@
 #define UTILS_DEF_
 
 #include <include/common.h>
+#include <boost/asio.hpp>
 
 namespace btorrent {
 
@@ -28,6 +29,24 @@ private:
     int m_port;
     std::string m_path;
 };
+
+namespace utils {
+    std::string ipv4_to_string(u32 ip);
+    std::string escape_http_string(const std::string &str);
+
+    template <typename SocketType>
+    inline void read_available_from_socket(SocketType &s, 
+            std::vector<u8> &buffer, size_t max_size = -1) 
+    {
+        if (s.available()) {
+            size_t bytes_to_read = std::min(s.available(), max_size);
+            buffer.resize(buffer.size() + bytes_to_read);
+            s.receive(boost::asio::buffer(
+                reinterpret_cast<u8*>(&buffer[0]) 
+                + buffer.size() - bytes_to_read, bytes_to_read));
+        }
+    }
+}
 
 }
 

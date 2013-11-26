@@ -93,4 +93,63 @@ url_t::url_t(const std::string &url) {
     }
 }
 
+namespace utils {
+
+std::string ipv4_to_string(u32 ip) {
+    return boost::lexical_cast<std::string>((ip >> 24) & 0xFF)
+        + "." + boost::lexical_cast<std::string>((ip >> 16) & 0xFF)
+        + "." + boost::lexical_cast<std::string>((ip >> 8) & 0xFF)
+        + "." + boost::lexical_cast<std::string>((ip) & 0xFF);
+}
+
+namespace detail {
+
+/*
+this is from libtorrent
+Copyright (c) 2003, Arvid Norberg
+All rights reserved.
+*/
+
+static const char unreserved_chars[] =
+	// when determining if a url needs encoding
+	// % should be ok
+	"%+"
+	// reserved
+	";?:@=&,$/"
+	// unreserved (special characters) ' excluded,
+	// since some buggy trackers fail with those
+	"-_!.~*()"
+	// unreserved (alphanumerics)
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	"0123456789";
+
+static const char hex_chars[] = "0123456789abcdef";
+
+static std::string escape_http_string_impl(const char* str, int len, int offset) {
+	std::string ret;
+	for (int i = 0; i < len; ++i)
+	{
+		if (std::strchr(unreserved_chars+offset, *str) && *str != 0)
+		{
+			ret += *str;
+		}
+		else
+		{
+			ret += '%';
+			ret += hex_chars[((unsigned char)*str) >> 4];
+			ret += hex_chars[((unsigned char)*str) & 15];
+		}
+		++str;
+	}
+	return ret;
+}
+
+}
+
+std::string escape_http_string(const std::string &str) {
+    return detail::escape_http_string_impl(str.c_str(), str.size(), 11);
+}
+
+}
+
 }

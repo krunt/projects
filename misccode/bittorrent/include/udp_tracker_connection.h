@@ -3,21 +3,20 @@
 
 #include <include/common.h>
 #include <include/torrent.h>
+#include <include/tracker_connection.h>
 
 #include <boost/asio.hpp>
 #include <boost/date_time.hpp>
 
 namespace btorrent {
 
-class udp_tracker_connection_t {
+class udp_tracker_connection_t: public tracker_connection_t {
 public:
-    udp_tracker_connection_t(torrent_t &torrent);
+    udp_tracker_connection_t(torrent_t &torrent, 
+            const url_t &announce_url);
 
     void start();
-    void finish(bool success = false);
-
-    torrent_t &get_torrent() { return m_torrent; }
-    const torrent_t &get_torrent() const { return m_torrent; }
+    void finish();
 
 private:
     void on_resolve(const boost::system::error_code& err,
@@ -39,10 +38,6 @@ private:
     enum action_t { k_connect = 0, k_announce = 1, };
     enum state_t { s_none = 0, s_announcing = 1, };
 
-    torrent_t m_torrent;
-
-    std::vector<url_t> m_announce_urls;
-    int m_current_announce_url_index;
     std::string m_host;
     int m_port; 
 
@@ -53,7 +48,7 @@ private:
     u64 m_connection_id;
 
     std::vector<u8> m_send_buffer;
-    boost::array<char, k_max_buffer_size> m_data;
+    std::vector<u8> m_data;
     state_t m_state;
 
     int m_timeout_step;

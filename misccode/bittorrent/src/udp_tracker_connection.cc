@@ -7,53 +7,38 @@ namespace ip = boost::asio::ip;
 
 namespace btorrent {
 
-udp_tracker_connection_t::udp_tracker_connection_t(torrent_t &torrent)
-    : m_torrent(torrent),
-      m_resolver(m_torrent.io_service()),
-      m_socket(m_torrent.io_service()),
+udp_tracker_connection_t::udp_tracker_connection_t(torrent_t &torrent,
+       const url_t &announce_url)
+    : tracker_connection_t(torrent),
+      m_host(announce_url.get_host()), m_port(announce_url.get_port()),
+      m_resolver(get_torrent().io_service()),
+      m_socket(get_torrent().io_service()),
       m_state(s_none),
-      m_timeout_timer(m_torrent.io_service())
-{
-    std::vector<url_t> announce_urls;
-    m_torrent.get_announce_urls(announce_urls);
-    for (int i = 0; i < announce_urls.size(); ++i) {
-        if (announce_urls[i].get_scheme() == "udp") {
-            m_announce_urls.push_back(announce_urls[i]);
-        }
-    }
-    m_current_announce_url_index = 0;
-}
+      m_timeout_timer(get_torrent().io_service())
+{}
 
 void udp_tracker_connection_t::start() {
     m_state = s_announcing;
-
-    m_host = m_announce_urls[m_current_announce_url_index].get_host();
-    m_port = m_announce_urls[m_current_announce_url_index].get_port();
+    m_data.resize(k_max_buffer_size);
 
     ip::udp::resolver::query query(m_host, 
             boost::lexical_cast<std::string>(m_port));
 
     glog()->debug("udp-start trying to connect to %s:%d", 
             m_host.c_str(), m_port);
+
     m_resolver.async_resolve(query,
         boost::bind(&udp_tracker_connection_t::on_resolve, this,
             boost::asio::placeholders::error,
             boost::asio::placeholders::iterator));
 }
 
-void udp_tracker_connection_t::finish(bool success) {
+void udp_tracker_connection_t::finish() {
     glog()->debug("udp-finish to %s/%d", m_host.c_str(), m_port);
 
     m_state = s_none;
     m_timeout_step = 0;
     cancel_timeout();
-
-    if (!success) {
-        (++m_current_announce_url_index) %= m_announce_urls.size();
-        start();
-    } else {
-        m_current_announce_url_index = 0;
-    }
 }
 
 void udp_tracker_connection_t::on_timer_timeout() {
@@ -66,7 +51,8 @@ void udp_tracker_connection_t::on_timer_timeout() {
     glog()->debug("got timeout, configured timer for %d seconds", 
             timeout_in_seconds());
 
-    if (m_socket.send(boost::asio::buffer(static_cast<u8*>(&*(m_send_buffer.begin())),
+    if (m_socket.send(boost::asio::buffer(
+                    static_cast<u8*>(&*(m_send_buffer.begin())),
             m_send_buffer.size())) != m_send_buffer.size())
     {
         glog()->error("sending %d bytes by timeout error", m_send_buffer.size());
@@ -165,7 +151,7 @@ void udp_tracker_connection_t::on_received_connect_response(
     glog()->debug("on_received_connect_response got");
 
     u32 response_action, response_transaction_id, response_connection_id;
-    u8 *p = reinterpret_cast<u8*>(m_data.begin());
+    u8 *p = reinterpret_cast<u8*>(m_data.data());
 
     int4get(response_action, p); p += 4;
     int4get(response_transaction_id, p); p += 4;
@@ -227,8 +213,14 @@ void udp_tracker_connection_t::on_received_announce_response(
         return; 
     }
 
-    u32 action, transaction_id, interval, leechers, seeders, ip_address, ip_port;
-    u8 *p = reinterpret_cast<u8*>(m_data.begin());
+    m_data.resize(bytes_transferred);
+    utils::read_available_from_socket(m_socket, m_data);
+    bytes_transferred = m_data.size();
+
+    u16 ip_port;
+    u32 action, transaction_id, interval, leechers, seeders, ip_address; 
+
+    u8 *p = reinterpret_cast<u8*>(&m_data[0]);
 
     int4get(action, p); p += 4;
     int4get(transaction_id, p); p += 4;
@@ -240,14 +232,9 @@ void udp_tracker_connection_t::on_received_announce_response(
     while (bytes_transferred >= 6) {
         int4get(ip_address, p); p += 4;
         int2get(ip_port, p); p += 2;
-        get_torrent().add_peer(
-            boost::asio::ip::address(boost::asio::ip::address_v4(ip_address)), 
-                ip_port);
+        get_torrent().add_peer(utils::ipv4_to_string(ip_address), ip_port);
     }
-
-    /* TODO read more hosts here */
-
-    finish(true);
+    finish();
 }
 
 }

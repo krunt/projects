@@ -9,10 +9,10 @@ void logger_t::loghelper(logger_level_t level,
         const std::string &format, va_list ap) const 
 {
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-    fprintf(m_fd, "[%s]:%5s: ",
+    fprintf(m_fd, "[%s]:%s:[%s]: ",
             boost::posix_time::to_iso_string(now).c_str(),
             level == kinfo ? "INFO" : level == kwarn ? "WARN" : 
-            level == kerror ? "ERROR" : "DEBUG");
+            level == kerror ? "ERROR" : "DEBUG", m_namespace.c_str());
     vfprintf(m_fd, format.c_str(), ap);
     fprintf(m_fd, "\n");
 }
@@ -45,7 +45,14 @@ void logger_t::error(const std::string &format, ...) const {
     va_end(ap);
 }
 
+void logger_t::set_namespace(const std::string &namespace_name) {
+    m_namespace = namespace_name;
+}
+
 logger_t global_logger;
-extern logger_t *glog() { return &global_logger; }
+extern logger_t *glog(const char *method_name) { 
+    global_logger.set_namespace(method_name ? method_name : "");
+    return &global_logger; 
+}
 
 }
