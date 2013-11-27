@@ -11,7 +11,7 @@ struct torrent_info_t {
 
     sha1_hash_t m_info_hash;
 
-    size_type m_piece_length;
+    size_type m_piece_size;
     std::vector<sha1_hash_t> m_piece_hashes;
 
     struct file_t { 

@@ -28,7 +28,7 @@ private:
     std::string m_namespace;
 };
 
-extern logger_t *glog(const char *method_name = NULL);
+logger_t *glog(const char *method_name = NULL);
 
 #define DEFINE_METHOD(return_type, method_name, ...) \
     return_type method_name(__VA_ARGS__) { \

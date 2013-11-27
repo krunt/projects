@@ -15,5 +15,6 @@
 #include <include/torrent_info.h>
 #include <include/bencode.h>
 #include <include/logger.h>
+#include <include/settings.h>
 
 #endif

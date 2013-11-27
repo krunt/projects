@@ -19,6 +19,8 @@ public:
 
     std::string get_digest() const;
 
+    bool operator==(const sha1_hash_t &other) const;
+
 private:
     typedef struct AVSHA {
         u64 count;       ///< number of bytes in buffer

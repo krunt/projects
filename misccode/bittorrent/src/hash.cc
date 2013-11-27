@@ -76,6 +76,10 @@ std::string sha1_hash_t::get_digest() const {
     return std::string((const char*)m_ctx.digest, 20);
 }
 
+bool sha1_hash_t::operator==(const sha1_hash_t &other) const {
+    return get_digest() == other.get_digest();
+}
+
 #define rol(value, bits) (((value) << (bits)) | ((value) >> (32 - (bits))))
 
 /* (R0+R1), R2, R3, R4 are the different operations used in SHA1 */

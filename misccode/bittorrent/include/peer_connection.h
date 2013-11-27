@@ -30,9 +30,11 @@ private:
     void perform_handshake();
 
     enum message_type_t { t_keepalive = -1, t_choke = 0, t_unchoke, t_interested,
-        t_not_interested, t_have, t_bitfield, t_request,
-        t_request, t_piece, t_cancel };
+        t_not_interested, t_have, t_bitfield, t_request, t_piece, t_cancel };
     void send_common(message_type_t type, const std::string &payload);
+
+    void process_input_messages();
+    void setup_receive_callback();
 
 private:
     enum state_t { k_none = 0, k_connecting = 1, 
@@ -52,6 +54,23 @@ private:
     static const int k_max_buffer_size = 4096;
     std::vector<u8> m_receive_buffer;
 
+    struct connection_state_t {
+        connection_state_t()
+            : me_interested(false), 
+              he_interested(false),
+              me_choked(true),
+              he_choked(false),
+        {}
+
+        bool me_interested;
+        bool he_interested;
+
+        bool me_choked;
+        bool he_choked;
+    };
+
+    connection_state_t m_connection_state;
+
     struct message_t {
         union {
             u32 length;
@@ -64,19 +83,28 @@ private:
 
     class message_stream_t {
     public:
-        void feed_data(const std::vector<u8> &str);
+        message_stream_t() { reset(); }
 
+        void feed_data(const std::vector<u8> &str);
         const std::vector<message_t> &get_pending() const { 
             return m_pending_messages; 
         }
-
         bool has_pending() const { return !m_pending_messages.empty(); }
         void clear_pending() { m_pending_messages.clear(); }
 
-    private:
-        size_type m_pending_bytes_count;
-        char m_pending_bytes[8];
+        void reset() { 
+            m_pending_bytes_count = 0;
+            m_state = s_length;
+            m_current.payload.clear();
+        }
 
+    private:
+        enum state_t { s_length = 0, s_type = 1, s_payload = 2, };
+
+        state_t m_state;
+        size_type m_pending_length_count;
+
+        message_t m_current;
         std::vector<message_t> m_pending_messages;
     };
 

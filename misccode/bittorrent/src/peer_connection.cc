@@ -129,14 +129,27 @@ DEFINE_METHOD(void, peer_connection_t::on_handshake_response,
 
     m_state = k_active;
 
+    setup_receive_callback();
+
 END_METHOD
 
 void peer_connection_t::send_keepalive() { send_common(t_keepalive, "");  }
-void peer_connection_t::send_choke() { send_common(t_choke, ""); }
-void peer_connection_t::send_unchoke() { send_common(t_unchoke, ""); }
-void peer_connection_t::send_interested() { send_common(t_interested, ""); }
-void peer_connection_t::send_notinterested() { send_common(t_not_interested, ""); }
-
+void peer_connection_t::send_choke() { 
+    send_common(t_choke, ""); 
+    m_connection_state.he_choked = true;
+}
+void peer_connection_t::send_unchoke() { 
+    send_common(t_unchoke, ""); 
+    m_connection_state.he_choked = false;
+}
+void peer_connection_t::send_interested() { 
+    send_common(t_interested, ""); 
+    m_connection_state.me_interested = true;
+}
+void peer_connection_t::send_notinterested() { 
+    send_common(t_not_interested, ""); 
+    m_connection_state.me_interested = false;
+}
 void peer_connection_t::send_have(u32 index) { 
     u8 buffer[4]; u8 *p = buffer;
     int4store(p, index); 
@@ -194,17 +207,8 @@ DEFINE_METHOD(void, peer_connection_t::send_common, message_type_t type,
 
     GLOG->debug("sent %d packet successfully", type);
 
-    /* this type expects payload-response */
-    if (type == t_request) {
-        m_receive_buffer.resize(k_max_buffer_size);
-        m_socket.async_receive(
-            boost::asio::buffer(m_receive_buffer, k_max_buffer_size),
-            boost::bind(&peer_connection_t::on_data_received, 
-                this, boost::asio::placeholders::error,
-                boost::asio::placeholders::bytes_transferred));
-    }
-
 END_METHOD
+
 
 DEFINE_METHOD(void, peer_connection_t::on_data_received,
     const boost::system::error_code& err, size_t bytes_transferred)
@@ -226,25 +230,133 @@ DEFINE_METHOD(void, peer_connection_t::on_data_received,
         utils::read_available_from_socket(m_socket, m_receive_buffer);
         m_input_message_stream.feed_data(m_receive_buffer);
 
-        /* we handled all data already */
-        m_socket.cancel();
-
-        m_receive_buffer.resize(k_max_buffer_size);
-        m_socket.async_receive(
-            boost::asio::buffer(m_receive_buffer, k_max_buffer_size),
-            boost::bind(&peer_connection_t::on_data_received, 
-                this, boost::asio::placeholders::error,
-                boost::asio::placeholders::bytes_transferred));
     }
 
     if (m_input_message_stream.has_pending()) {
-
+        process_input_messages();
     }
+
+    setup_receive_callback();
 
 END_METHOD
 
-message_stream_t::feed_data() {
 
+void peer_connection_t::process_input_messages() {
+    const std::vector<message_t> &messages = m_input_message_stream.get_pending();
+    for (int i = 0; i < messages.size(); ++i) {
+        switch (messages[i].type) {
+        case t_keepalive: on_keepalive(messages[i]); break;
+        case t_choke: on_choke(messages[i]); break;
+        case t_unchoke: on_unchoke(messages[i]); break;
+        case t_interested: on_interested(messages[i]); break;
+        case t_not_interested: on_notinterested(messages[i]); break;
+        case t_have: on_have(messages[i]); break;
+        case t_bitfield: on_bitfield(messages[i]); break;
+        case t_request: /* ignore */ break;
+        case t_piece: on_piece(messages[i]); break;
+        case t_cancel: on_cancel(messages[i]); break;
+        };
+    }
+    m_input_message_stream.clear_pending();
+}
+
+
+void peer_connection_t::on_keepalive(const message_t &message) {}
+void peer_connection_t::on_choke(const message_t &message) {
+    m_connection_state.me_choked = true;
+}
+void peer_connection_t::on_unchoke(const message_t &message) {
+    m_connection_state.me_choked = false;
+}
+void peer_connection_t::on_interested(const message_t &message) {
+    m_connection_state.he_interested = true;
+}
+void peer_connection_t::on_notinterested(const message_t &message) {
+    m_connection_state.he_interested = false;
+}
+void peer_connection_t::on_have(const message_t &message) {}
+void peer_connection_t::on_bitfield(const message_t &message) {}
+void peer_connection_t::on_piece(const message_t &message) {}
+void peer_connection_t::on_cancel(const message_t &message) {}
+
+void peer_connection_t::setup_receive_callback() {
+    m_receive_buffer.resize(k_max_buffer_size);
+    m_socket.async_receive(
+        boost::asio::buffer(m_receive_buffer, k_max_buffer_size),
+        boost::bind(&peer_connection_t::on_data_received, 
+            this, boost::asio::placeholders::error,
+            boost::asio::placeholders::bytes_transferred));
+}
+
+
+void peer_connection_t::message_stream_t::feed_data(
+    const std::vector<u8> &str) 
+{
+    if (str.empty())
+        return;
+
+    size_type pending_bytes = str.size();
+    u8 *p = &str[0];
+
+    while (pending_bytes) {
+
+    switch (m_state) {
+    case s_length: {
+        if (m_pending_length_count + pending_bytes >= 4) {
+            memcpy(m_current.lenpart.buf + m_pending_length_count, 
+                p, 4 - m_pending_length_count);
+            p += 4 - m_pending_length_count;
+            pending_bytes -= 4 - m_pending_length_count;
+            m_pending_length_count = 4;
+            int4get(m_current.lenpath.length, m_current.lenpath.buf);
+
+            /* if is keepalive */
+            if (m_current.lenpath.length == 0) {
+                m_current.type = peer_connection_t::t_keepalive;
+                m_pending_messages.push_back(m_current);
+                reset();
+            } else {
+                m_state = s_type;
+            }
+
+        } else {
+            memcpy(m_current.lenpart.buf + m_pending_length_count, 
+                p, pending_bytes);
+            p += pending_bytes;
+            m_pending_length_count += pending_bytes;
+            pending_bytes = 0;
+        }
+        break;
+    }
+
+    case s_type: {
+        m_state = static_cast<state_t>(*p++); 
+        --pending_bytes;
+        break;
+    }
+
+    case s_payload: {
+        if (m_current.payload.size() + pending_bytes >= m_current.lenpart.length) {
+            size_type to_copy = m_current.lenpart.length - m_current.payload.size();
+            payload.resize(payload.size() + to_copy);
+            memcpy(&payload[payload.size() - to_copy], p, to_copy);
+            p += to_copy;
+            pending_bytes -= to_copy;
+
+            /* adding message to pending */
+            m_pending_messages.push_back(m_current);
+            reset();
+
+        } else {
+            payload.resize(payload.size() + pending_bytes);
+            memcpy(&payload[payload.size() - pending_bytes], p, pending_bytes);
+            p += pending_bytes;
+            pending_bytes = 0;
+        }
+        break; 
+    }};
+
+    }
 }
 
 

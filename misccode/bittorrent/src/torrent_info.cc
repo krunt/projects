@@ -1,6 +1,8 @@
 #include <include/common.h>
 #include <iostream>
 
+#include <boost/filesystem.hpp>
+
 namespace btorrent {
 
 torrent_info_t construct_torrent_info(const std::string &filename) {
@@ -23,7 +25,7 @@ torrent_info_t construct_torrent_info(const std::string &filename) {
         r.m_info_hash.finalize();
     }
 
-    r.m_piece_length = v["info"]["piece length"].to_int();
+    r.m_piece_size = v["info"]["piece length"].to_int();
     const value_t::string_type &pieces = v["info"]["pieces"].to_string();
     for (int i = 0; i < pieces.size() / 20; ++i) {
         r.m_piece_hashes.push_back(sha1_hash_t(
@@ -34,8 +36,14 @@ torrent_info_t construct_torrent_info(const std::string &filename) {
     if (v["info"].exists("files")) {
         const value_t::list_type &lst = v["info"]["files"].to_list();
         for (int i = 0; i < lst.size(); ++i) {
-            r.m_files.push_back(torrent_info_t::file_t(
-                        lst[i]["path"][0].to_string(),
+            boost::filesystem::path pth = v["info"]["name"].to_string();
+
+            const value_t::list_type &path_list = lst[i]["path"].to_list();
+            for (int j = 0; j < path_list.size(); ++j) {
+                pth /= path_list[i];
+            }
+
+            r.m_files.push_back(torrent_info_t::file_t(pth, 
                         lst[i]["length"].to_int()));
         }
     } else {
