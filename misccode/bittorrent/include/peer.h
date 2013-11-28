@@ -56,6 +56,8 @@ private:
     torrent_t &m_torrent;
 };
 
+typedef peer_t *ppeer_t;
+
 }
 
 #endif /* PEER_DEF_ */

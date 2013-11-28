@@ -24,6 +24,10 @@ public:
     void move_to_inactive_from_active(ppeer_t peer);
     void move_to_blacklist(ppeer_t peer);
 
+    bool remove_from_peer_list(ppeer_t peer, std::vector<ppeer_t> &list);
+    peer_replacement_t remove_from_replacement_list(ppeer_t peer,
+            std::vector<peer_replacement_t> &list);
+
     void on_connection_lost(ppeer_t peer);
     void on_bitmap_received(ppeer_t peer, const std::vector<u8> &bitmap);
     void on_piece_part_received(ppeer_t peer, size_type piece_index, 
@@ -39,11 +43,13 @@ public:
     const torrent_info_t &get_torrent_info() const { return m_torrent_info; }
 
 private:
-
     struct peer_replacement_t {
         peer_replacement_t(const std::string &from, const std::string &to)
             : m_from_peer_id(from), m_to_peer_id(to)
         {}
+
+        bool empty() const { return m_from_peer_id.empty() 
+            && m_to_peer_id.empty(); }
 
         std::string m_from_peer_id;
         std::string m_to_peer_id;
@@ -52,14 +58,11 @@ private:
     boost::shared_ptr<piece_pick_strategy_t> m_piece_pick_strategy;
     boost::shared_ptr<peer_replace_strategy_t> m_peer_replacement_strategy;
 
-    typedef boost::shared_ptr<peer_t> ppeer_t;
     std::vector<ppeer_t> m_unknown_peers;
     std::vector<ppeer_t> m_inactive_peers;
     std::vector<ppeer_t> m_pending_peers;
     std::vector<ppeer_t> m_active_peers;
     std::vector<ppeer_t> m_blacklist_peers;
-
-    std::map<std::string, ppeer_t> m_peerid2peer_map;
 
     std::vector<peer_replacement_t> m_pending_peer_replacements;
 
@@ -71,6 +74,13 @@ private:
     u64 m_bytes_left;
     u64 m_bytes_uploaded;
     torrent_info_t m_torrent_info;
+    torrent_storage_t m_torrent_storage;
+
+    boost::asio::basic_deadline_timer<boost::posix_time::ptime> 
+        m_timeout_timer;
+
+    /* keep it last for now */
+    std::map<std::string, boost::shared_ptr<peer_t> > m_peerid2peer_map;
 };
 
 }

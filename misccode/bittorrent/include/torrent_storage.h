@@ -13,6 +13,7 @@ public:
     void start();
     void finish();
 
+    /* TODO: make with threads */
     void add_piece_part(int piece_index, int piece_part, const vector<u8> &data);
     bool validate_piece(int piece_index) const;
 

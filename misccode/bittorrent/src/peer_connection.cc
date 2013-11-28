@@ -34,9 +34,17 @@ END_METHOD
 
 
 DEFINE_METHOD(void, peer_connection_t::finish)
+    m_resolver.cancel();
+    m_socket.cancel();
+
     if (m_state >= k_connected) {
         m_socket.close();
     }
+
+    if (m_connection_lost_callback) {
+        m_connection_lost_callback();
+    }
+
     m_state = k_none;
 END_METHOD
 
@@ -44,6 +52,12 @@ END_METHOD
 DEFINE_METHOD(void, peer_connection_t::on_resolve,
     const boost::system::error_code& err,
     boost::asio::ip::tcp::resolver::iterator endpoint_iterator)
+
+    if (err == boost::asio::error::operation_aborted) {
+        finish();
+        return;
+    }
+
     if (err) {
         GLOG->error("got error: ");
         finish();
@@ -61,6 +75,11 @@ END_METHOD
 
 DEFINE_METHOD(void, peer_connection_t::on_connect, 
         const boost::system::error_code& err) 
+
+    if (err == boost::asio::error::operation_aborted) {
+        finish();
+        return;
+    }
 
     if (err) {
         GLOG->error("got error: ");
@@ -107,6 +126,11 @@ END_METHOD
 DEFINE_METHOD(void, peer_connection_t::on_handshake_response,
         const boost::system::error_code& err, size_t bytes_transferred)
 
+    if (err == boost::asio::error::operation_aborted) {
+        finish();
+        return;
+    }
+
     if (err || bytes_transferred < 1+19+8+20+20) { 
         GLOG->error("got error: ");
         finish();
@@ -126,6 +150,10 @@ DEFINE_METHOD(void, peer_connection_t::on_handshake_response,
     }
 
     GLOG->debug("handshaked successfully");
+
+    if (m_handshake_done_callback) {
+        m_handshake_done_callback();
+    }
 
     m_state = k_active;
 
@@ -277,8 +305,15 @@ void peer_connection_t::on_notinterested(const message_t &message) {
     m_connection_state.he_interested = false;
 }
 void peer_connection_t::on_have(const message_t &message) {}
-void peer_connection_t::on_bitfield(const message_t &message) {}
-void peer_connection_t::on_piece(const message_t &message) {}
+
+void peer_connection_t::on_bitfield(const message_t &message) {
+    /* TODO */
+}
+
+void peer_connection_t::on_piece(const message_t &message) {
+    /* TODO */ 
+}
+
 void peer_connection_t::on_cancel(const message_t &message) {}
 
 void peer_connection_t::setup_receive_callback() {

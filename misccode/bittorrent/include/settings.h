@@ -11,12 +11,14 @@ struct settings_t: public boost::noncopyable {
           m_torrents_data_path("/home/akuts/datastorage"),
           m_max_check_connections(3),
           m_max_active_connections(10),
+          m_download_time_interval(1)
     {}
 
     int m_piece_part_size;
     std::string m_torrents_data_path;
     int m_max_check_connections;
     int m_max_active_connections;
+    int m_download_time_interval;
 };
 
 extern settings_t *gsettings();

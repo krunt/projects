@@ -26,7 +26,8 @@ public:
     virtual void on_piece_part_requested(const piece_part_request_t &req) = 0;
     virtual void on_piece_part_downloaded(const piece_part_request_t &req) = 0;
 
-    virtual void on_piece_done(size_type piece_index) = 0;
+    virtual void on_piece_validation_done(size_type piece_index) = 0;
+    virtual void on_piece_validation_failed(size_type piece_index) = 0;
 };
 
 }

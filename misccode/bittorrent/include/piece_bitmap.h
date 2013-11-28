@@ -1,5 +1,5 @@
-#ifndef PIECE_PICK_STRATEGY_DEF_
-#define PIECE_PICK_STRATEGY_DEF_
+#ifndef PEER_PIECE_BITMAP_DEF_
+#define PEER_PIECE_BITMAP_DEF_
 
 namespace btorrent {
 
@@ -21,6 +21,8 @@ public:
     void set_piece_part(size_type piece_index, 
         size_type piece_part_index, piece_part_state_t state);
 
+    bool is_piece_downloaded(size_type piece_index) const;
+
 private:
     std::string m_peer_id;
     std::vector<u8> m_piece_part_bitmap;
@@ -29,4 +31,4 @@ private:
 
 }
 
-#endif /* PIECE_PICK_STRATEGY_DEF_ */
+#endif /* PEER_PIECE_BITMAP_DEF_ */

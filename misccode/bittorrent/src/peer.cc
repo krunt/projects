@@ -18,8 +18,6 @@ void peer_t::make_request(const piece_part_request_t &request) {
     assert(m_state == s_active);
     assert(request.peer_id == m_peer_id);
 
-    m_bitmap.set_piece_part(piece_index, piece_part_index, 
-        peer_piece_bitmap_t::pp_requested);
     m_pending_requests.push_back(request);
     m_conn.send_request(request.m_piece_index, request.m_piece_part_index);
 }
@@ -47,8 +45,6 @@ void peer_t::on_handshake_done() {
 void peer_t::on_connection_lost() {
     /* clear pending requests statuses */
     for (int i = 0; i < m_pending_requests.size(); ++i) {
-        m_bitmap.set_piece_part(m_pending_requests[i].m_piece_index,
-            m_pending_requests[i].m_piece_part_index, peer_piece_bitmap_t::pp_none);
         m_torrent.on_aborted_request(this, m_pending_requests[i]);
     }
 
@@ -73,7 +69,7 @@ void peer_t::remove_from_pending(size_type piece_index,
     std::vector<piece_part_request_t> new_requests;
     for (int i = 0; i < m_pending_requests.size(); ++i) {
         if (m_pending_requests[i].m_piece_index != piece_index
-            || m_pending_requests[i].m_piece_part_index == piece_part_index)
+            || m_pending_requests[i].m_piece_part_index != piece_part_index)
         {
             new_requests.push_back(m_pending_requests[i]);
         }
@@ -84,11 +80,7 @@ void peer_t::remove_from_pending(size_type piece_index,
 void peer_t::on_piece_part_received(size_type piece_index,
     size_type piece_part_index, const std::vector<u8> &data)
 {
-    m_bitmap.set_piece_part(piece_index, piece_part_index, 
-        peer_piece_bitmap_t::pp_downloaded);
     remove_from_pending(piece_index, piece_part_index);
-    m_torrent.on_piece_part_received(this, piece_index,
-            piece_part_index, data);
 
     /* we are done */
     if (m_state == s_finishing && m_pending_requests.empty()) {

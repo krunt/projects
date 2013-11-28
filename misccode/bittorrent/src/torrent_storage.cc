@@ -10,6 +10,13 @@ torrent_storage_t::torrent_storage_t(torrent_t &torrent)
       m_piece_size(torrent.get_torrent_info().m_piece_size)
 {}
 
+void torrent_storage_t::start() { 
+    setup_files();
+}
+
+void torrent_storage_t::finish() { 
+}
+
 void torrent_storage_t::preallocate_file(const file_stream_t &f) {
     fs::path pth(f.m_ft.m_path);
     fs::create_directories(pth.branch_path());
