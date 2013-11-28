@@ -46,6 +46,21 @@ namespace utils {
                 + buffer.size() - bytes_to_read, bytes_to_read));
         }
     }
+
+    template <typename T>
+    inline const T pop_random(const std::vector<T> &vec) {
+        assert(!vec.empty());
+
+        u32 elm_index;
+        const T result;
+        generate_random(&elm_index, sizeof(elm_index));
+        elm_index %= vec.size();
+        vec[elm_index].swap(vec.back());
+        result = vec.back();
+        vec.pop_back();
+
+        return result;
+    }
 }
 
 }

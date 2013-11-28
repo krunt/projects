@@ -168,12 +168,14 @@ void peer_connection_t::send_request(u32 index, u32 begin, u32 length) {
     send_common(t_request, std::string(p, p + 12)); 
 }
 
-void peer_connection_t::send_piece(u32 index, u32 begin, u32 piece) { 
-    u8 buffer[4 + 4 + 4]; u8 *p = buffer;
+void peer_connection_t::send_piece(u32 index, u32 begin, 
+        const std::vector<u8> &data) 
+{
+    u8 buffer[4 + 4]; u8 *p = buffer;
     int4store(p, index); p += 4;
     int4store(p, begin); p += 4;
-    int4store(p, piece); p += 4;
-    send_common(t_piece, std::string(p, p + 12)); 
+    send_common(t_piece, std::string(p, p + 8) 
+        + std::string(reinterpret_cast<char*>(&data[0]), data.size()));
 }
 
 void peer_connection_t::send_request(u32 index, u32 begin, u32 length) { 

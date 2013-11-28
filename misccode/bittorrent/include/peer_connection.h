@@ -17,11 +17,19 @@ public:
           m_host(host), m_port(port)
     {}
 
-    virtual void start() = 0;
-    virtual void finish() = 0;
+    void start();
+    void finish();
 
     torrent_t &get_torrent() { return m_torrent; }
     const torrent_t &get_torrent() const { return m_torrent; }
+
+    /* set up callbacks part */
+    void setup_handshake_done_callback(const boost::function<void()> &cbk);
+    void setup_connection_lost_callback(const boost::function<void()> &cbk);
+    void setup_bitmap_received_callback(const 
+        boost::function<void(const std::vector<u8> &)> &cbk);
+    void setup_piece_part_received_callback(const boost::function<
+            void(size_type, size_type, const std::vector<u8> &)> &cbk);
 
 private:
     void on_resolve(const boost::system::error_code& err,
@@ -53,6 +61,13 @@ private:
 
     static const int k_max_buffer_size = 4096;
     std::vector<u8> m_receive_buffer;
+
+    /* callbacks */
+    boost::function<void()> m_handshake_done_callback;
+    boost::function<void()> m_connection_lost_callback;
+    boost::function<void(const std::vector<u8> &)> m_bitmap_received_callback;
+    boost::function<void(size_type, size_type, 
+        const std::vector<u8> &)> m_piece_part_received_callback;
 
     struct connection_state_t {
         connection_state_t()
