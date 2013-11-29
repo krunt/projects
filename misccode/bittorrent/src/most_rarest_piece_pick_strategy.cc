@@ -34,12 +34,12 @@ bool most_rarest_piece_pick_strategy_t::get_next_part(
         peer_piece_part_iterator_t it(m_mybitmap,
             piece_index, peer_piece_bitmap_t::pp_none);
         for (; !it.at_end(); ++it) {
-            for(peer_list_per_piece_t::const_iterator it = peer_list.begin();
-                    it != peer_list.end(); ++it) 
+            for(peer_list_per_piece_t::const_iterator it1 = peer_list.begin();
+                    it1 != peer_list.end(); ++it1) 
             {
-                if (it->m_pending_count < m_max_pending_requests_per_peer) {
+                if (it1->m_pending_count < m_max_pending_requests_per_peer) {
 
-                    req.m_peer_id = it->m_bitmap.peer_id();
+                    req.m_peer_id = it1->m_bitmap.peer_id();
                     req.m_piece_index = piece_index;
                     req.m_piece_part_index = *it;
 

@@ -74,9 +74,61 @@ bool peer_piece_bitmap_t::is_piece_downloaded(size_type piece_index) const {
     return true;
 }
 
-/* TODO */
 peer_piece_iterator_t::peer_piece_iterator_t(
         const peer_piece_bitmap_t &bitmap, int filter_match)
+    : m_filter_match(filter_match), m_pos(-1), m_at_end(false),
+      m_bitmap(bitmap)
+{ operator++(); }
 
+peer_piece_iterator_t::value_type
+peer_piece_iterator_t::operator*() const {
+    return m_pos; 
 }
 
+peer_piece_bitmap_iterator_t &
+peer_piece_iterator_t::operator++() {
+    while (1) {
+        if (++m_pos >= m_bitmap.piece_count()) {
+            m_at_end = true;
+            break;
+        }
+
+        if (m_filter_match == -1 
+            || (m_filter_match == 0 && !m_bitmap.has_piece(m_pos))
+            || (m_filter_match == 1 && m_bitmap.has_piece(m_pos)))
+        {
+            break;
+        }
+    }
+    return *this;
+}
+
+peer_piece_part_iterator_t::peer_piece_part_iterator_t(
+        const peer_piece_bitmap_t &bitmap, int filter_match)
+    : m_filter_match(filter_match), m_pos(-1), m_at_end(false),
+      m_bitmap(bitmap)
+{ operator++(); }
+
+peer_piece_iterator_t::value_type
+peer_piece_iterator_t::operator*() const {
+    return m_pos; 
+}
+
+peer_piece_part_iterator_t &
+peer_piece_iterator_t::operator++() {
+    while (1) {
+        if (++m_pos >= m_bitmap.parts_per_piece()) {
+            m_at_end = true;
+            break;
+        }
+
+        if (m_filter_match == -1 
+            || (m_bitmap.get_piece_part(m_piece_index, m_pos) == m_filter_match))
+        {
+            break;
+        }
+    }
+    return *this;
+}
+
+}

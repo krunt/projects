@@ -13,8 +13,6 @@ public:
     void start();
     void finish();
 
-    boost::asio::io_service &io_service() { return m_io_service; }
-
     void add_peer(const std::string &peer_id, const std::string &host, int port);
     void make_request(ppeer_t peer, const piece_part_request_t &request);
 
@@ -35,6 +33,8 @@ public:
     void on_aborted_request(ppeer_t peer, const piece_part_request_t &request);
 
     void get_announce_urls(std::vector<url_t> &urls);
+
+    boost::asio::io_service &io_service() { return m_io_service; }
     const sha1_hash_t &info_hash() const { return m_torrent_info.m_info_hash; }
     const std::string &peer_id() const { return m_peer_id; }
     u64 bytes_downloaded() const { return m_bytes_downloaded; }
