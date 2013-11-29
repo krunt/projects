@@ -16,7 +16,10 @@ public:
         s_bitmap_active_pending, /* move to s_active after getting bitmap */
         s_active,
 
-        s_finishing,
+        s_finishing_from_active,
+        s_finishing_from_pending,
+
+        s_in_replacement,
 
         s_blacklist, /* move to s_blacklist after invalid hack-check */
     };
@@ -31,8 +34,15 @@ public:
     void start_pending();
     void make_request(const piece_part_request_t &request);
     void finish();
+    void finish_with_replacement();
 
+    const std::string &id() const { return m_peer_id; }
+    const state_t get_state() const { return m_state; }
     const peer_piece_bitmap_t &get_bitmap() const { return m_bitmap; }
+    bool is_finishing() const { 
+        return m_state == s_finishing_from_active
+            || m_state == s_finishing_from_pending;
+    }
 
 private:
     void setup_callbacks();

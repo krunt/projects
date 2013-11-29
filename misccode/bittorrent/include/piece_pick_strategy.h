@@ -3,6 +3,10 @@
 
 namespace btorrent {
 
+namespace piece_pick_strategy {
+enum k_piece_pick_strategy_type { most_rarest, };
+}
+
 /* this strategy is only working with active peers */
 class piece_pick_strategy_t {
 public:
@@ -14,9 +18,12 @@ public:
     virtual void on_piece_part_requested(const piece_part_request_t &req) = 0;
     virtual void on_piece_part_downloaded(const piece_part_request_t &req) = 0;
 
-    virtual void on_piece_done(size_type piece_index) = 0;
+    virtual void on_piece_validation_done(size_type piece_index) = 0;
     virtual void on_piece_validation_failed(size_type piece_index) = 0;
 };
+
+piece_pick_strategy_t *create_piece_pick_strategy(
+    k_piece_pick_strategy_type type, const peer_piece_bitmap_t &my_bitmap);
 
 }
 

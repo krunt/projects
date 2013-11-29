@@ -43,18 +43,6 @@ public:
     const torrent_info_t &get_torrent_info() const { return m_torrent_info; }
 
 private:
-    struct peer_replacement_t {
-        peer_replacement_t(const std::string &from, const std::string &to)
-            : m_from_peer_id(from), m_to_peer_id(to)
-        {}
-
-        bool empty() const { return m_from_peer_id.empty() 
-            && m_to_peer_id.empty(); }
-
-        std::string m_from_peer_id;
-        std::string m_to_peer_id;
-    };
-
     boost::shared_ptr<piece_pick_strategy_t> m_piece_pick_strategy;
     boost::shared_ptr<peer_replace_strategy_t> m_peer_replacement_strategy;
 

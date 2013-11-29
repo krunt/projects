@@ -1,3 +1,4 @@
+
 namespace btorrent {
 
 void peer_t::start_active() {
@@ -23,7 +24,12 @@ void peer_t::make_request(const piece_part_request_t &request) {
 }
 
 void peer_t::finish() {
-    m_state = s_finishing;
+    m_state = m_state == s_bitmap_done ? s_finishing_from_pending
+        : s_finishing_from_active;
+}
+
+void peer_t::finish_with_replacement() {
+    m_state = s_replacement;
 }
 
 void peer_t::setup_callbacks() {
@@ -49,8 +55,8 @@ void peer_t::on_connection_lost() {
     }
 
     m_pending_requests.clear();
-    m_state = s_none;
     m_torrent.on_connection_lost(this);
+    m_state = s_none;
 }
 
 void peer_t::on_bitmap_received(const std::vector<u8> &bitmap) {
@@ -83,7 +89,9 @@ void peer_t::on_piece_part_received(size_type piece_index,
     remove_from_pending(piece_index, piece_part_index);
 
     /* we are done */
-    if (m_state == s_finishing && m_pending_requests.empty()) {
+    if ((is_finishing() || m_state == s_replacement)
+        && m_pending_requests.empty())
+    {
         on_connection_lost();
     }
 }
