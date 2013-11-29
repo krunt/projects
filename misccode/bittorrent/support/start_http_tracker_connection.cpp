@@ -31,7 +31,14 @@ int main(int argc, char **argv) {
     boost::asio::io_service service;
     btorrent::torrent_info_t t = btorrent::construct_torrent_info(argv[1]);
     btorrent::torrent_t torrent(service, t);
-    torrent.start();
+
+    btorrent::url_t url(
+    "http://pirates-cove.biz/announce.php?passkey=tssespecialtorrentv1byxamsep2007");
+
+    boost::shared_ptr<btorrent::tracker_connection_t> conn(
+        btorrent::tracker_connection_factory_t::construct(torrent, url));
+
+    conn->start();
     service.run();
 
     return 0;

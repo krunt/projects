@@ -43,6 +43,9 @@ public:
     const torrent_info_t &get_torrent_info() const { return m_torrent_info; }
 
 private:
+    std::vector<boost::shared_ptr<btorrent::tracker_connection_t> > 
+        m_tracker_connections;
+
     boost::shared_ptr<piece_pick_strategy_t> m_piece_pick_strategy;
     boost::shared_ptr<peer_replace_strategy_t> m_peer_replacement_strategy;
 

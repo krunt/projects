@@ -19,6 +19,8 @@ torrent_t::torrent_t(boost::asio::io_service &io_service_arg,
 
     m_piece_pick_strategy.reset(create_piece_pick_strategy(
         gsettings()->m_piece_pick_strategy_type, m_bitmap));
+    m_peer_replacement_strategy.reset(create_peer_replace_strategy(
+        gsettings()->m_peer_replace_strategy_type, m_bitmap));
 }
 
 DEFINE_METHOD(void, torrent_t::add_peer, const std::string &peer_id, 
@@ -44,7 +46,20 @@ void torrent_t::get_announce_urls(std::vector<url_t> &urls) {
     }
 }
 
+void torrent_t::start_tracker_connections() {
+    std::vector<url_t> urls;
+    get_announce_urls(urls);
+
+    m_tracker_connections.clear();
+    for (int i = 0; i < urls.size(); ++i) {
+        m_tracker_connections.push_back(
+            btorrent::tracker_connection_factory_t::construct(torrent, url));
+        m_tracker_connections.back()->start();
+    }
+}
+
 void torrent_t::start() {
+    start_tracker_connections();
     download_iteration();
 }
 
