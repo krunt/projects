@@ -1,0 +1,4 @@
+muxing quake3 screenshot-stream to video
+
+ffmpeg -y -r 25  -i box.mkv -i  ~/.q3a/baseq3/screenshots/out.mkv -filter_complex '[0] drawbox=x=950:y=470:w=330:h=250:c=white:t=5 [z1], [1] scale=w=320:h=240 [x], [z1][x] overlay=x=955:y=475' -qscale 0 out1.mkv
+ffmpeg  -f image2  -y -r 25 -i 'shot%04d.tga' -qscale 0 out.mkv
