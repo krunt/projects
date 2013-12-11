@@ -36,8 +36,8 @@ private:
     size_type get_part_index(size_type piece_index,
             size_type piece_part_index) const;
 
-    friend class peer_piece_iterator_t;
-    friend class peer_piece_part_iterator_t;
+    friend class peer_piece_bitmap_iterator_t;
+    friend class peer_piece_part_bitmap_iterator_t;
 
 private:
     std::string m_peer_id;
@@ -51,7 +51,7 @@ class peer_piece_bitmap_iterator_t: public
     std::iterator<std::input_iterator_tag, size_type> 
 {
 public:
-    peer_piece_bitmap_iterator_t(const peer_piece_bitmap_t &bitmap
+    peer_piece_bitmap_iterator_t(const peer_piece_bitmap_t &bitmap,
         int filter_match = -1);
     value_type operator*() const;
     peer_piece_bitmap_iterator_t &operator++();
@@ -65,14 +65,14 @@ private:
 };
 
 
-class peer_piece_part_iterator_t: public 
+class peer_piece_part_bitmap_iterator_t: public 
     std::iterator<std::input_iterator_tag, size_type> 
 {
 public:
     peer_piece_part_bitmap_iterator_t(const peer_piece_bitmap_t &bitmap,
         size_type piece_index, int filter_match = -1);
     value_type operator*();
-    peer_piece_bitmap_iterator_t &operator++();
+    peer_piece_part_bitmap_iterator_t &operator++();
     bool at_end() const { return m_at_end; }
 
 private:

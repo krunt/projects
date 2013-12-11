@@ -25,8 +25,8 @@ struct settings_t: public boost::noncopyable {
     int m_download_time_interval;
     int m_max_pending_requests_per_peer;
     int m_peer_replacement_threshold;
-    k_piece_pick_strategy_type m_piece_pick_strategy_type;
-    k_peer_replace_strategy_type m_peer_replace_strategy_type;
+    piece_pick_strategy::k_piece_pick_strategy_type m_piece_pick_strategy_type;
+    peer_replace_strategy::k_peer_replace_strategy_type m_peer_replace_strategy_type;
 };
 
 extern settings_t *gsettings();

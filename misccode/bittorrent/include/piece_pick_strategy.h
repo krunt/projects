@@ -23,7 +23,8 @@ public:
 };
 
 piece_pick_strategy_t *create_piece_pick_strategy(
-    k_piece_pick_strategy_type type, const peer_piece_bitmap_t &my_bitmap);
+    piece_pick_strategy::k_piece_pick_strategy_type type, 
+    const peer_piece_bitmap_t &my_bitmap);
 
 }
 

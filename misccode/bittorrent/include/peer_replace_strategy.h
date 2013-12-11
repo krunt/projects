@@ -34,7 +34,8 @@ public:
 };
 
 peer_replace_strategy_t *create_peer_replace_strategy(
-    k_peer_replace_strategy_type  type, const peer_piece_bitmap_t &my_bitmap);
+    peer_replace_strategy::k_peer_replace_strategy_type type, 
+    const peer_piece_bitmap_t &my_bitmap);
 
 }
 

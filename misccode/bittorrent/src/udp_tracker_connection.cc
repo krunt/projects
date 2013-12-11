@@ -232,7 +232,8 @@ void udp_tracker_connection_t::on_received_announce_response(
     while (bytes_transferred >= 6) {
         int4get(ip_address, p); p += 4;
         int2get(ip_port, p); p += 2;
-        get_torrent().add_peer(utils::ipv4_to_string(ip_address), ip_port);
+        get_torrent().add_peer(utils::ipv4_to_string(ip_address), 
+                utils::ipv4_to_string(ip_address), ip_port);
     }
     finish();
 }

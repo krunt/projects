@@ -1,5 +1,5 @@
-#ifndef TRACKER_CONNECTION_DEF_
-#define TRACKER_CONNECTION_DEF_
+#ifndef PEER_CONNECTION_DEF_
+#define PEER_CONNECTION_DEF_
 
 #include <include/common.h>
 #include <include/torrent.h>
@@ -13,8 +13,9 @@ public:
     peer_connection_t(torrent_t &torrent, 
             const std::string &peer_id,
             const std::string &host, int port)
-        : m_torrent(torrent), m_peed_id(peer_id), 
-          m_host(host), m_port(port)
+        : m_torrent(torrent), m_resolver(m_torrent.io_service()), 
+        m_socket(m_torrent.io_service()), m_peer_id(peer_id), 
+        m_host(host), m_port(port)
     {}
 
     void start();
@@ -74,7 +75,7 @@ private:
             : me_interested(false), 
               he_interested(false),
               me_choked(true),
-              he_choked(false),
+              he_choked(false)
         {}
 
         bool me_interested;
@@ -108,7 +109,7 @@ private:
         void clear_pending() { m_pending_messages.clear(); }
 
         void reset() { 
-            m_pending_bytes_count = 0;
+            m_pending_length_count = 0;
             m_state = s_length;
             m_current.payload.clear();
         }
@@ -128,4 +129,4 @@ private:
 
 }
 
-#endif /* TRACKER_CONNECTION_DEF_ */
+#endif /* PEER_CONNECTION_DEF_ */

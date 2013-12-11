@@ -13,6 +13,7 @@ std::string hex_decode(const std::string &s);
 std::string hex_encode(const std::string &s);
 
 void generate_random(char *ptr, size_type sz);
+const std::string generate_random(size_type sz);
 
 class url_t {
 public:
@@ -53,7 +54,7 @@ namespace utils {
 
         u32 elm_index;
         const T result;
-        generate_random(&elm_index, sizeof(elm_index));
+        generate_random(reinterpret_cast<char*>(&elm_index), sizeof(elm_index));
         elm_index %= vec.size();
         vec[elm_index].swap(vec.back());
         result = vec.back();

@@ -14,7 +14,7 @@ public:
     void finish();
 
     /* TODO: make with threads */
-    void add_piece_part(int piece_index, int piece_part, const vector<u8> &data);
+    void add_piece_part(int piece_index, int piece_part, const std::vector<u8> &data);
     bool validate_piece(int piece_index) const;
 
     torrent_t &get_torrent() { return m_torrent; }
@@ -22,7 +22,6 @@ public:
 
 private:
     void setup_files();
-    void preallocate_file(const file_stream_t &f);
 
 private:
     torrent_t &m_torrent;
@@ -36,6 +35,8 @@ private:
         std::fstream m_stream;
     };
 
+    void preallocate_file(const file_stream_t &f);
+
     struct file_stream_iterator_element_t {
         file_stream_t *stream;
         size_type offset;
@@ -45,7 +46,7 @@ private:
     class file_stream_iterator_t: public
         std::iterator<std::input_iterator_tag, file_stream_iterator_element_t> {
     public:
-        file_stream_iterator_element_t(int piece_index, int piece_part);
+        file_stream_iterator_t(int piece_index, int piece_part);
 
         const file_stream_iterator_element_t operator*() const;
         file_stream_iterator_t &operator++();
@@ -53,13 +54,15 @@ private:
         bool at_end() const { return m_at_end; }
 
     private:
+        /*
         size_type convert_piece_part_to_offset(
                 size_type piece_index, size_type piece_part) const {
             return piece_index * m_piece_size + piece_part * m_piece_part_size;
         }
+        */
 
         const std::vector<file_stream_t> &m_files;
-        const std::vector<size_type> &m_accumulated_file_sizes,
+        const std::vector<size_type> &m_accumulated_file_sizes;
 
         bool m_at_end;
         size_type m_global_offset;

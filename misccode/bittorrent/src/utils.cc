@@ -81,6 +81,12 @@ void generate_random(char *ptr, size_type sz) {
     }
 }
 
+const std::string generate_random(size_type sz) {
+    std::string result(sz);
+    generate_random(result.data(), result.size());
+    return result;
+}
+
 url_t::url_t(const std::string &url) {
     const boost::regex url_re("^(http|udp)://([^/:]+)(?::([0-9]+))?(/.*)?$"); 
     boost::cmatch what;

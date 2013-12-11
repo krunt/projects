@@ -1,8 +1,12 @@
 
-#include <include/http_tracker_connection.h>
+#include <include/common.h>
+
 #include <boost/asio/ip/address_v4.hpp>
 #include <boost/bind.hpp>
 #include <boost/lexical_cast.hpp>
+
+#include <include/http_tracker_connection.h>
+#include <include/torrent.h>
 
 #define CR '\r'
 #define LF '\n'
@@ -140,8 +144,8 @@ DEFINE_METHOD(void, http_tracker_connection_t::on_received_announce_response,
             value_t::integer_type interval = decoded_bep["interval"].to_int();
             value_t::list_type &peer_list = decoded_bep["peers"].to_list();
             for (int i = 0; i < peer_list.size(); ++i) {
-                get_torrent().add_peer(peer_list[i]["ip"].to_string(),
-                    peer_list[i]["port"].to_int());
+                get_torrent().add_peer(peer_list[i]["peer id"].to_string(), 
+                    peer_list[i]["ip"].to_string(), peer_list[i]["port"].to_int());
             }
         }
     } catch (const bad_encode_decode_exception &exc) {
@@ -155,7 +159,8 @@ DEFINE_METHOD(void, http_tracker_connection_t::on_received_announce_response,
             int4get(ip_address, p); p += 4;
             int2get(ip_port, p); p += 2;
 
-            get_torrent().add_peer(utils::ipv4_to_string(ip_address), ip_port);
+            get_torrent().add_peer(utils::ipv4_to_string(ip_address), 
+                    utils::ipv4_to_string(ip_address), ip_port);
             
             left_bytes -= 6;
         }

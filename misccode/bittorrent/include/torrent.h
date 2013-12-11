@@ -2,19 +2,26 @@
 #define TORRENT_DEF_
 
 #include <include/common.h>
+#include <include/torrent_storage.h>
+
 #include <boost/asio.hpp>
 
 namespace btorrent {
 
 class torrent_t {
 public:
-    torrent_t(boost::asio::io_service &io_service_arg, const torrent_info_t &info);
+    torrent_t(boost::asio::io_service &io_service_arg, 
+            const torrent_info_t &info);
 
     void start();
     void finish();
 
     void add_peer(const std::string &peer_id, const std::string &host, int port);
     void make_request(ppeer_t peer, const piece_part_request_t &request);
+
+    void configure_next_iteration();
+    void start_tracker_connections();
+    void download_iteration();
 
     void move_to_active(ppeer_t peer);
     void move_to_pending(ppeer_t peer);

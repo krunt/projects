@@ -1,9 +1,7 @@
-#ifndef http_TRACKER_CONNECTION_DEF_
-#define http_TRACKER_CONNECTION_DEF_
+#ifndef HTTP_TRACKER_CONNECTION_DEF_
+#define HTTP_TRACKER_CONNECTION_DEF_
 
 #include <include/common.h>
-#include <include/torrent.h>
-#include <include/tracker_connection.h>
 
 namespace btorrent {
 
@@ -42,4 +40,4 @@ private:
 }
 
 
-#endif /* http_TRACKER_CONNECTION_DEF_ */
+#endif /* HTTP_TRACKER_CONNECTION_DEF_ */

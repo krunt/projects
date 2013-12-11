@@ -65,7 +65,8 @@ void peer_t::on_bitmap_received(const std::vector<u8> &bitmap) {
     } else if (m_state == s_bitmap_active_pending) {
         m_state = s_active;
     }
-    m_bitmap.init(bitmap); 
+    m_bitmap = peer_piece_bitmap_t(peer_id, bitmap,
+       m_torrent.get_torrent_info().m_piece_size / gsettings()->m_piece_part_size);
     m_torrent.on_bitmap_received(this, bitmap);
 }
 

@@ -2,6 +2,8 @@
 #define PEER_DEF_
 
 #include <boost/noncopyable.hpp>
+#include <include/common.h>
+#include <include/peer_connection.h>
 
 namespace btorrent {
 
@@ -27,7 +29,11 @@ public:
 public:
     peer_t(torrent_t &torrent, const std::string &peer_id, 
             const std::string &host, int port)
-        : m_state(s_none), m_conn(torrent, host, port), m_torrent(torrent)
+        : m_state(s_none), m_peer_id(peer_id), 
+        m_bitmap(peer_id, torrent.get_torrent_info().m_piece_hashes.size(),
+            torrent.get_torrent_info().m_piece_size 
+            / gsettings()->m_piece_part_size),
+        m_conn(torrent, peer_id, host, port), m_torrent(torrent)
     {}
 
     void start_active();
@@ -65,8 +71,6 @@ private:
     std::vector<piece_part_request_t> m_pending_requests;
     torrent_t &m_torrent;
 };
-
-typedef peer_t *ppeer_t;
 
 }
 

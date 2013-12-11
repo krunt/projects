@@ -40,10 +40,10 @@ torrent_info_t construct_torrent_info(const std::string &filename) {
 
             const value_t::list_type &path_list = lst[i]["path"].to_list();
             for (int j = 0; j < path_list.size(); ++j) {
-                pth /= path_list[i];
+                pth /= path_list[i].to_string();
             }
 
-            r.m_files.push_back(torrent_info_t::file_t(pth, 
+            r.m_files.push_back(torrent_info_t::file_t(pth.string(), 
                         lst[i]["length"].to_int()));
         }
     } else {

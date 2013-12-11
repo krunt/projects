@@ -1,9 +1,6 @@
 #ifndef TRACKER_CONNECTION_DEF_
 #define TRACKER_CONNECTION_DEF_
 
-#include <include/common.h>
-#include <include/torrent.h>
-
 namespace btorrent {
 
 class tracker_connection_t {
