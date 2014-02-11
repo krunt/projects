@@ -1,5 +1,8 @@
+#include <include/settings.h>
 #include <include/torrent.h>
 #include <include/peer.h>
+
+#include <boost/bind.hpp>
 
 namespace btorrent {
 
@@ -10,7 +13,7 @@ torrent_t::torrent_t(boost::asio::io_service &io_service_arg,
         info.m_piece_size / gsettings()->m_piece_part_size),
     m_bytes_downloaded(0), m_bytes_left(0),
     m_bytes_uploaded(0), m_torrent_info(info), m_torrent_storage(*this),
-    m_timeout_timer(m_io_service)
+    m_download_time_interval(1), m_timeout_timer(m_io_service)
 {
     /* computing total file size */
     for (int i = 0; i < m_torrent_info.m_files.size(); ++i) {
@@ -53,7 +56,8 @@ void torrent_t::start_tracker_connections() {
     m_tracker_connections.clear();
     for (int i = 0; i < urls.size(); ++i) {
         m_tracker_connections.push_back(
-            btorrent::tracker_connection_factory_t::construct(torrent, url));
+            boost::shared_ptr<btorrent::tracker_connection_t>(
+            btorrent::tracker_connection_factory_t::construct(*this, urls[i])));
         m_tracker_connections.back()->start();
     }
 }
@@ -117,7 +121,7 @@ void torrent_t::make_piece_requests() {
 }
 
 void torrent_t::remove_unneeded_peers() {
-    std::vector<std::string unneeded_peers;
+    std::vector<std::string> unneeded_peers;
     m_peer_replacement_strategy->get_peers_to_remove(unneeded_peers);
 
     for (int i = 0; i < unneeded_peers.size(); ++i) {
@@ -150,7 +154,7 @@ void torrent_t::make_active_replacements() {
                 && !peer->is_finishing())
         {
             peer->finish_with_replacement();
-            m_pending_peer_replacements.push_back(peer_replacement_t(from, to));
+            m_pending_peer_replacements.push_back(replacements[i]);
         }
     }
 }
@@ -161,14 +165,13 @@ void torrent_t::download_iteration() {
     make_piece_requests();
     remove_unneeded_peers();
     make_active_replacements();
-
     configure_next_iteration();
 }
 
 void torrent_t::make_request(ppeer_t peer, const piece_part_request_t &request) {
     m_piece_pick_strategy->on_piece_part_requested(request);
     m_peer_replacement_strategy->on_piece_part_requested(request);
-    m_bitmap.set_piece_part(request.piece_index, request.piece_part_index, 
+    m_bitmap.set_piece_part(request.m_piece_index, request.m_piece_part_index, 
         peer_piece_bitmap_t::pp_requested);
     peer->make_request(request);
 }
@@ -183,13 +186,13 @@ void torrent_t::move_to_pending(ppeer_t peer) {
 
 void torrent_t::move_to_inactive_from_pending(ppeer_t peer) {
     m_peer_replacement_strategy->on_inactive_peer_added(peer->get_bitmap());
-    remove_from_list(peer, m_pending_peers);
+    remove_from_peer_list(peer, m_pending_peers);
     m_inactive_peers.push_back(peer);
 }
 
 void torrent_t::move_to_inactive_from_active(ppeer_t peer) {
     m_peer_replacement_strategy->on_inactive_peer_added(peer->get_bitmap());
-    remove_from_list(peer, m_active_peers);
+    remove_from_peer_list(peer, m_active_peers);
     m_inactive_peers.push_back(peer);
 }
 
@@ -197,7 +200,7 @@ void torrent_t::move_to_blacklist(ppeer_t peer) {
     m_blacklist_peers.push_back(peer);
 }
 
-bool torrent_t::remove_from_list(ppeer_t peer, std::vector<ppeer_t> &list) {
+bool torrent_t::remove_from_peer_list(ppeer_t peer, std::vector<ppeer_t> &list) {
     bool removed = false;
     std::vector<ppeer_t> new_list;
     for (int i = 0; i < list.size(); ++i) {
@@ -211,7 +214,7 @@ bool torrent_t::remove_from_list(ppeer_t peer, std::vector<ppeer_t> &list) {
     return removed;
 }
 
-bool torrent_t::remove_from_replacement_list(ppeer_t peer, 
+peer_replacement_t torrent_t::remove_from_replacement_list(ppeer_t peer, 
         std::vector<peer_replacement_t> &list) 
 {
     peer_replacement_t result("", "");
@@ -220,7 +223,7 @@ bool torrent_t::remove_from_replacement_list(ppeer_t peer,
         if (peer->id() != list[i].m_from_peer_id) {
             new_list.push_back(list[i]);
         } else {
-            result = peer;
+            result = list[i];
         }
     }
     list.swap(new_list);
@@ -228,10 +231,10 @@ bool torrent_t::remove_from_replacement_list(ppeer_t peer,
 }
 
 void torrent_t::on_bitmap_received(ppeer_t peer, const std::vector<u8> &bitmap) {
-    if (peer->get_state() == s_active) {
+    if (peer->get_state() == peer_t::s_active) {
         m_piece_pick_strategy->on_peer_added(peer->get_bitmap());
         m_peer_replacement_strategy->on_active_peer_added(peer->get_bitmap());
-    } else if (peer->get_state() == s_bitmap_done) {
+    } else if (peer->get_state() == peer_t::s_bitmap_done) {
         m_peer_replacement_strategy->on_inactive_peer_added(peer->get_bitmap());
     }
 }
@@ -239,7 +242,7 @@ void torrent_t::on_bitmap_received(ppeer_t peer, const std::vector<u8> &bitmap) 
 void torrent_t::on_piece_part_received(ppeer_t peer, size_type piece_index,
     size_type piece_part_index, const std::vector<u8> &data) 
 {
-    assert(peer->get_state() == s_active);
+    assert(peer->get_state() == peer_t::s_active);
     piece_part_request_t piece_request(peer->id(), piece_index, piece_part_index);
     m_piece_pick_strategy->on_piece_part_downloaded(piece_request);
     m_peer_replacement_strategy->on_piece_part_downloaded(piece_request);
@@ -265,27 +268,27 @@ void torrent_t::on_piece_part_received(ppeer_t peer, size_type piece_index,
 void torrent_t::on_aborted_request(ppeer_t peer, 
     const piece_part_request_t &request) 
 {
-    m_piece_pick_strategy->on_piece_part_aborted(peer->get_bitmap());
-    m_peer_replacement_strategy->on_piece_part_aborted(peer->get_bitmap());
+    m_piece_pick_strategy->on_piece_part_aborted(request);
+    m_peer_replacement_strategy->on_piece_part_aborted(request);
     m_bitmap.set_piece_part(request.m_piece_index,
         request.m_piece_part_index, peer_piece_bitmap_t::pp_none);
 }
 
 void torrent_t::on_connection_lost(ppeer_t peer) {
-    assert(peer->is_finishing() || peer->get_state() == s_in_replacement);
+    assert(peer->is_finishing() || peer->get_state() == peer_t::s_in_replacement);
 
-    if (peer->get_state() == s_in_replacement
-        || peer->get_state() == s_finishing_from_active)
+    if (peer->get_state() == peer_t::s_in_replacement
+        || peer->get_state() == peer_t::s_finishing_from_active)
     {
         move_to_inactive_from_active(peer); 
         m_piece_pick_strategy->on_peer_removed(peer->get_bitmap());
         m_peer_replacement_strategy->on_active_peer_removed(peer->get_bitmap());
     }
 
-    if (peer->get_state() == s_finishing_from_pending) {
+    if (peer->get_state() == peer_t::s_finishing_from_pending) {
         move_to_inactive_from_pending(peer);
 
-    } else if (peer->get_state() == s_in_replacement) {
+    } else if (peer->get_state() == peer_t::s_in_replacement) {
         /* perform replacement */
         assert(!m_pending_peer_replacements.empty());
         peer_replacement_t replacement

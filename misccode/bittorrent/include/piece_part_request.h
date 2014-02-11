@@ -4,6 +4,7 @@
 namespace btorrent {
 
 struct piece_part_request_t {
+    piece_part_request_t() {}
     piece_part_request_t(const std::string &peer_id,
         size_type piece_index, size_type piece_part_index)
         : m_peer_id(peer_id),

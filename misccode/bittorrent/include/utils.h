@@ -49,14 +49,14 @@ namespace utils {
     }
 
     template <typename T>
-    inline const T pop_random(const std::vector<T> &vec) {
+    inline const T pop_random(std::vector<T> &vec) {
         assert(!vec.empty());
 
         u32 elm_index;
-        const T result;
+        T result;
         generate_random(reinterpret_cast<char*>(&elm_index), sizeof(elm_index));
         elm_index %= vec.size();
-        vec[elm_index].swap(vec.back());
+        std::swap(vec[elm_index], vec.back());
         result = vec.back();
         vec.pop_back();
 

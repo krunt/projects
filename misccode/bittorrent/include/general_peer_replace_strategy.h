@@ -1,6 +1,8 @@
 #ifndef GENERAL_PEER_REPLACE_STRATEGY_DEF_
 #define GENERAL_PEER_REPLACE_STRATEGY_DEF_
 
+#include <include/common.h>
+
 namespace btorrent {
 
 class general_peer_replace_strategy_t: public peer_replace_strategy_t {
@@ -31,19 +33,20 @@ public:
     virtual void on_piece_validation_failed(size_type piece_index) {}
 
 private:
-    ppeer_state_t general_peer_replace_strategy_t::get_min_item_from_list(
-        const general_peer_replace_strategy_t::peer_map_type_t &mp) 
-    ppeer_state_t general_peer_replace_strategy_t::get_max_item_from_list(
-        const general_peer_replace_strategy_t::peer_map_type_t &mp) 
-
-private:
     peer_piece_bitmap_t m_mybitmap;
 
     struct peer_state_t {
-        peer_state_t(const bitmap_t &bitmap)
+        peer_state_t() : m_bitmap("", 0, 0)
+        {}
+
+        peer_state_t(const peer_piece_bitmap_t &bitmap)
             : m_piece_count(0), m_piece_count_notmine(0),
               m_bitmap(bitmap)
         {}
+
+        std::string peer_id() const {
+            return m_bitmap.peer_id();
+        }
 
         size_type m_piece_count;
         size_type m_piece_count_notmine;
@@ -51,12 +54,14 @@ private:
         peer_piece_bitmap_t m_bitmap;
     };
     typedef peer_state_t *ppeer_state_t;
+    typedef std::map<std::string, ppeer_state_t> peer_map_type_t;
+
+    ppeer_state_t get_min_item_from_list(const peer_map_type_t &mp);
+    ppeer_state_t get_max_item_from_list(const peer_map_type_t &mp);
 
     int m_peer_replacement_threshold;
-
     std::map<std::string, peer_state_t> m_all_peers;
 
-    typedef std::map<std::string, ppeer_state_t> peer_map_type_t;
     peer_map_type_t m_active_peers;
     peer_map_type_t m_inactive_peers;
 
@@ -65,3 +70,5 @@ private:
 };
 
 }
+
+#endif

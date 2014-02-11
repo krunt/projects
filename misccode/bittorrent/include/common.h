@@ -7,6 +7,8 @@
 
 #include <string>
 #include <vector>
+#include <map>
+#include <set>
 
 #include <include/types.h>
 #include <include/hash.h>

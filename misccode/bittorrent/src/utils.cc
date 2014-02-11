@@ -82,8 +82,8 @@ void generate_random(char *ptr, size_type sz) {
 }
 
 const std::string generate_random(size_type sz) {
-    std::string result(sz);
-    generate_random(result.data(), result.size());
+    std::string result(sz, ' ');
+    generate_random(&result[0], result.size());
     return result;
 }
 

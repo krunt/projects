@@ -1,3 +1,4 @@
+#include <include/general_peer_replace_strategy.h>
 
 namespace btorrent {
     
@@ -12,11 +13,11 @@ void general_peer_replace_strategy_t::on_piece_validation_done(
         size_type piece_index) 
 {
     m_mybitmap.set_piece(piece_index);
-    const peer_list_per_piece_t &s = m_peer_per_piece_list[piece_index];
+    peer_list_per_piece_t &s = m_peer_per_piece_list[piece_index];
     for (peer_list_per_piece_t::const_iterator it = s.begin();
             it != s.end(); ++it) 
     {
-        it->m_piece_count_notmine--;
+        (*it)->m_piece_count_notmine--;
     }
 }
 
@@ -28,7 +29,7 @@ void general_peer_replace_strategy_t::on_active_peer_added(
     ppeer_state_t p = &m_all_peers[bitmap.peer_id()];
     m_active_peers[bitmap.peer_id()] = p;
 
-    peer_piece_bitmap_iterator_t it(bitmap, peer_piece_bitmap_t::pp_done)
+    peer_piece_bitmap_iterator_t it(bitmap, peer_piece_bitmap_t::pp_done);
     for (; !it.at_end(); ++it) {
         m_peer_per_piece_list[*it].insert(p);
 
@@ -47,7 +48,7 @@ void general_peer_replace_strategy_t::on_inactive_peer_added(
     ppeer_state_t p = &m_all_peers[bitmap.peer_id()];
     m_inactive_peers[bitmap.peer_id()] = p;
 
-    peer_piece_bitmap_iterator_t it(bitmap, peer_piece_bitmap_t::pp_done)
+    peer_piece_bitmap_iterator_t it(bitmap, peer_piece_bitmap_t::pp_done);
     for (; !it.at_end(); ++it) {
         m_peer_per_piece_list[*it].insert(p);
 
@@ -126,7 +127,7 @@ void general_peer_replace_strategy_t::get_peer_replacements(
         - min_active->m_piece_count_notmine > m_peer_replacement_threshold)
     {
         replacements.push_back(peer_replacement_t(
-            max_inactive->id(), max_active->id()));
+            max_inactive->peer_id(), min_active->peer_id()));
     }
 }
 
@@ -134,7 +135,7 @@ bool general_peer_replace_strategy_t::get_peer_to_add(std::string &peer_id) {
     ppeer_state_t max_inactive = get_max_item_from_list(m_inactive_peers);
 
     if (max_inactive) {
-        peer_id = max_inactive->id();
+        peer_id = max_inactive->peer_id();
         return true;
     }
     return false;

@@ -19,6 +19,7 @@ private:
     torrent_t &m_torrent;
 };
 
+class url_t;
 class tracker_connection_factory_t {
 public:
     static tracker_connection_t *construct(torrent_t &torrent, const url_t &url);

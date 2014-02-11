@@ -23,12 +23,19 @@ public:
     void start_tracker_connections();
     void download_iteration();
 
+    void establish_new_active_connections();
+    void establish_new_pending_connections();
+
+    void make_piece_requests();
+    void make_active_replacements();
+
     void move_to_active(ppeer_t peer);
     void move_to_pending(ppeer_t peer);
     void move_to_inactive_from_pending(ppeer_t peer);
     void move_to_inactive_from_active(ppeer_t peer);
     void move_to_blacklist(ppeer_t peer);
 
+    void remove_unneeded_peers();
     bool remove_from_peer_list(ppeer_t peer, std::vector<ppeer_t> &list);
     peer_replacement_t remove_from_replacement_list(ppeer_t peer,
             std::vector<peer_replacement_t> &list);
@@ -74,6 +81,7 @@ private:
     torrent_info_t m_torrent_info;
     torrent_storage_t m_torrent_storage;
 
+    int m_download_time_interval;
     boost::asio::basic_deadline_timer<boost::posix_time::ptime> 
         m_timeout_timer;
 
