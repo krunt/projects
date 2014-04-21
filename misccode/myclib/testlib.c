@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <assert.h>
 #include <sys/time.h>
+#include <stdint.h>
 
 #include "all.h"
 
@@ -52,8 +53,8 @@ static int list_sum(struct list_head *hd) {
 
 void test_list() {
     int cnt;
-    struct list_head hd;
-    struct item_s *item, *tmp;
+    struct list_head hd, *old_prev;
+    struct item_s *pitem, *item, *tmp;
 
     INIT_LIST_HEAD(&hd);
 
@@ -76,11 +77,55 @@ void test_list() {
 
     cnt = 0;
     list_for_each_entry_safe(item, tmp, &hd, node) {
+        list_del(&item->node);
         put_item(item);
         cnt++;
     }
 
     assert(cnt == 3);
+
+    cnt = 0;
+    list_for_each_entry(item, &hd, node) {
+        cnt++;
+    }
+
+    assert(cnt == 0);
+
+    list_add(&get_item(5)->node, &hd);
+
+    assert(list_length(&hd) == 1);
+
+    list_del(hd.next);
+
+    assert(list_length(&hd) == 0);
+
+    list_add_tail(&get_item(5)->node, &hd);
+    list_add_tail(&get_item(1)->node, &hd);
+    list_add(&get_item(4)->node, &hd);
+
+    cnt = 0;
+    list_for_each_entry(item, &hd, node) {
+        if (++cnt == 1) {
+            assert(item->val == 4);
+            break;
+        }
+    }
+
+    cnt = 0;
+    list_for_each_entry(item, &hd, node) {
+        if (++cnt == 2) {
+            assert(item->val == 5);
+            break;
+        }
+    }
+
+    cnt = 0;
+    list_for_each_entry(item, &hd, node) {
+        if (++cnt == 3) {
+            assert(item->val == 1);
+            break;
+        }
+    }
 }
 
 void test_time() {
@@ -209,10 +254,37 @@ void test_htable() {
     assert(htable_count(&table) == 100);
 }
 
+void test_serialize() {
+    char buf[128], *p;
+
+    uint8_t a = 0xFE, a1;
+    uint16_t b = 0xBFEF, b1;
+    uint32_t c = 0xDDEDDEED, c1;
+    uint64_t d = 0xEDDEEDDEAFAF, d1;
+
+    p = buf;
+    pack1(p, &a); p++;
+    pack2(p, &b); p+=2;
+    pack4(p, &c); p+=4;
+    pack8(p, &d); p+=8;
+
+    p = buf;
+    unpack1(&a1, p); p++;
+    unpack2(&b1, p); p+=2;
+    unpack4(&c1, p); p+=4;
+    unpack8(&d1, p); p+=8;
+
+    assert(a == a1);
+    assert(b == b1);
+    assert(c == c1);
+    assert(d == d1);
+}
+
 int main() {
     test_list();
     test_time();
     test_rbtree();
     test_htable();
+    test_serialize();
     return 0;
 }
