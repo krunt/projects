@@ -30,6 +30,10 @@ static void logger_new_file() {
     }
 }
 
+void set_logger_level(int log_level) {
+    level = log_level;
+}
+
 void my_log(int type, const char * format, ...) {
     char time_buf[1024];
     va_list ap;

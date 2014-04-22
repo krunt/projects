@@ -8,5 +8,6 @@
 #include "rbtree.h"
 #include "hash.h"
 #include "time.h"
+#include "serialize.h"
 
 #endif /* MYCLIB_ALL_ */

@@ -5,6 +5,7 @@
 
 void logger_init(const char *s);
 void my_log(int type, const char * format, ...);
+void set_logger_level(int log_level);
 
 #define my_log_debug(...) my_log(LOG_DEBUG, __VA_ARGS__)
 #define my_log_info(...) my_log(LOG_INFO, __VA_ARGS__)
