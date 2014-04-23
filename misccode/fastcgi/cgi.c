@@ -124,7 +124,7 @@ typedef struct my_buffer_pool_s {
 
 typedef struct my_fcgi_stream_s {
     struct event *ev;
-    my_buffer_t buf;
+    my_buffer_t *buf;
     int active;
     struct list_head queue;
     int for_write; /* 0|1 */
@@ -325,14 +325,15 @@ static int my_buffer_available(my_buffer_t *buf) {
     return sizeof(buf->buf) - buf->offs - buf->len;
 }
 
-static void my_init_stream(my_fcgi_stream_t *s, 
-        int for_write, my_buffer_pool_t *parent) 
-{
-    my_buffer_t *buf = &s->buf;
+static void my_init_stream(my_fcgi_stream_t *s, int for_write) {
+    my_buffer_t *buf = malloc(sizeof(my_buffer_t));
     s->ev = NULL;
+    s->buf = buf;
     INIT_LIST_HEAD(&buf->entry);
     buf->offs = 0;
     buf->len = 0;
+    buf->alloced = 1;
+    buf->for_write = for_write;
     s->active = 1;
     INIT_LIST_HEAD(&s->queue);
     s->for_write = for_write;
@@ -341,16 +342,16 @@ static void my_init_stream(my_fcgi_stream_t *s,
 static int my_write_stream(my_fcgi_stream_t *s, char *b, int sz) {
     int to_write;
 
-    if (s->buf.offs) {
-        if (s->buf.len) {
-            memmove(s->buf.buf, s->buf.buf + s->buf.offs, s->buf.len);
+    if (s->buf->offs) {
+        if (s->buf->len) {
+            memmove(s->buf->buf, s->buf->buf + s->buf->offs, s->buf->len);
         }
-        s->buf.offs = 0;
+        s->buf->offs = 0;
     }
 
-    to_write = min_t(int, sz, sizeof(s->buf.buf) - s->buf.len);
-    memcpy(s->buf.buf + s->buf.len, b, to_write);
-    s->buf.len += to_write;
+    to_write = min_t(int, sz, sizeof(s->buf->buf) - s->buf->len);
+    memcpy(s->buf->buf + s->buf->len, b, to_write);
+    s->buf->len += to_write;
 
     return to_write;
 }
@@ -388,7 +389,7 @@ static int my_write_queue(my_worker_request_t *req,
         len -= sz;
         written += sz;
 
-        if (my_buffer_is_full(&s->buf)) {
+        if (my_buffer_is_full(s->buf)) {
 
             if (my_worker_flush_stream(req, s, 0)) {
                 goto end;
@@ -411,7 +412,7 @@ static int my_worker_flush_stream(my_worker_request_t *req,
 
     my_log_debug("my_worker_flush_stream");
 
-    if (!s->buf.len) {
+    if (!s->buf->len) {
         return 0;
     }
 
@@ -425,14 +426,14 @@ static int my_worker_flush_stream(my_worker_request_t *req,
         goto notify;
     }
 
-    my_log_debug("my_worker_flush_stream enqueued buf with %d", s->buf.len);
+    my_log_debug("my_worker_flush_stream enqueued buf with %d", s->buf->len);
 
-    memcpy(buf->buf, s->buf.buf, sizeof(buf->buf));
-    buf->offs = s->buf.offs;
-    buf->len = s->buf.len;
-    buf->alloced = 1;
+    buf->alloced = s->buf->alloced;
+    buf->for_write = s->buf->for_write;
 
-    my_buffer_set_empty(&s->buf);
+    swap(s->buf, buf);
+
+    my_buffer_set_empty(s->buf);
 
     my_queue_push(&s->queue, &buf->entry);
 
@@ -529,7 +530,7 @@ static void my_worker_fcgi_handle_out_cycle(my_worker_request_t *req,
     my_log_debug("my_worker_fcgi_handle_out_cycle()");
 
     while (1) {
-        cnt = my_buffer_available(&str->buf);
+        cnt = my_buffer_available(str->buf);
         if (cnt == 0) {
             if (my_worker_flush_stream(req, str, 1)) {
                 str->active = 0;
@@ -537,7 +538,7 @@ static void my_worker_fcgi_handle_out_cycle(my_worker_request_t *req,
                 return;
             }
 
-            cnt = my_buffer_available(&str->buf);
+            cnt = my_buffer_available(str->buf);
             assert(cnt > 0);
         }
 
@@ -545,7 +546,7 @@ static void my_worker_fcgi_handle_out_cycle(my_worker_request_t *req,
     
         while (cnt > 0) {
         again:
-            rc = read(fd, str->buf.buf + str->buf.len, cnt);
+            rc = read(fd, str->buf->buf + str->buf->len, cnt);
             if (rc == -1) {
                 if (errno == EINTR)
                     goto again;
@@ -566,7 +567,7 @@ static void my_worker_fcgi_handle_out_cycle(my_worker_request_t *req,
                 return;
             }
     
-            str->buf.len += rc;
+            str->buf->len += rc;
             cnt -= rc;
         }
     }
@@ -775,9 +776,9 @@ static int my_worker_init_request(my_worker_connection_t *conn) {
     req->keep_conn = 0;
     req->fcgi_pid = -1;
 
-    my_init_stream(&req->fcgi_stdin_stream, 0, &conn->read_pool);
-    my_init_stream(&req->fcgi_stdout_stream, 1, &conn->write_pool);
-    my_init_stream(&req->fcgi_stderr_stream, 1, &conn->write_pool);
+    my_init_stream(&req->fcgi_stdin_stream, 0);
+    my_init_stream(&req->fcgi_stdout_stream, 1);
+    my_init_stream(&req->fcgi_stderr_stream, 1);
 
     INIT_LIST_HEAD(&req->packet_batch);
     INIT_LIST_HEAD(&req->env);
@@ -1240,6 +1241,8 @@ void my_worker_deinit_stream(my_worker_connection_t *conn, my_fcgi_stream_t *str
         list_del(&b->entry);
         my_put_buffer(b, b->for_write ? &conn->write_pool : &conn->read_pool);
     }
+
+    free(str->buf);
 }
 
 void my_worker_free_kv(struct list_head *kv) {
@@ -1931,8 +1934,8 @@ int my_worker_connection_init(my_worker_state_t *st, int sockfd) {
     conn->rw_timeout.tv_sec = 20;
     conn->rw_timeout.tv_usec = 0;
 
-    my_buffer_pool_init(&conn->read_pool, 3000, 0);
-    my_buffer_pool_init(&conn->write_pool, 3000, 1);
+    my_buffer_pool_init(&conn->read_pool, 30, 0);
+    my_buffer_pool_init(&conn->write_pool, 30, 1);
 
     conn->read_event = NULL;
     conn->write_event = NULL;
@@ -2455,7 +2458,7 @@ int main() {
     state.workers = 1;
     state.listen_port = 9170;
     state.worker_cycle_proc = &worker_main_cycle;
-    state.fastcgi_path = "/home/akuts/stuff/experiments/hacks/fastcgi/2.cgi";
+    state.fastcgi_path = "/home/akuts/stuff/experiments/hacks/fastcgi/1.cgi";
 
     if (my_master_state_init(&state) 
         || my_start_listening(&state))
