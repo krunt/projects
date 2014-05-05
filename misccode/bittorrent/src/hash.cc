@@ -28,9 +28,8 @@ namespace btorrent {
 static void sha1_transform(u32 state[5], const u8 buffer[64]);
 
 sha1_hash_t::sha1_hash_t(const std::string &digest) {
-    const std::string decoded = hex_decode(digest);
     init();
-    memcpy(m_ctx.digest, decoded.data(), 20);
+    memcpy(m_ctx.digest, digest.data(), 20);
 }
 
 void sha1_hash_t::init() {
@@ -78,6 +77,10 @@ std::string sha1_hash_t::get_digest() const {
 
 bool sha1_hash_t::operator==(const sha1_hash_t &other) const {
     return get_digest() == other.get_digest();
+}
+
+bool sha1_hash_t::operator!=(const sha1_hash_t &other) const {
+    return !operator==(other);
 }
 
 #define rol(value, bits) (((value) << (bits)) | ((value) >> (32 - (bits))))

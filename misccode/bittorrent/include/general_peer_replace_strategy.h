@@ -11,13 +11,13 @@ public:
 
     /* get replacement recommendation from active to inactive */
     virtual void get_peer_replacements(
-        std::vector<peer_replacement_t> &replacements) = 0;
+        std::vector<peer_replacement_t> &replacements);
 
     /* adding to active */
-    virtual bool get_peer_to_add(std::string &peer_id) = 0;
+    virtual bool get_peer_to_add(std::string &peer_id);
 
     /* removing from active */
-    virtual void get_peers_to_remove(std::vector<std::string> &peer_ids) = 0;
+    virtual void get_peers_to_remove(std::vector<std::string> &peer_ids);
 
     virtual void on_active_peer_added(const peer_piece_bitmap_t &bitmap);
     virtual void on_inactive_peer_added(const peer_piece_bitmap_t &bitmap);
@@ -36,12 +36,13 @@ private:
     peer_piece_bitmap_t m_mybitmap;
 
     struct peer_state_t {
-        peer_state_t() : m_bitmap("", 0, 0)
+        peer_state_t() : m_piece_count(0), m_piece_count_notmine(0),
+              m_pending_count(0), m_bitmap("", 0, 0)
         {}
 
         peer_state_t(const peer_piece_bitmap_t &bitmap)
             : m_piece_count(0), m_piece_count_notmine(0),
-              m_bitmap(bitmap)
+              m_pending_count(0), m_bitmap(bitmap)
         {}
 
         std::string peer_id() const {
@@ -50,6 +51,7 @@ private:
 
         size_type m_piece_count;
         size_type m_piece_count_notmine;
+        size_type m_pending_count;
 
         peer_piece_bitmap_t m_bitmap;
     };

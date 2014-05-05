@@ -14,7 +14,8 @@ public:
     void finish();
 
     /* TODO: make with threads */
-    void add_piece_part(int piece_index, int piece_part, const std::vector<u8> &data);
+    void add_piece_part(int piece_index, int piece_part, 
+            const std::vector<u8> &data);
     bool validate_piece(int piece_index) const;
 
     torrent_t &get_torrent() { return m_torrent; }
@@ -28,14 +29,16 @@ private:
 
     struct file_stream_t {
         file_stream_t(const torrent_info_t::file_t &ft)
-            : m_ft(ft)
-        { m_stream.open(m_ft.m_path.c_str(), std::ios_base::out); }
+            : m_ft(ft), 
+            m_stream(new std::fstream(m_ft.m_path.c_str(), 
+                std::ios_base::in | std::ios_base::out | std::ios_base::binary))
+        {}
 
         torrent_info_t::file_t m_ft;
-        std::fstream m_stream;
+        boost::shared_ptr<std::fstream> m_stream;
     };
 
-    void preallocate_file(const file_stream_t &f);
+    void preallocate_file(file_stream_t &f);
 
     struct file_stream_iterator_element_t {
         file_stream_t *stream;
@@ -46,7 +49,12 @@ private:
     class file_stream_iterator_t: public
         std::iterator<std::input_iterator_tag, file_stream_iterator_element_t> {
     public:
-        file_stream_iterator_t(int piece_index, int piece_part);
+        file_stream_iterator_t(
+            const std::vector<file_stream_t> &files,
+            const std::vector<size_type> &accumulated_file_sizes,
+            size_type piece_index, size_type piece_part,
+            size_type piece_size, size_type piece_part_size, 
+            size_type bytes_to_read);
 
         const file_stream_iterator_element_t operator*() const;
         file_stream_iterator_t &operator++();
@@ -69,10 +77,12 @@ private:
         size_type m_piece_part_offset;
         size_type m_left_bytes;
         int m_file_index;
+        int m_file_offset;
     };
 
     file_stream_iterator_t construct_file_stream_iterator(
-        size_type piece_index, size_type piece_part, size_type bytes_to_read = 0);
+        size_type piece_index, 
+        size_type piece_part, size_type bytes_to_read = 0) const;
 
 private:
     size_type m_piece_part_size;

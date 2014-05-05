@@ -7,6 +7,7 @@ general_peer_replace_strategy_t::general_peer_replace_strategy_t(
         : m_mybitmap(bitmap)
 {
     m_peer_replacement_threshold = gsettings()->m_peer_replacement_threshold;
+    m_peer_per_piece_list.resize(m_mybitmap.piece_count());
 }
 
 void general_peer_replace_strategy_t::on_piece_validation_done(
@@ -29,8 +30,8 @@ void general_peer_replace_strategy_t::on_active_peer_added(
     ppeer_state_t p = &m_all_peers[bitmap.peer_id()];
     m_active_peers[bitmap.peer_id()] = p;
 
-    peer_piece_bitmap_iterator_t it(bitmap, peer_piece_bitmap_t::pp_done);
-    for (; !it.at_end(); ++it) {
+    peer_piece_bitmap_iterator_t it(bitmap, 1);
+    for (; !it.at_end() && *it < m_mybitmap.piece_count(); ++it) {
         m_peer_per_piece_list[*it].insert(p);
 
         p->m_piece_count++;
@@ -48,8 +49,8 @@ void general_peer_replace_strategy_t::on_inactive_peer_added(
     ppeer_state_t p = &m_all_peers[bitmap.peer_id()];
     m_inactive_peers[bitmap.peer_id()] = p;
 
-    peer_piece_bitmap_iterator_t it(bitmap, peer_piece_bitmap_t::pp_done);
-    for (; !it.at_end(); ++it) {
+    peer_piece_bitmap_iterator_t it(bitmap, 1);
+    for (; !it.at_end() && *it < m_mybitmap.piece_count(); ++it) {
         m_peer_per_piece_list[*it].insert(p);
 
         p->m_piece_count++;
@@ -67,8 +68,8 @@ void general_peer_replace_strategy_t::on_active_peer_removed(
     ppeer_state_t p = &m_all_peers[bitmap.peer_id()];
     m_active_peers.erase(bitmap.peer_id());
 
-    peer_piece_bitmap_iterator_t it(bitmap, peer_piece_bitmap_t::pp_done);
-    for (; !it.at_end(); ++it) {
+    peer_piece_bitmap_iterator_t it(bitmap, 1);
+    for (; !it.at_end() && *it < m_mybitmap.piece_count(); ++it) {
         m_peer_per_piece_list[*it].erase(p);
     }
 }
@@ -81,8 +82,8 @@ void general_peer_replace_strategy_t::on_inactive_peer_removed(
     ppeer_state_t p = &m_all_peers[bitmap.peer_id()];
     m_inactive_peers.erase(bitmap.peer_id());
 
-    peer_piece_bitmap_iterator_t it(bitmap, peer_piece_bitmap_t::pp_done);
-    for (; !it.at_end(); ++it) {
+    peer_piece_bitmap_iterator_t it(bitmap, 1);
+    for (; !it.at_end() && *it < m_mybitmap.piece_count(); ++it) {
         m_peer_per_piece_list[*it].erase(p);
     }
 }
@@ -122,6 +123,11 @@ void general_peer_replace_strategy_t::get_peer_replacements(
 {
     ppeer_state_t max_inactive = get_max_item_from_list(m_inactive_peers);
     ppeer_state_t min_active = get_min_item_from_list(m_active_peers);
+
+    if (!max_inactive || !min_active) {
+        return;
+    }
+
     if (max_inactive->m_piece_count_notmine > min_active->m_piece_count_notmine
         && max_inactive->m_piece_count_notmine
         - min_active->m_piece_count_notmine > m_peer_replacement_threshold)

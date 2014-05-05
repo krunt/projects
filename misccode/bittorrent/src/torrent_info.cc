@@ -36,11 +36,11 @@ torrent_info_t construct_torrent_info(const std::string &filename) {
     if (v["info"].exists("files")) {
         const value_t::list_type &lst = v["info"]["files"].to_list();
         for (int i = 0; i < lst.size(); ++i) {
-            boost::filesystem::path pth = v["info"]["name"].to_string();
+            boost::filesystem::path pth;
 
             const value_t::list_type &path_list = lst[i]["path"].to_list();
             for (int j = 0; j < path_list.size(); ++j) {
-                pth /= path_list[i].to_string();
+                pth /= path_list[j].to_string();
             }
 
             r.m_files.push_back(torrent_info_t::file_t(pth.string(), 

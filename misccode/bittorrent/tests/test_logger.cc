@@ -5,6 +5,7 @@ BOOST_AUTO_TEST_SUITE(testing_logger)
 
 BOOST_AUTO_TEST_CASE(logger_compilation) {
     btorrent::logger_t logger;
+    logger.set_level(btorrent::logger_t::kdisabled);
     logger.info("hi");
     logger.warn("hi");
     logger.error("hi");

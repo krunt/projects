@@ -20,6 +20,7 @@ public:
     std::string get_digest() const;
 
     bool operator==(const sha1_hash_t &other) const;
+    bool operator!=(const sha1_hash_t &other) const;
 
 private:
     typedef struct AVSHA {

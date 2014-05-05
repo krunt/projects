@@ -5,6 +5,7 @@ namespace btorrent {
 
 class peer_piece_bitmap_t {
 public: 
+    peer_piece_bitmap_t() {}
     peer_piece_bitmap_t(const std::string &peer_id, 
         size_type piece_count, size_type parts_per_piece);
     peer_piece_bitmap_t(const std::string &peer_id, const std::vector<u8> &bitmap, 
@@ -27,10 +28,14 @@ public:
         size_type piece_part_index) const;
 
     bool is_piece_downloaded(size_type piece_index) const;
+    bool is_done() const;
 
     const std::string peer_id() const { return m_peer_id; }
     size_type piece_count() const { return m_piece_count; }
+    size_type piece_done_count() const;
     size_type parts_per_piece() const { return m_parts_per_piece; }
+
+    std::string to_string() const;
 
 private:
     size_type get_part_index(size_type piece_index,
@@ -71,7 +76,7 @@ class peer_piece_part_bitmap_iterator_t: public
 public:
     peer_piece_part_bitmap_iterator_t(const peer_piece_bitmap_t &bitmap,
         size_type piece_index, int filter_match = -1);
-    value_type operator*();
+    value_type operator*() const;
     peer_piece_part_bitmap_iterator_t &operator++();
     bool at_end() const { return m_at_end; }
 

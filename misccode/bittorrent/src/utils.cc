@@ -67,12 +67,35 @@ std::string bloat_file(const std::string &full_path) {
     return contents;
 }
 
-/* TODO */
-std::string hex_encode(const std::string &s) { 
-    return std::string(20, '\0'); 
+std::string hex_encode(char c) {
+    int a1, a2;
+    std::string res;
+
+    a1 = (c & 0xF0) >> 4;
+    a2 = c & 0x0F;
+    res.append(1, a1 < 10 ? (a1 + '0') : (a1 - 10 + 'a'));
+    res.append(1, a2 < 10 ? (a2 + '0') : (a2 - 10 + 'a'));
+
+    return res;
 }
-std::string hex_decode(const std::string &s) { 
-    return std::string(20, '\0'); 
+
+std::string hex_encode(const std::string &c) { 
+    int i, a1, a2;
+    std::string res;
+    for (i = 0; i < c.size(); ++i) {
+        res += hex_encode(c[i]);
+    }
+    return res;
+}
+std::string hex_decode(const std::string &c) { 
+    int i, a1, a2;
+    std::string res;
+    for (i = 0; i < c.size(); i += 2) {
+        a1 = c[i] <= '9' ? (c[i] - '0') : (c[i] - 'a' + 10);
+        a2 = c[i+1] <= '9' ? (c[i+1] - '0') : (c[i+1] - 'a' + 10);
+        res.append(1, (a1 << 4) + a2);
+    }
+    return res;
 }
 
 void generate_random(char *ptr, size_type sz) {

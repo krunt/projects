@@ -3,6 +3,7 @@
 
 #include <include/common.h>
 #include <include/torrent_storage.h>
+#include <include/throttler.h>
 
 #include <boost/asio.hpp>
 
@@ -21,7 +22,11 @@ public:
 
     void configure_next_iteration();
     void start_tracker_connections();
+    void start_statistics_reporting();
+    void configure_statistics_reporting();
+    void report_statistics();
     void download_iteration();
+    void send_output_queue();
 
     void establish_new_active_connections();
     void establish_new_pending_connections();
@@ -56,6 +61,9 @@ public:
     u64 bytes_uploaded() const { return m_bytes_uploaded; }
     const torrent_info_t &get_torrent_info() const { return m_torrent_info; }
 
+    throttler_t &send_throttler() { return m_send_throttler; }
+    throttler_t &recv_throttler() { return m_recv_throttler; }
+
 private:
     std::vector<boost::shared_ptr<btorrent::tracker_connection_t> > 
         m_tracker_connections;
@@ -84,6 +92,11 @@ private:
     int m_download_time_interval;
     boost::asio::basic_deadline_timer<boost::posix_time::ptime> 
         m_timeout_timer;
+    boost::asio::basic_deadline_timer<boost::posix_time::ptime> 
+        m_statistics_timer;
+
+    throttler_t m_send_throttler;
+    throttler_t m_recv_throttler;
 
     /* keep it last for now */
     std::map<std::string, boost::shared_ptr<peer_t> > m_peerid2peer_map;

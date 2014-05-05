@@ -1,3 +1,5 @@
+#include <include/peer.h>
+#include <boost/bind.hpp>
 
 namespace btorrent {
 
@@ -17,10 +19,12 @@ void peer_t::start_pending() {
 
 void peer_t::make_request(const piece_part_request_t &request) {
     assert(m_state == s_active);
-    assert(request.peer_id == m_peer_id);
+    assert(request.m_peer_id == m_peer_id);
 
     m_pending_requests.push_back(request);
-    m_conn.send_request(request.m_piece_index, request.m_piece_part_index);
+    m_conn.send_request(request.m_piece_index, 
+            request.m_piece_part_index * gsettings()->m_piece_part_size, 
+            gsettings()->m_piece_part_size, true /* async = true */);
 }
 
 void peer_t::finish() {
@@ -29,7 +33,11 @@ void peer_t::finish() {
 }
 
 void peer_t::finish_with_replacement() {
-    m_state = s_replacement;
+    m_state = s_in_replacement;
+}
+
+void peer_t::send_output_queue() {
+    m_conn.send_output_queue();
 }
 
 void peer_t::setup_callbacks() {
@@ -38,9 +46,9 @@ void peer_t::setup_callbacks() {
     m_conn.setup_connection_lost_callback(
         boost::bind(&peer_t::on_connection_lost, this));
     m_conn.setup_bitmap_received_callback(
-        boost::bind(&peer_t::on_bitmap_received, this));
+        boost::bind(&peer_t::on_bitmap_received, this, _1));
     m_conn.setup_piece_part_received_callback(
-        boost::bind(&peer_t::on_piece_part_received, this));
+        boost::bind(&peer_t::on_piece_part_received, this, _1, _2, _3));
 }
 
 void peer_t::on_handshake_done() {
@@ -65,14 +73,14 @@ void peer_t::on_bitmap_received(const std::vector<u8> &bitmap) {
     } else if (m_state == s_bitmap_active_pending) {
         m_state = s_active;
     }
-    m_bitmap = peer_piece_bitmap_t(peer_id, bitmap,
+    m_bitmap = peer_piece_bitmap_t(m_peer_id, bitmap,
        m_torrent.get_torrent_info().m_piece_size / gsettings()->m_piece_part_size);
     m_torrent.on_bitmap_received(this, bitmap);
 }
 
-void peer_t::remove_from_pending(size_type piece_index,
+DEFINE_METHOD(void, peer_t::remove_from_pending, size_type piece_index,
     size_type piece_part_index) 
-{
+
     std::vector<piece_part_request_t> new_requests;
     for (int i = 0; i < m_pending_requests.size(); ++i) {
         if (m_pending_requests[i].m_piece_index != piece_index
@@ -81,21 +89,28 @@ void peer_t::remove_from_pending(size_type piece_index,
             new_requests.push_back(m_pending_requests[i]);
         }
     }
-    m_pending_requests.swap(new_requests);
-}
 
-void peer_t::on_piece_part_received(size_type piece_index,
+    GLOG->debug("got %d/%d", new_requests.size(), m_pending_requests.size());
+    m_pending_requests.swap(new_requests);
+
+END_METHOD
+
+
+DEFINE_METHOD(void, peer_t::on_piece_part_received, size_type piece_index,
     size_type piece_part_index, const std::vector<u8> &data)
-{
+
     remove_from_pending(piece_index, piece_part_index);
 
     /* we are done */
-    if ((is_finishing() || m_state == s_replacement)
+    if ((is_finishing() || m_state == s_in_replacement)
         && m_pending_requests.empty())
     {
         on_connection_lost();
     }
-}
+
+    m_torrent.on_piece_part_received(this, piece_index, piece_part_index, data);
+
+END_METHOD
 
 }
 

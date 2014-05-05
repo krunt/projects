@@ -20,12 +20,16 @@ public:
 
 private:
     struct peer_state_t {
-        peer_state_t(const piece_part_bitmap_t &bitmap)
+        peer_state_t()
+            : m_pending_count(0)
+        {}
+
+        peer_state_t(const peer_piece_bitmap_t &bitmap)
             : m_pending_count(0), m_bitmap(bitmap)
         {}
 
         int m_pending_count; /* pending requests count */
-        piece_part_bitmap_t m_bitmap;
+        peer_piece_bitmap_t m_bitmap;
     };
 
     struct piece_sorter_t {

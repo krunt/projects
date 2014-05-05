@@ -8,6 +8,10 @@ namespace btorrent {
 void logger_t::loghelper(logger_level_t level, 
         const std::string &format, va_list ap) const 
 {
+    if (m_level > level) {
+        return;
+    }
+
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     fprintf(m_fd, "[%s]:%s:[%s]: ",
             boost::posix_time::to_iso_string(now).c_str(),
@@ -47,6 +51,10 @@ void logger_t::error(const std::string &format, ...) const {
 
 void logger_t::set_namespace(const std::string &namespace_name) {
     m_namespace = namespace_name;
+}
+
+void logger_t::set_level(logger_t::logger_level_t level) {
+    m_level = level; 
 }
 
 logger_t global_logger;

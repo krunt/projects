@@ -58,7 +58,7 @@ DEFINE_METHOD(void, http_tracker_connection_t::on_resolve,
     const boost::system::error_code& err,
     boost::asio::ip::tcp::resolver::iterator endpoint_iterator)
     if (err) {
-        GLOG->error("got error: ");
+        GLOG->error("got error: " + err.message());
         finish();
         return;
     }
@@ -66,18 +66,32 @@ DEFINE_METHOD(void, http_tracker_connection_t::on_resolve,
     GLOG->debug("resolved successfully to %s:%d", (*endpoint_iterator)
         .endpoint().address().to_string().c_str(), m_port);
 
-    m_socket.async_connect(*endpoint_iterator,
+    boost::asio::ip::tcp::endpoint endpoint(*endpoint_iterator);
+    m_socket.async_connect(endpoint,
         boost::bind(&http_tracker_connection_t::on_connect, this,
-            boost::asio::placeholders::error));
+            boost::asio::placeholders::error,
+            ++endpoint_iterator));
+
 END_METHOD
 
 
 DEFINE_METHOD(void, http_tracker_connection_t::on_connect, 
-        const boost::system::error_code& err) 
+        const boost::system::error_code& err,
+        boost::asio::ip::tcp::resolver::iterator endpoint_iterator)
 
     if (err) {
-        GLOG->error("got error: ");
-        finish();
+        if (endpoint_iterator == boost::asio::ip::tcp::resolver::iterator()) {
+            GLOG->error("got error: " + err.message());
+            finish();
+            return;
+        }
+
+        m_socket.close();
+        boost::asio::ip::tcp::endpoint endpoint(*endpoint_iterator);
+        m_socket.async_connect(endpoint,
+            boost::bind(&http_tracker_connection_t::on_connect, this,
+                boost::asio::placeholders::error,
+                ++endpoint_iterator));
         return;
     }
 
@@ -122,7 +136,7 @@ DEFINE_METHOD(void, http_tracker_connection_t::on_received_announce_response,
         const boost::system::error_code& err, size_t bytes_transferred)
 
     if (err) { 
-        GLOG->error("got error: ");
+        GLOG->error("got error: " + err.message());
         finish();
         return; 
     }

@@ -42,6 +42,8 @@ public:
     void finish();
     void finish_with_replacement();
 
+    void send_output_queue();
+
     const std::string &id() const { return m_peer_id; }
     const state_t get_state() const { return m_state; }
     const peer_piece_bitmap_t &get_bitmap() const { return m_bitmap; }

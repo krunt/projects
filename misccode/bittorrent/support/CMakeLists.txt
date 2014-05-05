@@ -12,3 +12,6 @@ target_link_libraries(dump_torrent_info btorrent)
 
 add_executable(start_torrent start_torrent.cpp)
 target_link_libraries(start_torrent btorrent)
+
+add_executable(generate_torrent generate_torrent.cpp)
+target_link_libraries(generate_torrent btorrent)

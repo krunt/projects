@@ -14,6 +14,8 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    btorrent::glog()->set_level(btorrent::logger_t::kdebug);
+
     /*
     boost::asio::io_service service;
     btorrent::torrent_info_t t = btorrent::construct_torrent_info(argv[1]);

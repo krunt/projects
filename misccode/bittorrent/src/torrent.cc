@@ -1,6 +1,7 @@
 #include <include/settings.h>
 #include <include/torrent.h>
 #include <include/peer.h>
+#include <include/logger.h>
 
 #include <boost/bind.hpp>
 
@@ -13,7 +14,11 @@ torrent_t::torrent_t(boost::asio::io_service &io_service_arg,
         info.m_piece_size / gsettings()->m_piece_part_size),
     m_bytes_downloaded(0), m_bytes_left(0),
     m_bytes_uploaded(0), m_torrent_info(info), m_torrent_storage(*this),
-    m_download_time_interval(1), m_timeout_timer(m_io_service)
+    m_download_time_interval(100), m_timeout_timer(m_io_service),
+    m_statistics_timer(m_io_service),
+    m_send_throttler(1, 1024 * 1024), /* 1 mb */
+    m_recv_throttler(1, 1024 * 1024)  /* 1 mb */
+    //m_recv_throttler(1, 1024)  /* 1 kb */
 {
     /* computing total file size */
     for (int i = 0; i < m_torrent_info.m_files.size(); ++i) {
@@ -29,7 +34,7 @@ torrent_t::torrent_t(boost::asio::io_service &io_service_arg,
 DEFINE_METHOD(void, torrent_t::add_peer, const std::string &peer_id, 
         const std::string &host, int port) 
 
-    GLOG->info("got %s:%d", host.c_str(), port); 
+    GLOG->info("add_peer %s:%d id=%s", host.c_str(), port, peer_id.c_str()); 
     m_peerid2peer_map[peer_id] 
         = boost::shared_ptr<peer_t>(new peer_t(*this, peer_id, host, port));
     m_unknown_peers.push_back(m_peerid2peer_map[peer_id].get());
@@ -37,7 +42,7 @@ DEFINE_METHOD(void, torrent_t::add_peer, const std::string &peer_id,
 END_METHOD
 
 void torrent_t::configure_next_iteration() {
-    m_timeout_timer.expires_from_now(boost::posix_time::seconds(
+    m_timeout_timer.expires_from_now(boost::posix_time::milliseconds(
                 m_download_time_interval));
     m_timeout_timer.async_wait(boost::bind(&torrent_t::download_iteration, this));
 }
@@ -49,9 +54,11 @@ void torrent_t::get_announce_urls(std::vector<url_t> &urls) {
     }
 }
 
-void torrent_t::start_tracker_connections() {
+DEFINE_METHOD(void, torrent_t::start_tracker_connections) 
     std::vector<url_t> urls;
     get_announce_urls(urls);
+
+    GLOG->info("starting %d tracker connections", urls.size());
 
     m_tracker_connections.clear();
     for (int i = 0; i < urls.size(); ++i) {
@@ -60,14 +67,49 @@ void torrent_t::start_tracker_connections() {
             btorrent::tracker_connection_factory_t::construct(*this, urls[i])));
         m_tracker_connections.back()->start();
     }
+END_METHOD
+
+void torrent_t::configure_statistics_reporting() {
+    m_statistics_timer.expires_from_now(boost::posix_time::milliseconds(1000));
+    m_statistics_timer.async_wait(
+            boost::bind(&torrent_t::report_statistics, this));
+}
+
+void torrent_t::start_statistics_reporting() {
+    configure_statistics_reporting();
+}
+
+void torrent_t::report_statistics() {
+    std::cout 
+        << "progress: "
+        << m_bitmap.piece_done_count()
+        << "/"
+        << m_bitmap.piece_count()
+        << " "
+        << m_unknown_peers.size()
+        << "/"
+        << m_inactive_peers.size()
+        << "/"
+        << m_pending_peers.size()
+        << "/"
+        << m_active_peers.size()
+        << "/"
+        << m_blacklist_peers.size()
+        << std::endl;
+    
+    configure_statistics_reporting();
 }
 
 void torrent_t::start() {
+    m_torrent_storage.start();
     start_tracker_connections();
+    start_statistics_reporting();
     download_iteration();
 }
 
 void torrent_t::finish() {
+    report_statistics();
+    m_io_service.stop();
 }
 
 void torrent_t::establish_new_active_connections() {
@@ -76,7 +118,7 @@ void torrent_t::establish_new_active_connections() {
     while (m_active_peers.size() < active_count) {
 
         /* for now pick random from unknown,
-         * TODO need more clear approach */
+         * TODO need more clean approach */
 
         if (!m_unknown_peers.empty()) {
             ppeer_t peer = utils::pop_random(m_unknown_peers);
@@ -112,15 +154,23 @@ void torrent_t::establish_new_pending_connections() {
     }
 }
 
-void torrent_t::make_piece_requests() {
+DEFINE_METHOD(void, torrent_t::make_piece_requests) 
     piece_part_request_t request;
+
+    //GLOG->debug("making piece requests");
+
     while (m_piece_pick_strategy->get_next_part(request)) {
+
+        GLOG->debug("making request to peer=%s piece=%d part=%d",
+            request.m_peer_id.c_str(), request.m_piece_index,
+            request.m_piece_part_index);
+
         ppeer_t peer = m_peerid2peer_map[request.m_peer_id].get();
         make_request(peer, request);
     }
-}
+END_METHOD
 
-void torrent_t::remove_unneeded_peers() {
+DEFINE_METHOD(void, torrent_t::remove_unneeded_peers)
     std::vector<std::string> unneeded_peers;
     m_peer_replacement_strategy->get_peers_to_remove(unneeded_peers);
 
@@ -130,6 +180,7 @@ void torrent_t::remove_unneeded_peers() {
         if (!peer->is_finishing()
             && peer->get_state() != peer_t::s_in_replacement) 
         {
+            GLOG->debug("removing unneeded peer %s", peer->id().c_str());
             peer->finish();
         }
     }
@@ -142,7 +193,7 @@ void torrent_t::remove_unneeded_peers() {
             peer->finish();
         }
     }
-}
+END_METHOD
 
 void torrent_t::make_active_replacements() {
     std::vector<peer_replacement_t> replacements;
@@ -159,11 +210,19 @@ void torrent_t::make_active_replacements() {
     }
 }
 
+void torrent_t::send_output_queue() {
+    for (int i = 0; i < m_active_peers.size(); ++i) {
+        ppeer_t p = m_active_peers[i];
+        p->send_output_queue();
+    }
+}
+
 void torrent_t::download_iteration() {
     establish_new_active_connections();
     establish_new_pending_connections();
     make_piece_requests();
-    remove_unneeded_peers();
+    send_output_queue();
+    //remove_unneeded_peers();
     make_active_replacements();
     configure_next_iteration();
 }
@@ -176,13 +235,19 @@ void torrent_t::make_request(ppeer_t peer, const piece_part_request_t &request) 
     peer->make_request(request);
 }
 
-void torrent_t::move_to_active(ppeer_t peer) {
-    m_active_peers.push_back(peer);
-}
+DEFINE_METHOD(void, torrent_t::move_to_active, ppeer_t peer)
+    GLOG->debug(peer->id() + " to active");
 
-void torrent_t::move_to_pending(ppeer_t peer) {
+    m_active_peers.push_back(peer);
+
+END_METHOD
+
+DEFINE_METHOD(void, torrent_t::move_to_pending, ppeer_t peer)
+    GLOG->debug(peer->id() + " to pending");
+
     m_pending_peers.push_back(peer);
-}
+
+END_METHOD
 
 void torrent_t::move_to_inactive_from_pending(ppeer_t peer) {
     m_peer_replacement_strategy->on_inactive_peer_added(peer->get_bitmap());
@@ -230,18 +295,26 @@ peer_replacement_t torrent_t::remove_from_replacement_list(ppeer_t peer,
     return result;
 }
 
-void torrent_t::on_bitmap_received(ppeer_t peer, const std::vector<u8> &bitmap) {
+
+DEFINE_METHOD(void, torrent_t::on_bitmap_received, 
+        ppeer_t peer, const std::vector<u8> &bitmap) 
+
+    GLOG->debug("peer_state=%d", peer->get_state());
+
     if (peer->get_state() == peer_t::s_active) {
         m_piece_pick_strategy->on_peer_added(peer->get_bitmap());
         m_peer_replacement_strategy->on_active_peer_added(peer->get_bitmap());
     } else if (peer->get_state() == peer_t::s_bitmap_done) {
         m_peer_replacement_strategy->on_inactive_peer_added(peer->get_bitmap());
     }
-}
 
-void torrent_t::on_piece_part_received(ppeer_t peer, size_type piece_index,
-    size_type piece_part_index, const std::vector<u8> &data) 
-{
+END_METHOD
+
+
+DEFINE_METHOD(void, torrent_t::on_piece_part_received, 
+        ppeer_t peer, size_type piece_index,
+    size_type piece_part_index, const std::vector<u8> &data)
+
     assert(peer->get_state() == peer_t::s_active);
     piece_part_request_t piece_request(peer->id(), piece_index, piece_part_index);
     m_piece_pick_strategy->on_piece_part_downloaded(piece_request);
@@ -253,17 +326,27 @@ void torrent_t::on_piece_part_received(ppeer_t peer, size_type piece_index,
     m_torrent_storage.add_piece_part(piece_index, piece_part_index, data);
 
     if (m_bitmap.is_piece_downloaded(piece_index)) {
+        GLOG->info("piece %d is downloaded, validating", piece_index);
         if (m_torrent_storage.validate_piece(piece_index)) {
+            GLOG->info("validated piece %d successfully", piece_index);
             m_bitmap.set_piece(piece_index);
             m_piece_pick_strategy->on_piece_validation_done(piece_index);
             m_peer_replacement_strategy->on_piece_validation_done(piece_index);
+
+            if (m_bitmap.is_done()) {
+                GLOG->info("torrent is downloaded successfully");
+                finish();
+                return;
+            }
+
         } else {
+            GLOG->info("validation of piece %d failed, unsetting", piece_index);
             m_bitmap.unset_piece(piece_index);
             m_piece_pick_strategy->on_piece_validation_failed(piece_index);
             m_peer_replacement_strategy->on_piece_validation_failed(piece_index);
         }
     }
-}
+END_METHOD
 
 void torrent_t::on_aborted_request(ppeer_t peer, 
     const piece_part_request_t &request) 
@@ -275,7 +358,12 @@ void torrent_t::on_aborted_request(ppeer_t peer,
 }
 
 void torrent_t::on_connection_lost(ppeer_t peer) {
-    assert(peer->is_finishing() || peer->get_state() == peer_t::s_in_replacement);
+
+    if (peer->get_state() < peer_t::s_active)
+        return;
+
+    assert(peer->is_finishing() 
+        || peer->get_state() == peer_t::s_in_replacement);
 
     if (peer->get_state() == peer_t::s_in_replacement
         || peer->get_state() == peer_t::s_finishing_from_active)

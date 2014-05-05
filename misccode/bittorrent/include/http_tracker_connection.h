@@ -16,7 +16,8 @@ public:
 private:
     void on_resolve(const boost::system::error_code& err,
         boost::asio::ip::tcp::resolver::iterator endpoint_iterator);
-    void on_connect(const boost::system::error_code& err);
+    void on_connect(const boost::system::error_code& err,
+         boost::asio::ip::tcp::resolver::iterator endpoint_iterator);
     void on_received_connect_response(const boost::system::error_code& err, 
         size_t bytes_transferred);
     void on_received_announce_response(

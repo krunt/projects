@@ -1,6 +1,8 @@
 #ifndef PIECE_PICK_STRATEGY_DEF_
 #define PIECE_PICK_STRATEGY_DEF_
 
+#include <include/common.h>
+
 namespace btorrent {
 
 namespace piece_pick_strategy {

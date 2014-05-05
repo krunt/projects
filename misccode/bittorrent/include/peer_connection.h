@@ -4,6 +4,8 @@
 #include <include/common.h>
 #include <include/torrent.h>
 
+#include <deque>
+
 #include <boost/function.hpp>
 
 namespace btorrent {
@@ -15,7 +17,7 @@ public:
             const std::string &host, int port)
         : m_torrent(torrent), m_resolver(m_torrent.io_service()), 
         m_socket(m_torrent.io_service()), m_peer_id(peer_id), 
-        m_host(host), m_port(port)
+        m_host(host), m_port(port), m_state(k_none)
     {}
 
     void start();
@@ -32,15 +34,56 @@ public:
     void setup_piece_part_received_callback(const boost::function<
             void(size_type, size_type, const std::vector<u8> &)> &cbk);
 
+    void send_keepalive(bool async = false);
+    void send_choke(bool async = false);
+    void send_unchoke(bool async = false);
+    void send_interested(bool async = false);
+    void send_notinterested(bool async = false);
+    void send_have(u32 index, bool async = false);
+    /* void send_bitfield(torrent_t::bitfield_type &t); */
+    void send_request(u32 index, u32 begin, u32 length, bool async = false);
+    void send_piece(u32 index, u32 begin, const std::vector<u8> &data, 
+            bool async = false);
+
+    void send_output_queue();
+
 private:
     void on_resolve(const boost::system::error_code& err,
         boost::asio::ip::tcp::resolver::iterator endpoint_iterator);
     void on_connect(const boost::system::error_code& err);
+    void on_handshake_response(const boost::system::error_code& err, 
+            size_t bytes_transferred);
+    void on_packet_sent(const boost::system::error_code& err, 
+            size_t bytes_transferred);
     void perform_handshake();
 
     enum message_type_t { t_keepalive = -1, t_choke = 0, t_unchoke, t_interested,
         t_not_interested, t_have, t_bitfield, t_request, t_piece, t_cancel };
-    void send_common(message_type_t type, const std::string &payload);
+    struct message_t {
+        union {
+            u32 length;
+            u8 buf[4];
+        } lenpart;
+
+        message_type_t type;
+        std::vector<u8> payload; 
+    };
+
+    void on_keepalive(const message_t &message);
+    void on_choke(const message_t &message);
+    void on_unchoke(const message_t &message);
+    void on_interested(const message_t &message);
+    void on_notinterested(const message_t &message);
+    void on_have(const message_t &message);
+    void on_bitfield(const message_t &message);
+    void on_piece(const message_t &message);
+    void on_cancel(const message_t &message);
+
+    void on_data_received(const boost::system::error_code& err, 
+            size_t bytes_transferred);
+
+    void send_common(message_type_t type, const std::string &payload, 
+            bool async = false);
 
     void process_input_messages();
     void setup_receive_callback();
@@ -87,16 +130,6 @@ private:
 
     connection_state_t m_connection_state;
 
-    struct message_t {
-        union {
-            u32 length;
-            u8 buf[4];
-        } lenpart;
-
-        message_type_t type;
-        std::vector<u8> payload; 
-    };
-
     class message_stream_t {
     public:
         message_stream_t() { reset(); }
@@ -125,6 +158,13 @@ private:
     };
 
     message_stream_t m_input_message_stream;
+
+    struct packet_t {
+        std::vector<std::string> m_bufs;
+    };
+
+    bool m_in_flight;
+    std::deque<packet_t> m_send_packets;
 };
 
 }
