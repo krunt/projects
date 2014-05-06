@@ -14,6 +14,9 @@ torrent_t::torrent_t(boost::asio::io_service &io_service_arg,
         info.m_piece_size / gsettings()->m_piece_part_size),
     m_bytes_downloaded(0), m_bytes_left(0),
     m_bytes_uploaded(0), m_torrent_info(info), m_torrent_storage(*this),
+    m_torrent_storage_thread(
+        boost::bind(&torrent_storage_t::dispatch_requests_queue, 
+            &m_torrent_storage)),
     m_download_time_interval(100), m_timeout_timer(m_io_service),
     m_statistics_timer(m_io_service),
     m_send_throttler(1, 1024 * 1024), /* 1 mb */
@@ -29,6 +32,8 @@ torrent_t::torrent_t(boost::asio::io_service &io_service_arg,
         gsettings()->m_piece_pick_strategy_type, m_bitmap));
     m_peer_replacement_strategy.reset(create_peer_replace_strategy(
         gsettings()->m_peer_replace_strategy_type, m_bitmap));
+
+    m_torrent_storage_thread.detach();
 }
 
 DEFINE_METHOD(void, torrent_t::add_peer, const std::string &peer_id, 
@@ -48,9 +53,15 @@ void torrent_t::configure_next_iteration() {
 }
 
 void torrent_t::get_announce_urls(std::vector<url_t> &urls) {
-    urls.push_back(url_t(m_torrent_info.m_announce_url));
+    std::set<std::string> uniq_urls;
+    uniq_urls.insert(m_torrent_info.m_announce_url);
     for (int i = 0; i < m_torrent_info.m_announce_list.size(); ++i) {
-        urls.push_back(url_t(m_torrent_info.m_announce_list[i]));
+        uniq_urls.insert(m_torrent_info.m_announce_list[i]);
+    }
+    for (std::set<std::string>::const_iterator it = uniq_urls.begin();
+            it != uniq_urls.end(); ++it)
+    {
+        urls.push_back(url_t(*it));
     }
 }
 
@@ -210,20 +221,78 @@ void torrent_t::make_active_replacements() {
     }
 }
 
-void torrent_t::send_output_queue() {
-    for (int i = 0; i < m_active_peers.size(); ++i) {
-        ppeer_t p = m_active_peers[i];
-        p->send_output_queue();
+DEFINE_METHOD(void, torrent_t::dispatch_torrent_storage_responses)
+    while (1) {
+        torrent_storage_t::torrent_storage_work_t work;
+
+        {
+            boost::mutex::scoped_lock lk(m_torrent_storage_responses_guard);
+
+            if (m_torrent_storage_responses.empty()) {
+                return;
+            }
+
+            work = m_torrent_storage_responses.front();
+            m_torrent_storage_responses.pop_front();
+        }
+
+        switch (work.m_type) {
+        case torrent_storage_t::torrent_storage_work_t::k_get_piece_part:
+            work.m_peer->on_piece_part_requested_done(
+                work.m_piece_index, work.m_piece_part_index, work.m_data);
+        break;
+
+        case torrent_storage_t::torrent_storage_work_t::k_validate_piece: {
+
+            if (work.m_validation_result) {
+                GLOG->info("validated piece %d successfully", work.m_piece_index);
+                m_bitmap.set_piece(work.m_piece_index);
+                m_piece_pick_strategy->on_piece_validation_done(work.m_piece_index);
+                m_peer_replacement_strategy->on_piece_validation_done(
+                        work.m_piece_index);
+                work.m_peer->on_piece_validation_done(work.m_piece_index);
+    
+                if (m_bitmap.is_done()) {
+                    GLOG->info("torrent is downloaded successfully");
+                    finish();
+                    return;
+                }
+    
+            } else {
+                GLOG->info("validation of piece %d failed, unsetting", 
+                        work.m_piece_index);
+                m_bitmap.unset_piece(work.m_piece_index);
+                m_piece_pick_strategy->on_piece_validation_failed(
+                        work.m_piece_index);
+                m_peer_replacement_strategy->on_piece_validation_failed(
+                        work.m_piece_index);
+            }
+        }
+        break;
+
+        case torrent_storage_t::torrent_storage_work_t::k_add_piece_part: {
+            if (m_bitmap.is_piece_downloaded(work.m_piece_index)) {
+                GLOG->info("piece %d is downloaded, validating", 
+                        work.m_piece_index);
+                m_torrent_storage.validate_piece_enqueue_request(
+                        work.m_peer, work.m_piece_index);
+            }
+        }
+        break;
+
+        default:
+            assert(0);
+        };
     }
-}
+END_METHOD
 
 void torrent_t::download_iteration() {
     establish_new_active_connections();
     establish_new_pending_connections();
     make_piece_requests();
-    send_output_queue();
     //remove_unneeded_peers();
     make_active_replacements();
+    dispatch_torrent_storage_responses();
     configure_next_iteration();
 }
 
@@ -323,29 +392,21 @@ DEFINE_METHOD(void, torrent_t::on_piece_part_received,
     m_bitmap.set_piece_part(piece_index, piece_part_index, 
         peer_piece_bitmap_t::pp_downloaded);
 
-    m_torrent_storage.add_piece_part(piece_index, piece_part_index, data);
+    m_torrent_storage.add_piece_part_enqueue_request(peer, 
+            piece_index, piece_part_index, data);
 
-    if (m_bitmap.is_piece_downloaded(piece_index)) {
-        GLOG->info("piece %d is downloaded, validating", piece_index);
-        if (m_torrent_storage.validate_piece(piece_index)) {
-            GLOG->info("validated piece %d successfully", piece_index);
-            m_bitmap.set_piece(piece_index);
-            m_piece_pick_strategy->on_piece_validation_done(piece_index);
-            m_peer_replacement_strategy->on_piece_validation_done(piece_index);
+END_METHOD
 
-            if (m_bitmap.is_done()) {
-                GLOG->info("torrent is downloaded successfully");
-                finish();
-                return;
-            }
+DEFINE_METHOD(void, torrent_t::on_piece_part_requested, 
+        ppeer_t peer, size_type piece_index,
+    size_type piece_part_index, std::vector<u8> &data)
 
-        } else {
-            GLOG->info("validation of piece %d failed, unsetting", piece_index);
-            m_bitmap.unset_piece(piece_index);
-            m_piece_pick_strategy->on_piece_validation_failed(piece_index);
-            m_peer_replacement_strategy->on_piece_validation_failed(piece_index);
-        }
-    }
+    if (!m_bitmap.has_piece(piece_index))
+        return;
+
+    m_torrent_storage.get_piece_part_enqueue_request(peer, piece_index, 
+            piece_part_index, data);
+
 END_METHOD
 
 void torrent_t::on_aborted_request(ppeer_t peer, 
@@ -389,6 +450,13 @@ void torrent_t::on_connection_lost(ppeer_t peer) {
         to_peer->start_active();
         move_to_active(to_peer);
     } 
+}
+
+void torrent_t::on_torrent_storage_work_done(
+    const torrent_storage_t::torrent_storage_work_t &res) 
+{
+    boost::mutex::scoped_lock lk(m_torrent_storage_responses_guard);
+    m_torrent_storage_responses.push_back(res);
 }
 
 }

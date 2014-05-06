@@ -2,6 +2,7 @@
 #define TORRENT_STORAGE_DEF_
 
 #include <include/common.h>
+#include <include/blocking_queue.h>
 #include <fstream>
 
 namespace btorrent {
@@ -12,14 +13,48 @@ public:
 
     void start();
     void finish();
+    void dispatch_requests_queue();
 
-    /* TODO: make with threads */
     void add_piece_part(int piece_index, int piece_part, 
             const std::vector<u8> &data);
+    void get_piece_part(int piece_index, int piece_part, std::vector<u8> &data);
     bool validate_piece(int piece_index) const;
+
+    void add_piece_part_enqueue_request(ppeer_t peer, int piece_index, int piece_part, 
+            const std::vector<u8> &data);
+    void get_piece_part_enqueue_request(ppeer_t peer, int piece_index, 
+            int piece_part, std::vector<u8> &data);
+    void validate_piece_enqueue_request(ppeer_t peer, int piece_index);
 
     torrent_t &get_torrent() { return m_torrent; }
     const torrent_t &get_torrent() const { return m_torrent; }
+
+public:
+    struct torrent_storage_work_t {
+        enum t_type { k_add_piece_part, k_get_piece_part, k_validate_piece };
+
+        torrent_storage_work_t() {}
+
+        torrent_storage_work_t(t_type t, ppeer_t peer, int piece_index) 
+            : m_type(t), m_piece_index(piece_index), m_peer(peer),
+            m_validation_result(false)
+        {}
+
+        torrent_storage_work_t(t_type t, ppeer_t peer, 
+                int piece_index, int piece_part_index,
+                const std::vector<u8> &data)
+            : m_type(t), m_piece_index(piece_index), 
+            m_piece_part_index(piece_part_index), m_data(data),
+            m_peer(peer), m_validation_result(false)
+        {}
+
+        t_type m_type;
+        int m_piece_index;
+        int m_piece_part_index;
+        std::vector<u8> m_data;
+        ppeer_t m_peer;
+        bool m_validation_result;
+    };
 
 private:
     void setup_files();
@@ -90,6 +125,8 @@ private:
 
     std::vector<file_stream_t> m_files;
     std::vector<size_type> m_accumulated_file_sizes;
+
+    blocking_queue_t<torrent_storage_work_t, 10> m_requests;
 };
 
 }

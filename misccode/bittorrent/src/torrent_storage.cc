@@ -20,9 +20,39 @@ void torrent_storage_t::start() {
 void torrent_storage_t::finish() { 
 }
 
+DEFINE_METHOD(void, torrent_storage_t::dispatch_requests_queue)
+    while (true) {
+        torrent_storage_work_t work = m_requests.pop();
+
+        GLOG->debug("got type %d work", work.m_type);
+
+        switch (work.m_type) {
+        case torrent_storage_work_t::k_add_piece_part:
+            add_piece_part(work.m_piece_index, work.m_piece_part_index,
+                    work.m_data);
+        break;
+
+        case torrent_storage_work_t::k_get_piece_part:
+            get_piece_part(work.m_piece_index, work.m_piece_part_index,
+                    work.m_data);
+        break;
+
+        case torrent_storage_work_t::k_validate_piece:
+            work.m_validation_result = validate_piece(work.m_piece_index);
+        break;
+
+        default:
+            assert(0);
+        };
+
+        m_torrent.on_torrent_storage_work_done(work);
+    }
+END_METHOD
+
 void torrent_storage_t::preallocate_file(file_stream_t &f) {
-    fs::path pth(f.m_ft.m_path);
-    fs::create_directories(pth.branch_path());
+    f.m_stream->close();
+    f.m_stream->open(f.m_ft.m_path.c_str(), 
+        std::ios_base::out | std::ios_base::binary);
     f.m_stream->seekp(f.m_ft.m_size - 1, std::ios_base::beg);
     f.m_stream->write("\0", 1);
     f.m_stream->close();
@@ -45,6 +75,7 @@ DEFINE_METHOD(void, torrent_storage_t::setup_files)
 
         GLOG->debug("preallocating file %s", fcopy.m_path.c_str());
 
+        fs::create_directories(fs::path(fcopy.m_path).branch_path());
         m_files.push_back(file_stream_t(fcopy));
         preallocate_file(m_files.back());
 
@@ -52,6 +83,15 @@ DEFINE_METHOD(void, torrent_storage_t::setup_files)
             m_accumulated_file_sizes.back() + m_files.back().m_ft.m_size);
     }
 END_METHOD
+
+
+void torrent_storage_t::add_piece_part_enqueue_request(ppeer_t peer, 
+        int piece_index, int piece_part, const std::vector<u8> &part_data)
+{
+    m_requests.push(torrent_storage_work_t(
+            torrent_storage_work_t::k_add_piece_part, peer,
+            piece_index, piece_part, part_data));
+}
 
 void torrent_storage_t::add_piece_part(int piece_index, 
         int piece_part, const std::vector<u8> &part_data)
@@ -70,6 +110,46 @@ void torrent_storage_t::add_piece_part(int piece_index,
         el.stream->m_stream->flush();
         bytes_left -= el.size;
     }
+}
+
+void torrent_storage_t::get_piece_part_enqueue_request(ppeer_t peer, 
+        int piece_index, int piece_part, std::vector<u8> &part_data)
+{
+    m_requests.push(torrent_storage_work_t(
+            torrent_storage_work_t::k_get_piece_part, peer,
+            piece_index, piece_part, part_data));
+}
+
+void torrent_storage_t::get_piece_part(int piece_index, int piece_part_index,
+        std::vector<u8> &data)
+{
+    int prev_size;
+    file_stream_iterator_t it(
+            construct_file_stream_iterator(piece_index, piece_part_index,
+                gsettings()->m_piece_part_size));
+
+    for (; !it.at_end(); ++it) {
+        const file_stream_iterator_element_t &el = *it;
+
+        el.stream->m_stream->seekp(el.offset, std::ios_base::beg);
+
+        /* maybe do here in loop */
+        prev_size = data.size();
+        data.resize(prev_size + el.size);
+        el.stream->m_stream->read((char *)&data[prev_size], el.size);
+
+        if (el.stream->m_stream->fail()) {
+            throw std::runtime_error("error while reading");
+        }
+    }
+}
+
+void torrent_storage_t::validate_piece_enqueue_request(ppeer_t peer,
+        int piece_index) 
+{
+    m_requests.push(torrent_storage_work_t(
+            torrent_storage_work_t::k_validate_piece, 
+            peer, piece_index));
 }
 
 bool torrent_storage_t::validate_piece(int piece_index) const

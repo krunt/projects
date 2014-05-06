@@ -108,7 +108,8 @@ DEFINE_METHOD(void, peer_connection_t::perform_handshake)
         return;
     }
 
-    GLOG->debug("sent handshake successfully");      
+    GLOG->debug("sent handshake request " + 
+        hex_encode(std::string((char*)handshake_request, 68)));
 
     m_receive_buffer.resize(k_max_buffer_size);
     boost::asio::async_read(m_socket,
@@ -152,8 +153,7 @@ DEFINE_METHOD(void, peer_connection_t::on_handshake_response,
     if (*p != '\x13' 
         || memcmp(p + 1, "BitTorrent protocol", 19)
             /* 8 zero bytes */
-        || memcmp(p + 28, get_torrent().info_hash().get_digest().c_str(), 20)
-        || memcmp(p + 48, m_peer_id.data(), 20))
+        || memcmp(p + 28, get_torrent().info_hash().get_digest().c_str(), 20))
     {
         GLOG->error("mismatch in handshake response");
         GLOG->debug("handshake=" +
@@ -230,6 +230,10 @@ DEFINE_METHOD(void, peer_connection_t::send_common, message_type_t type,
 
     u8 packet_prefix[4+1]; u8 *p = packet_prefix;
 
+    if (!async) {
+        assert(!m_in_flight);
+    }
+
     if (type == t_keepalive) {
         int4store(p, 0); p += 4;
     } else {
@@ -255,7 +259,8 @@ DEFINE_METHOD(void, peer_connection_t::send_common, message_type_t type,
                     p - packet_prefix)).c_str());
 
         m_send_packets.push_back(packet);
-        send_output_queue();
+
+        on_send_wait_timer_expired_cb();
         
     } else {
         if ((m_socket.send(boost::asio::buffer(packet_prefix, 
@@ -307,10 +312,39 @@ DEFINE_METHOD(void, peer_connection_t::on_data_received,
         process_input_messages();
     }
 
-    setup_receive_callback();
+    on_receive_wait_timer_expired_cb();
 
 END_METHOD
 
+void peer_connection_t::on_send_wait_timer_expired_cb() {
+    if (setup_send_callback()) {
+        /* noop */
+    } else {
+        configure_send_wait_timer();
+    }
+}
+
+void peer_connection_t::configure_send_wait_timer() {
+    m_wait_available_send_timer
+        .expires_from_now(boost::posix_time::milliseconds(25));
+    m_wait_available_send_timer.async_wait(
+        boost::bind(&peer_connection_t::on_send_wait_timer_expired_cb, this));
+}
+
+void peer_connection_t::on_receive_wait_timer_expired_cb() {
+    if (get_torrent().recv_throttler().available() > 0) {
+        setup_receive_callback();
+    } else {
+        configure_receive_wait_timer();
+    }
+}
+
+void peer_connection_t::configure_receive_wait_timer() {
+    m_wait_available_recv_timer
+        .expires_from_now(boost::posix_time::milliseconds(25));
+    m_wait_available_recv_timer.async_wait(
+        boost::bind(&peer_connection_t::on_receive_wait_timer_expired_cb, this));
+}
 
 DEFINE_METHOD(void, peer_connection_t::process_input_messages)
     const std::vector<message_t> &messages = m_input_message_stream.get_pending();
@@ -325,7 +359,7 @@ DEFINE_METHOD(void, peer_connection_t::process_input_messages)
         case t_not_interested: on_notinterested(messages[i]); break;
         case t_have: on_have(messages[i]); break;
         case t_bitfield: on_bitfield(messages[i]); break;
-        case t_request: /* ignore */ break;
+        case t_request: on_request(messages[i]); break;
         case t_piece: on_piece(messages[i]); break;
         case t_cancel: on_cancel(messages[i]); break;
         default: 
@@ -367,7 +401,57 @@ void peer_connection_t::on_piece(const message_t &message) {
             (u8*)&message.payload[0] + message.payload.size()));
 }
 
+DEFINE_METHOD(void, peer_connection_t::on_request, 
+        const message_t &message) 
+
+    int index, offset, length;
+    const u8 *p = message.payload.data();
+    int4get(index, p); p += 4;
+    int4get(offset, p); p += 4;
+    int4get(length, p); p += 4;
+
+    if (length != gsettings()->m_piece_part_size
+            || offset % gsettings()->m_piece_part_size != 0)
+    {
+        GLOG->debug("invalid request received");
+        return;
+    }
+
+    m_piece_part_requested_callback(index, offset / gsettings()->m_piece_part_size);
+
+END_METHOD
+
 void peer_connection_t::on_cancel(const message_t &message) {}
+
+bool peer_connection_t::setup_send_callback() {
+    int total_size;
+    std::vector<boost::asio::const_buffer> bufs;
+
+    /* is already configured */
+    if (m_in_flight)
+        return true;
+
+    if (m_send_packets.empty())
+        return true;
+
+    for (int i = 0; i < m_send_packets[0].m_bufs.size(); ++i) {
+        bufs.push_back(boost::asio::buffer(m_send_packets[0].m_bufs[i]));
+        total_size += m_send_packets[0].m_bufs[i].size();
+    }
+
+    if (total_size >= get_torrent().send_throttler().available()) {
+        return false;
+    }
+
+    m_in_flight = true;
+    boost::asio::async_write(m_socket, bufs,
+        boost::asio::transfer_at_least(total_size),
+        boost::bind(&peer_connection_t::on_packet_sent, this,
+            boost::asio::placeholders::error, 
+            boost::asio::placeholders::bytes_transferred));
+
+    return true;
+}
 
 void peer_connection_t::setup_receive_callback() {
     m_receive_buffer.resize(1);
@@ -378,30 +462,6 @@ void peer_connection_t::setup_receive_callback() {
             boost::asio::placeholders::error, 
             boost::asio::placeholders::bytes_transferred));
 }
-
-DEFINE_METHOD(void, peer_connection_t::send_output_queue) 
-
-    if (m_send_packets.empty()) {
-        return;
-    }
-
-    if (m_in_flight) {
-        return;
-    }
-
-    m_in_flight = true;
-
-    std::vector<boost::asio::const_buffer> bufs;
-    for (int i = 0; i < m_send_packets[0].m_bufs.size(); ++i) {
-        bufs.push_back(boost::asio::buffer(m_send_packets[0].m_bufs[i]));
-    }
-
-    boost::asio::async_write(m_socket,
-        bufs, boost::bind(&peer_connection_t::on_packet_sent, this,
-            boost::asio::placeholders::error, 
-            boost::asio::placeholders::bytes_transferred));
-END_METHOD
-
 
 DEFINE_METHOD(void, peer_connection_t::on_packet_sent,
         const boost::system::error_code& err, size_t bytes_transferred)
@@ -421,7 +481,10 @@ DEFINE_METHOD(void, peer_connection_t::on_packet_sent,
     GLOG->debug("packet was sent %d", bytes_transferred);
 
     m_send_packets.pop_front(); 
-    send_output_queue();
+
+    if (!m_send_packets.empty()) {
+        on_send_wait_timer_expired_cb();
+    }
 
 END_METHOD
 
@@ -533,5 +596,10 @@ void peer_connection_t::setup_piece_part_received_callback(const boost::function
     m_piece_part_received_callback = cbk;
 }
 
+void peer_connection_t::setup_piece_part_requested_callback(const boost::function<
+    void(size_type, size_type)> &cbk)
+{
+    m_piece_part_requested_callback = cbk;
+}
 
 }

@@ -71,6 +71,16 @@ void create_torrent(const std::string &filename, const std::string &outfilename)
     root["announce"] = value_t("http://localhost:13101/x");
     root["info"] = value_t(info);
 
+    value_t::list_type announce_list, udp1, http1;
+
+    udp1.push_back(value_t("udp://localhost:13101/x"));
+    http1.push_back(value_t("http://localhost:13101/x"));
+
+    announce_list.push_back(udp1);
+    announce_list.push_back(http1);
+
+    root["announce-list"] = announce_list;
+
     std::fstream out_stream(outfilename.c_str(), 
             std::ios_base::out | std::ios_base::binary);
     out_stream << btorrent::bencode(value_t(root));

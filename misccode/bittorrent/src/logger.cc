@@ -1,6 +1,9 @@
 #include <include/logger.h>
 #include <boost/date_time/posix_time/posix_time.hpp>
 
+#include <boost/thread/thread.hpp>
+#include <boost/thread/mutex.hpp>
+
 #include <stdarg.h>
 
 namespace btorrent {
@@ -12,6 +15,7 @@ void logger_t::loghelper(logger_level_t level,
         return;
     }
 
+    boost::mutex::scoped_lock lk(m_lock);
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     fprintf(m_fd, "[%s]:%s:[%s]: ",
             boost::posix_time::to_iso_string(now).c_str(),

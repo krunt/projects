@@ -41,7 +41,13 @@ void udp_tracker_connection_t::finish() {
     cancel_timeout();
 }
 
-void udp_tracker_connection_t::on_timer_timeout() {
+void udp_tracker_connection_t::on_timer_timeout(
+        const boost::system::error_code& err) 
+{
+    if (err == boost::asio::error::operation_aborted) {
+        return;
+    }
+
     if (++m_timeout_step > 8) {
         glog()->error("udp_tracker_connection_t request timeout out");
         finish();
@@ -63,7 +69,8 @@ void udp_tracker_connection_t::on_timer_timeout() {
     m_timeout_timer.expires_from_now(boost::posix_time::seconds(
                 timeout_in_seconds()));
     m_timeout_timer.async_wait(boost::bind(
-        &udp_tracker_connection_t::on_timer_timeout, this));
+        &udp_tracker_connection_t::on_timer_timeout, this,
+        boost::asio::placeholders::error));
 }
 
 void udp_tracker_connection_t::configure_timeout() {
@@ -71,7 +78,8 @@ void udp_tracker_connection_t::configure_timeout() {
     m_timeout_timer.expires_from_now(boost::posix_time::seconds(
                 timeout_in_seconds()));
     m_timeout_timer.async_wait(boost::bind(
-        &udp_tracker_connection_t::on_timer_timeout, this));
+        &udp_tracker_connection_t::on_timer_timeout, this,
+        boost::asio::placeholders::error));
 
     glog()->debug("configured timer for %d seconds", timeout_in_seconds());
 }
@@ -93,15 +101,28 @@ void udp_tracker_connection_t::on_resolve(
     glog()->debug("resolve successfully to %s:%d", (*endpoint_iterator)
         .endpoint().address().to_string().c_str(), m_port);
 
-    m_socket.async_connect(*endpoint_iterator,
+    boost::asio::ip::udp::endpoint endpoint(*endpoint_iterator);
+    m_socket.async_connect(endpoint,
         boost::bind(&udp_tracker_connection_t::on_connect, this,
-            boost::asio::placeholders::error));
+            boost::asio::placeholders::error, ++endpoint_iterator));
 }
 
-void udp_tracker_connection_t::on_connect(const boost::system::error_code& err) {
+DEFINE_METHOD(void, udp_tracker_connection_t::on_connect,
+            const boost::system::error_code& err,
+    boost::asio::ip::udp::resolver::iterator endpoint_iterator)
+
     if (err) {
-        glog()->error("udp_tracker_connection_t::on_connect error");
-        finish();
+        if (endpoint_iterator == boost::asio::ip::udp::resolver::iterator()) {
+            GLOG->error("got error: " + err.message());
+            finish();
+            return;
+        }
+
+        m_socket.close();
+        boost::asio::ip::udp::endpoint endpoint(*endpoint_iterator);
+        m_socket.async_connect(endpoint,
+            boost::bind(&udp_tracker_connection_t::on_connect, this,
+                boost::asio::placeholders::error, ++endpoint_iterator));
         return;
     }
 
@@ -135,20 +156,38 @@ void udp_tracker_connection_t::on_connect(const boost::system::error_code& err) 
     m_socket.async_receive(boost::asio::buffer(m_data, k_max_buffer_size),
         boost::bind(&udp_tracker_connection_t::on_received_connect_response, this,
                 boost::asio::placeholders::error,
-                boost::asio::placeholders::bytes_transferred));
-}
+                boost::asio::placeholders::bytes_transferred,
+                endpoint_iterator));
+END_METHOD
 
-void udp_tracker_connection_t::on_received_connect_response(
-        const boost::system::error_code& err, size_t bytes_transferred) 
-{
-    if (err || bytes_transferred < 16) { 
-        glog()->error(
-    "udp_tracker_connection_t::on_received_connect_response error");
+
+DEFINE_METHOD(void, udp_tracker_connection_t::on_received_connect_response,
+        const boost::system::error_code& err, size_t bytes_transferred,
+        boost::asio::ip::udp::resolver::iterator endpoint_iterator) 
+
+    if (err) {
+        if (endpoint_iterator == boost::asio::ip::udp::resolver::iterator()) {
+            GLOG->error("got error: " + err.message());
+            finish();
+            return;
+        }
+
+        cancel_timeout();
+        m_socket.close();
+        boost::asio::ip::udp::endpoint endpoint(*endpoint_iterator);
+        m_socket.async_connect(endpoint,
+            boost::bind(&udp_tracker_connection_t::on_connect, this,
+                boost::asio::placeholders::error, ++endpoint_iterator));
+        return; 
+    }
+
+    if (bytes_transferred < 16) {
+        GLOG->error("not enough bytes received = %d", bytes_transferred);
         finish();
         return; 
     }
 
-    glog()->debug("on_received_connect_response got");
+    GLOG->debug("on_received_connect_response got");
 
     u32 response_action, response_transaction_id, response_connection_id;
     u8 *p = reinterpret_cast<u8*>(m_data.data());
@@ -160,8 +199,7 @@ void udp_tracker_connection_t::on_received_connect_response(
     if (response_transaction_id != m_transaction_id
             || response_action != k_connect) 
     {
-        glog()->error(
-    "udp_tracker_connection_t::on_received_connect_response mismatch response");
+        GLOG->error("mismatch response");
         finish();
         return;
     }
@@ -201,14 +239,20 @@ void udp_tracker_connection_t::on_received_connect_response(
         boost::bind(&udp_tracker_connection_t::on_received_announce_response, this,
         boost::asio::placeholders::error, 
         boost::asio::placeholders::bytes_transferred));
-}
 
-void udp_tracker_connection_t::on_received_announce_response(
+END_METHOD
+
+DEFINE_METHOD(void, udp_tracker_connection_t::on_received_announce_response,
         const boost::system::error_code& err, size_t bytes_transferred) 
-{
-    if (err || bytes_transferred < 20) { 
-        glog()->error(
-                "udp_tracker_connection_t::on_received_announce_response error");
+
+    if (err) { 
+        GLOG->error("error=" + err.message());
+        finish();
+        return; 
+    }
+
+    if (bytes_transferred < 20) { 
+        GLOG->error("not enough bytes received %d", bytes_transferred);
         finish();
         return; 
     }
@@ -234,8 +278,9 @@ void udp_tracker_connection_t::on_received_announce_response(
         int2get(ip_port, p); p += 2;
         get_torrent().add_peer(utils::ipv4_to_string(ip_address), 
                 utils::ipv4_to_string(ip_address), ip_port);
+        bytes_transferred -= 6;
     }
     finish();
-}
+END_METHOD
 
 }

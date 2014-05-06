@@ -3,6 +3,7 @@
 
 #include "common.h"
 #include <boost/noncopyable.hpp>
+#include <boost/thread/mutex.hpp>
 
 namespace btorrent {
 
@@ -30,6 +31,8 @@ private:
     FILE *m_fd;
     std::string m_namespace;
     logger_level_t m_level;
+
+    mutable boost::mutex m_lock;
 };
 
 logger_t *glog(const char *method_name = NULL);

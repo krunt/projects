@@ -36,10 +36,6 @@ void peer_t::finish_with_replacement() {
     m_state = s_in_replacement;
 }
 
-void peer_t::send_output_queue() {
-    m_conn.send_output_queue();
-}
-
 void peer_t::setup_callbacks() {
     m_conn.setup_handshake_done_callback(
         boost::bind(&peer_t::on_handshake_done, this));
@@ -49,6 +45,8 @@ void peer_t::setup_callbacks() {
         boost::bind(&peer_t::on_bitmap_received, this, _1));
     m_conn.setup_piece_part_received_callback(
         boost::bind(&peer_t::on_piece_part_received, this, _1, _2, _3));
+    m_conn.setup_piece_part_requested_callback(
+        boost::bind(&peer_t::on_piece_part_requested, this, _1, _2));
 }
 
 void peer_t::on_handshake_done() {
@@ -110,6 +108,30 @@ DEFINE_METHOD(void, peer_t::on_piece_part_received, size_type piece_index,
 
     m_torrent.on_piece_part_received(this, piece_index, piece_part_index, data);
 
+END_METHOD
+
+DEFINE_METHOD(void, peer_t::on_piece_part_requested, size_type piece_index,
+    size_type piece_part_index)
+
+    std::vector<u8> data;
+
+    m_torrent.on_piece_part_requested(this, piece_index, piece_part_index, data);
+
+END_METHOD
+
+DEFINE_METHOD(void, peer_t::on_piece_part_requested_done, size_type piece_index,
+    size_type piece_part_index, const std::vector<u8> &data)
+
+    if (!data.empty()) {
+        m_conn.send_piece(piece_index, piece_part_index 
+            * gsettings()->m_piece_part_size, data, true);
+    }
+
+END_METHOD
+
+DEFINE_METHOD(void, peer_t::on_piece_validation_done, int piece_index)
+    GLOG->debug("sending have packet piece=%d", piece_index);
+    m_conn.send_have(piece_index, true);
 END_METHOD
 
 }
