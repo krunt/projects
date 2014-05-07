@@ -5,10 +5,10 @@ CFLAGS=-g
 OFILES=alloc_operations.o connection.o error.o file_operations.o http.o utils.o
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c $^
+	$(CC) $(CFLAGS) -c $^ -fPIC
 
 httplib: $(OFILES)
-	$(CC) $(CFLAGS) -shared -o lib$@.so $(OFILES) -Wl,-rpath,$(PWD)
+	$(CC) $(CFLAGS) -shared -o lib$@.so $(OFILES) -Wl,-rpath,$(PWD) -lmyos
 
 client: httplib client.c
 	$(CC) $(CFLAGS) -o $@ client.c -L$(PWD) -lhttplib

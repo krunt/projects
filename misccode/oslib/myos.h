@@ -40,6 +40,10 @@ typedef struct myos_s {
     int (*socket_accept)(fdsocket_t s, 
             struct sockaddr *addr, int *addrlen,
             fdsocket_t *accepted_socket);
+    int (*socket_getsockopt)(fdsocket_t s, int level, int optname,
+            void *optval, socklen_t *optlen);
+    int (*socket_setsockopt)(fdsocket_t s, int level, int optname,
+            const void *optval, socklen_t optlen);
     int (*socket_read)(fdsocket_t s, char *buf, int len);
     int (*socket_write)(fdsocket_t s, const char *buf, int len);
     int (*socket_close)(fdsocket_t s);
@@ -47,6 +51,11 @@ typedef struct myos_s {
             struct timeval *timeout);
     struct hostent *(*socket_gethostbyname)(const char *name);
     void (*socket_set_blocking)(fdsocket_t s, int blocking);
+
+    unsigned short (*socket_htons)(unsigned short);
+    unsigned int (*socket_htonl)(unsigned int);
+    unsigned short (*socket_ntohs)(unsigned short);
+    unsigned int (*socket_ntohl)(unsigned int);
 
     int (*file_open)(fdhandle_t *fd, const char *fname, int mode);
     int (*file_read)(fdhandle_t fd, char *buf, int len);

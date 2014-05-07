@@ -57,7 +57,18 @@ int win32_socket_accept(fdsocket_t s, struct sockaddr *addr, int *addrlen,
     *accepted_socket = accept(s, addr, addrlen);
     return *accepted_socket == INVALID_SOCKET ? 1 : 0;
 }
-
+int win32_socket_getsockopt(fdsocket_t s, int level, int optname,
+            void *optval, socklen_t *optlen)
+{
+    int rc = getsockopt(s, level, optname, optval, optlen);
+    return rc == SOCKET_ERROR ? 1 : 0;
+}
+int win32_socket_setsockopt(fdsocket_t s, int level, int optname,
+            void *optval, socklen_t optlen)
+{
+    int rc = setsockopt(s, level, optname, optval, optlen);
+    return rc == SOCKET_ERROR ? 1 : 0;
+}
 int win32_socket_read(fdsocket_t s, char *buf, int len) {
     int rc = recv(s, buf, len, 0);
     if (rc == SOCKET_ERROR) {
@@ -154,6 +165,11 @@ void win32_file_set_blocking(fdhandle_t s, int blocking) {
     /* ??? */
 }
 
+unsigned short win32_socket_htons(unsigned short n) { return htons(n); }
+unsigned int win32_socket_htonl(unsigned int n) { return htonl(n); }
+unsigned short win32_socket_ntohs(unsigned short n) { return ntohs(n); }
+unsigned int win32_socket_ntohl(unsigned int n) { return ntohl(n); }
+
 myos_t myos_win32 = {
     .init = &win32_init,
     .deinit = &win32_deinit,
@@ -165,12 +181,20 @@ myos_t myos_win32 = {
     .socket_connect = &win32_socket_connect,
     .socket_bind = &win32_socket_bind,
     .socket_accept = &win32_socket_accept,
+    .socket_getsockopt = &win32_socket_getsockopt,
+    .socket_setsockopt = &win32_socket_setsockopt,
     .socket_read = &win32_socket_read,
     .socket_write = &win32_socket_write,
     .socket_close = &win32_socket_close,
     .socket_select = &win32_socket_select,
     .socket_gethostbyname = &win32_socket_gethostbyname,
     .socket_set_blocking = &win32_socket_set_blocking,
+
+    .socket_htons = win32_socket_htons,
+    .socket_htonl = win32_socket_htons,
+    .socket_ntohs = win32_socket_ntohs,
+    .socket_ntohl = win32_socket_ntohl,
+
     .file_open = &win32_file_open,
     .file_read = &win32_file_read,
     .file_write = &win32_file_write,

@@ -1,11 +1,13 @@
 #ifndef HTTP_OPERATIONS_DEF__
 #define HTTP_OPERATIONS_DEF__
 
+#include <myos.h>
+
 typedef struct file_operations_s {
-    int (*open)(const char *filename, int flags);
-    int (*read)(int fd, char *buf, int size);
-    int (*write)(int fd, char *buf, int size);
-    int (*close)(int fd);
+    int (*open)(fdhandle_t *fd, const char *filename, int flags);
+    int (*read)(fdhandle_t fd, char *buf, int size);
+    int (*write)(fdhandle_t fd, char *buf, int size);
+    int (*close)(fdhandle_t fd);
 } file_operations_t;
 
 typedef struct alloc_operations_s {

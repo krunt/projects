@@ -1,0 +1,17 @@
+
+CC=i586-mingw32msvc-gcc
+CFLAGS=-g -DWIN32
+
+OFILES=alloc_operations.o connection.o error.o file_operations.o http.o utils.o
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $^ -I../oslib
+
+httplib: $(OFILES)
+	$(CC) $(CFLAGS) -shared -o lib$@.dll $(OFILES) -I../oslib -L/usr/lib -lmyos
+
+client: httplib client.c
+	$(CC) $(CFLAGS) -o $@.exe client.c -L$(PWD) -I../oslib -lhttplib -L/usr/lib -lmyos
+	
+clean:
+	rm -f *.o *.dll client

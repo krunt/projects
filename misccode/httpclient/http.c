@@ -517,10 +517,11 @@ int init_response(request_t *request, response_t *response) {
 
     /* there is a need to open file */
     if (!reinit && response->body_filename
-        && (response->body_fd = response->fops->open(response->body_filename,
-                O_CREAT | O_WRONLY)) < 0)
+        && (response->fops->open(&response->body_fd, response->body_filename,
+                MYOS_CREAT | MYOS_WRITE)))
     {
-        strerror_r(errno, request->error_message, sizeof(request->error_message));
+        (*myos()->get_last_error_message)(
+                request->error_message, sizeof(request->error_message));
         return 1;
     }
 

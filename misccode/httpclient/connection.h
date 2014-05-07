@@ -3,12 +3,14 @@
 
 #include "error.h"
 
+#include "myos.h"
+
 #define CONNECTION_READ_ERROR -2
 #define CONNECTION_READ_NOT_READY -3
 #define CONNECTION_READ_EOF -4
 
 typedef struct connection_s {
-    int fd;
+    fdsocket_t fd;
 
     char *error_message;
     int error_message_size;

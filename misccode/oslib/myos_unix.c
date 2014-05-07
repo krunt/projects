@@ -27,6 +27,18 @@ int unix_socket_accept(fdsocket_t s, struct sockaddr *addr, int *addrlen,
     *accepted_socket = accept(s, addr, addrlen);
     return *accepted_socket == -1 ? 1 : 0;
 }
+int unix_socket_getsockopt(fdsocket_t s, int level, int optname,
+            void *optval, socklen_t *optlen)
+{
+    int rc = getsockopt(s, level, optname, optval, optlen);
+    return rc == -1 ? 1 : 0;
+}
+int unix_socket_setsockopt(fdsocket_t s, int level, int optname,
+            void *optval, socklen_t optlen)
+{
+    int rc = setsockopt(s, level, optname, optval, optlen);
+    return rc == -1 ? 1 : 0;
+}
 int unix_socket_read(fdsocket_t s, char *buf, int len) {
     int rc = read(s, buf, len);
     if (rc == -1) {
@@ -111,6 +123,11 @@ void unix_file_set_blocking(fdhandle_t s, int blocking) {
     fcntl(s, F_SETFL, flags);
 }
 
+unsigned short unix_socket_htons(unsigned short n) { return htons(n); }
+unsigned int unix_socket_htonl(unsigned int n) { return htonl(n); }
+unsigned short unix_socket_ntohs(unsigned short n) { return ntohs(n); }
+unsigned int unix_socket_ntohl(unsigned int n) { return ntohl(n); }
+
 myos_t myos_unix = {
     .init = &unix_init,
     .get_last_error = &unix_get_last_error,
@@ -121,12 +138,20 @@ myos_t myos_unix = {
     .socket_connect = &unix_socket_connect,
     .socket_bind = &unix_socket_bind,
     .socket_accept = &unix_socket_accept,
+    .socket_getsockopt = &unix_socket_getsockopt,
+    .socket_setsockopt = &unix_socket_setsockopt,
     .socket_read = &unix_socket_read,
     .socket_write = &unix_socket_write,
     .socket_close = &unix_socket_close,
     .socket_select = &unix_socket_select,
     .socket_gethostbyname = &unix_socket_gethostbyname,
     .socket_set_blocking = &unix_socket_set_blocking,
+
+    .socket_htons = unix_socket_htons,
+    .socket_htonl = unix_socket_htons,
+    .socket_ntohs = unix_socket_ntohs,
+    .socket_ntohl = unix_socket_ntohl,
+
     .file_open = &unix_file_open,
     .file_read = &unix_file_read,
     .file_write = &unix_file_write,

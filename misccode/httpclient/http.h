@@ -74,7 +74,7 @@ typedef struct response_s {
     response_parse_callbacks_t *cb;
 
     const char *body_filename;
-    int body_fd;
+    fdhandle_t body_fd;
     int body_written_bytes;
 
     int status_code;

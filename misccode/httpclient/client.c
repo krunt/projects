@@ -14,7 +14,7 @@ int main(int argc, char **argv) {
     }
 
     url = argv[1]; 
-    proxy = (char *)getenv("proxy");
+    proxy = NULL;
     filename = argc == 3 ? argv[2] : "default.out";
     if ((err2 = init_request(&request, url, proxy, filename))
             || process_request(&request, &response)) 
