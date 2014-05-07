@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 project(btorrent)
 
-find_package(Boost COMPONENTS date_time filesystem regex system REQUIRED)
+find_package(Boost COMPONENTS date_time filesystem regex system thread REQUIRED)
 find_package(Threads REQUIRED)
 
 set (CMAKE_CXX_FLAGS -g)

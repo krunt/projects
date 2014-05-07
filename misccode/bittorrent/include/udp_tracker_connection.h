@@ -21,14 +21,16 @@ public:
 private:
     void on_resolve(const boost::system::error_code& err,
         boost::asio::ip::udp::resolver::iterator endpoint_iterator);
-    void on_connect(const boost::system::error_code& err);
+    void on_connect(const boost::system::error_code& err,
+        boost::asio::ip::udp::resolver::iterator endpoint_iterator);
     void on_received_connect_response(const boost::system::error_code& err, 
-        size_t bytes_transferred);
+        size_t bytes_transferred, 
+        boost::asio::ip::udp::resolver::iterator endpoint_iterator);
     void on_received_announce_response(
         const boost::system::error_code& err, size_t bytes_transferred);
 
     /* timeout stuff */
-    void on_timer_timeout();
+    void on_timer_timeout(const boost::system::error_code& err);
     void configure_timeout();
     void cancel_timeout();
     int timeout_in_seconds() const { return 15 * (1 << m_timeout_step); }

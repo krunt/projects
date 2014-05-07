@@ -51,6 +51,9 @@ public:
         return m_state == s_finishing_from_active
             || m_state == s_finishing_from_pending;
     }
+    void on_piece_validation_done(int piece_index);
+    void on_piece_part_requested_done(size_type piece_index, 
+        size_type piece_part_index, const std::vector<u8> &data);
 
 private:
     void setup_callbacks();
@@ -61,6 +64,8 @@ private:
     void on_bitmap_received(const std::vector<u8> &bitmap);
     void on_piece_part_received(size_type piece_index, 
         size_type piece_part_index, const std::vector<u8> &data);
+    void on_piece_part_requested(size_type piece_index, 
+        size_type piece_part_index);
 
     /* other stuff */
     void remove_from_pending(size_type piece_index, size_type piece_part_index);

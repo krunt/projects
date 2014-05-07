@@ -17,7 +17,9 @@ public:
             const std::string &host, int port)
         : m_torrent(torrent), m_resolver(m_torrent.io_service()), 
         m_socket(m_torrent.io_service()), m_peer_id(peer_id), 
-        m_host(host), m_port(port), m_state(k_none)
+        m_host(host), m_port(port), m_state(k_none),
+        m_wait_available_send_timer(m_torrent.io_service()),
+        m_wait_available_recv_timer(m_torrent.io_service())
     {}
 
     void start();
@@ -33,6 +35,8 @@ public:
         boost::function<void(const std::vector<u8> &)> &cbk);
     void setup_piece_part_received_callback(const boost::function<
             void(size_type, size_type, const std::vector<u8> &)> &cbk);
+    void setup_piece_part_requested_callback(const boost::function<
+            void(size_type, size_type)> &cbk);
 
     void send_keepalive(bool async = false);
     void send_choke(bool async = false);
@@ -77,6 +81,7 @@ private:
     void on_have(const message_t &message);
     void on_bitfield(const message_t &message);
     void on_piece(const message_t &message);
+    void on_request(const message_t &message);
     void on_cancel(const message_t &message);
 
     void on_data_received(const boost::system::error_code& err, 
@@ -86,7 +91,15 @@ private:
             bool async = false);
 
     void process_input_messages();
+
+    bool setup_send_callback();
     void setup_receive_callback();
+
+    void on_send_wait_timer_expired_cb();
+    void on_receive_wait_timer_expired_cb();
+
+    void configure_send_wait_timer();
+    void configure_receive_wait_timer();
 
 private:
     enum state_t { k_none = 0, k_connecting = 1, 
@@ -112,6 +125,7 @@ private:
     boost::function<void(const std::vector<u8> &)> m_bitmap_received_callback;
     boost::function<void(size_type, size_type, 
         const std::vector<u8> &)> m_piece_part_received_callback;
+    boost::function<void(size_type, size_type)> m_piece_part_requested_callback;
 
     struct connection_state_t {
         connection_state_t()
@@ -165,6 +179,11 @@ private:
 
     bool m_in_flight;
     std::deque<packet_t> m_send_packets;
+
+    boost::asio::basic_deadline_timer<boost::posix_time::ptime> 
+        m_wait_available_send_timer;
+    boost::asio::basic_deadline_timer<boost::posix_time::ptime> 
+        m_wait_available_recv_timer;
 };
 
 }

@@ -20,9 +20,18 @@ from errno import EAGAIN, EWOULDBLOCK, ECONNABORTED
 
 # bittorrent p2p
 
-P2P_TRACKER_PORT = 13101
-PEER_BASE_PORT = 13200
-PEER_COUNT = 1
+HTTP_TRACKER_PORT = 13101
+UDP_TRACKER_PORT = 13101
+
+HTTP_PEER_BASE_PORT = 13200
+HTTP_PEER_COUNT = 1
+
+UDP_PEER_BASE_PORT = 13300
+UDP_PEER_COUNT = 1
+
+HTTP_TYPE = 0 
+UDP_TYPE = 1
+
 PIECE_PART_SIZE = 16384
 
 # packet types
@@ -170,7 +179,7 @@ class PeerRequestHandler(SocketServer.StreamRequestHandler):
 
         # patching id
         newb = b[0:48]
-        newb = newb + peer.get_id()
+        newb += peer.get_id()
 
         self.wfile.write(newb)
         self.wfile.flush()
@@ -266,6 +275,23 @@ class PeerRequestHandler(SocketServer.StreamRequestHandler):
                 self.send_queue = q
 
 
+    def maybe_send_some_requests(self):
+        if random.randint(1,2000) < 3:
+            for i in range(random.randint(1,5)):
+                piece_index = random.randint(0, 
+                        self.server.get_torrent_info().get_piece_count() - 1)
+
+                piece_part_index = random.randint(0, 
+                    self.server.get_torrent_info().get_piece_length() 
+                    / PIECE_PART_SIZE  - 1)
+
+                body = struct.pack('>III', 
+                    piece_index, piece_part_index, PIECE_PART_SIZE)
+
+                self._enqueue_to_send_queue(K_REQUEST, body)
+
+
+
     def handle_incoming(self):
         self.send_queue = []
         peer = self.server
@@ -278,10 +304,12 @@ class PeerRequestHandler(SocketServer.StreamRequestHandler):
 
             closed = False
 
-            read, write, err = select.select([fd], [fd], [])
+            read, write, err = select.select([fd], [fd], [], 0.25)
 
             if fd in write:
                 self.handle_send_queue(fd)
+
+            self.maybe_send_some_requests()
 
             if fd not in read:
                 continue
@@ -317,10 +345,11 @@ class PeerRequestHandler(SocketServer.StreamRequestHandler):
 
 
 class Peer(SocketServer.TCPServer):
-    def __init__(self, port, torrent_info):
+    def __init__(self, t, port, torrent_info):
         self.peer_id = "".join(map(\
             lambda i: string.ascii_letters[random.randint(1,20)], \
             range(0, 20)))
+        self.t = t
         self.ip = '127.0.0.1'
         self.port = port
         self.address_family = socket.AF_INET
@@ -355,6 +384,9 @@ class Peer(SocketServer.TCPServer):
             buf += "1" if self.bitmap[i] else "0"
 
         logger.debug("peer bitmap=" + buf)
+
+    def get_type(self):
+        return self.t
     
     def get_torrent_info(self):
         return self.torrent_info
@@ -382,22 +414,30 @@ class PeerThread(threading.Thread):
 
 
 def setup_peers(torrent_info):
-    for i in xrange(PEER_COUNT):
-        peer = Peer(PEER_BASE_PORT + i, torrent_info)
-        peer_thread = PeerThread(peer)
-        peer_thread.setDaemon(True)
+    arr = [[HTTP_PEER_BASE_PORT, HTTP_PEER_COUNT, HTTP_TYPE], 
+            [UDP_PEER_BASE_PORT, UDP_PEER_COUNT, UDP_TYPE]]
 
-        peer_list.append(peer)
-        peer_threads.append(peer_thread)
+    for elm in arr:
+        for i in xrange(elm[1]):
+            peer = Peer(elm[2], elm[0] + i, torrent_info)
+            peer_thread = PeerThread(peer)
+            peer_thread.setDaemon(True)
+    
+            peer_list.append(peer)
+            peer_threads.append(peer_thread)
+    
+            logger.info("Starting peer on %s:%d" % (peer.get_ip(), peer.get_port()))
+            peer_thread.start()
 
-        logger.info("Starting peer on %s:%d" % (peer.get_ip(), peer.get_port()))
-        peer_thread.start()
 
-
-class P2PRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
+class HttpRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     def do_GET(self):
         peers = []
         for peer in peer_list:
+
+            if peer.get_type() == UDP_TYPE:
+                continue
+
             peers.append({ \
                 "peer id": peer.get_id(), \
                 "ip": peer.get_ip(), \
@@ -407,7 +447,7 @@ class P2PRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         self.wfile.write(bencode.encode(res))
 
 
-class P2PTrackerServer(BaseHTTPServer.HTTPServer):
+class HttpTrackerServer(BaseHTTPServer.HTTPServer):
     def __init__(self, port, requestHandlerClass):
         self.allow_reuse_address = True
         self.timeout = 10
@@ -415,11 +455,97 @@ class P2PTrackerServer(BaseHTTPServer.HTTPServer):
                 requestHandlerClass)
 
     
-class P2PTrackerThread(threading.Thread):
+class HttpTrackerThread(threading.Thread):
 
     def run(self):
-        logger.info("Started http-tracker on %d port" % P2P_TRACKER_PORT)
-        s = P2PTrackerServer(P2P_TRACKER_PORT, P2PRequestHandler)
+        logger.info("Started http-tracker on %d port" % HTTP_TRACKER_PORT)
+        s = HttpTrackerServer(HTTP_TRACKER_PORT, HttpRequestHandler)
+        s.serve_forever()
+
+
+class UdpRequestHandler(SocketServer.DatagramRequestHandler):
+
+    def process_connect_request(self):
+        if len(self.packet) < 16:
+            logger.debug("payload size < 16")
+            return 1
+
+        p = self.packet[0:16]
+        self.packet = self.packet[16:]
+
+        action = struct.unpack('>I', p[8:12])[0]
+
+        if action != 0:
+            logger.debug("expected action `connect' in connect-request")
+            return 1
+
+        buf = p[8:12] + p[12:16] + p[0:8]
+
+        logger.debug("sending %d for connect response", len(buf))
+        self.socket.sendto(buf, self.client_address)
+        return 0
+
+
+    def process_announce_request(self):
+        if len(self.packet) < 98:
+            logger.debug("payload size < 98")
+            return 1
+
+        p = self.packet
+        action = struct.unpack('>I', p[8:12])[0]
+
+        if action != 1:
+            logger.debug("not announce request")
+            return 1
+
+        response = p[8:12] \
+                + p[12:16] \
+                + struct.pack('>I', 15) \
+                + struct.pack('>I', 0) \
+                + struct.pack('>I', 0)
+
+        for peer in peer_list:
+
+            if peer.get_type() == HTTP_TYPE:
+                continue
+
+            response += socket.inet_aton(peer.get_ip())
+            response += struct.pack('>H', peer.get_port())
+
+        self.socket.sendto(response, self.client_address)
+        return 0
+
+
+    def handle(self):
+        logger.debug("got udp-tracker-request from %s", str(self.client_address))
+
+        if self.process_connect_request() != 0:
+            return
+
+        (packet, address) = self.socket.recvfrom(self.server.max_packet_size)
+        self.packet += packet
+
+        logger.debug("got announce request with length %d", len(self.packet))
+
+        if self.process_announce_request() != 0:
+            return
+
+        logger.debug("udp-tracker-request done")
+
+
+class UdpTrackerServer(SocketServer.UDPServer):
+    def __init__(self, port, requestHandlerClass):
+        self.allow_reuse_address = True
+        self.timeout = 10
+        SocketServer.UDPServer.__init__(self, ('0.0.0.0', port), \
+                requestHandlerClass)
+
+
+class UdpTrackerThread(threading.Thread):
+
+    def run(self):
+        logger.info("Started udp-tracker on %d port" % UDP_TRACKER_PORT)
+        s = UdpTrackerServer(UDP_TRACKER_PORT, UdpRequestHandler)
         s.serve_forever()
 
 
@@ -435,9 +561,13 @@ if not fd:
 torrent_info = TorrentInfo(fd.read())
 setup_peers(torrent_info)
 
-tracker_thread = P2PTrackerThread()
-tracker_thread.setDaemon(True)
-tracker_thread.start()
+http_tracker_thread = HttpTrackerThread()
+http_tracker_thread.setDaemon(True)
+http_tracker_thread.start()
+
+udp_tracker_thread = UdpTrackerThread()
+udp_tracker_thread.setDaemon(True)
+udp_tracker_thread.start()
 
 try:
     while True:

@@ -4,8 +4,10 @@
 #include <include/common.h>
 #include <include/torrent_storage.h>
 #include <include/throttler.h>
+#include <include/blocking_queue.h>
 
 #include <boost/asio.hpp>
+#include <boost/thread.hpp>
 
 namespace btorrent {
 
@@ -26,13 +28,13 @@ public:
     void configure_statistics_reporting();
     void report_statistics();
     void download_iteration();
-    void send_output_queue();
 
     void establish_new_active_connections();
     void establish_new_pending_connections();
 
     void make_piece_requests();
     void make_active_replacements();
+    void dispatch_torrent_storage_responses();
 
     void move_to_active(ppeer_t peer);
     void move_to_pending(ppeer_t peer);
@@ -49,7 +51,12 @@ public:
     void on_bitmap_received(ppeer_t peer, const std::vector<u8> &bitmap);
     void on_piece_part_received(ppeer_t peer, size_type piece_index, 
         size_type piece_part_index, const std::vector<u8> &data);
+    void on_piece_part_requested(ppeer_t peer, size_type piece_index, 
+        size_type piece_part_index, std::vector<u8> &data);
     void on_aborted_request(ppeer_t peer, const piece_part_request_t &request);
+
+    void on_torrent_storage_work_done(
+            const torrent_storage_t::torrent_storage_work_t &r);
 
     void get_announce_urls(std::vector<url_t> &urls);
 
@@ -88,6 +95,11 @@ private:
     u64 m_bytes_uploaded;
     torrent_info_t m_torrent_info;
     torrent_storage_t m_torrent_storage;
+    boost::thread m_torrent_storage_thread;
+
+    boost::mutex m_torrent_storage_responses_guard;
+    std::deque<torrent_storage_t::torrent_storage_work_t> 
+        m_torrent_storage_responses;
 
     int m_download_time_interval;
     boost::asio::basic_deadline_timer<boost::posix_time::ptime> 
