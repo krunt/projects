@@ -14,13 +14,25 @@ fdhandle_t
 
 */
 
+#define MYOS_READ 0 
+#define MYOS_WRITE 1 
+#define MYOS_CREAT 2 
+#define MYOS_APPEND 4
+
+#define MYOS_EAGAIN -2
+#define MYOS_EINTR -3
+
 struct sockaddr;
 
 typedef struct myos_s {
     void (*init)(void);
+    void (*deinit)(void);
 
     int (*get_last_error)(void);
+    int (*get_last_socket_error)(void);
+
     void (*get_last_error_message)(char *buf, int buflen);
+    void (*get_last_socket_error_message)(char *buf, int buflen);
 
     int (*socket_create)(fdsocket_t *s, int af, int type, int protocol);
     int (*socket_connect)(fdsocket_t s, const struct sockaddr *addr, int addrlen);
@@ -31,12 +43,17 @@ typedef struct myos_s {
     int (*socket_read)(fdsocket_t s, char *buf, int len);
     int (*socket_write)(fdsocket_t s, const char *buf, int len);
     int (*socket_close)(fdsocket_t s);
+    int (*socket_select)(int nfds, fd_set *rfds, fd_set *wfds, fd_set *excfds,
+            struct timeval *timeout);
     struct hostent *(*socket_gethostbyname)(const char *name);
+    void (*socket_set_blocking)(fdsocket_t s, int blocking);
 
-    fdhandle_t (*file_open)(const char *fname, int mode);
+    int (*file_open)(fdhandle_t *fd, const char *fname, int mode);
     int (*file_read)(fdhandle_t fd, char *buf, int len);
     int (*file_write)(fdhandle_t fd, const char *buf, int len);
     int (*file_close)(fdhandle_t fd);
+    void (*file_set_blocking)(fdhandle_t fd, int blocking);
+
 } myos_t;
 
 #ifdef WIN32

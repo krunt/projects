@@ -2,8 +2,13 @@
 #include "myos.h"
 
 void unix_init(void) {}
+void unix_deinit(void) {}
 int unix_get_last_error(void) { return errno; }
+int unix_get_last_socket_error(void) { return errno; }
 void unix_get_last_error_message(char *buf, int buflen) {
+    strerror_r(errno, buf, buflen);
+}
+void unix_get_last_socket_error_message(char *buf, int buflen) {
     strerror_r(errno, buf, buflen);
 }
 int unix_socket_create(fdsocket_t *s, int af, int type, int protocol) { 
@@ -23,38 +28,95 @@ int unix_socket_accept(fdsocket_t s, struct sockaddr *addr, int *addrlen,
     return *accepted_socket == -1 ? 1 : 0;
 }
 int unix_socket_read(fdsocket_t s, char *buf, int len) {
-    return read(s, buf, len);
+    int rc = read(s, buf, len);
+    if (rc == -1) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return MYOS_EAGAIN;
+        if (errno == EINTR)
+            return MYOS_EINTR;
+    }
+    return rc;
 }
 int unix_socket_write(fdsocket_t s, const char *buf, int len) {
-    return write(s, buf, len);
+    int rc = write(s, buf, len);
+    if (rc == -1) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return MYOS_EAGAIN;
+        if (errno == EINTR)
+            return MYOS_EINTR;
+    }
+    return rc;
 }
 int unix_socket_close(fdsocket_t s) {
     close(s);
     return 0;
 }
+int unix_socket_select(int nfds, fd_set *rfds, fd_set *wfds, fd_set *excfds,
+            struct timeval *timeout) 
+{
+    int rc = select(nfds, rfds, wfds, excfds, timeout);
+    if (rc == -1 && errno == EINTR)
+        return MYOS_EINTR;
+    return rc;
+}
 struct hostent *unix_socket_gethostbyname(const char *name) {
     return gethostbyname(name);
 }
+void unix_socket_set_blocking(fdsocket_t s, int blocking) {
+    int flags = fcntl(s, F_GETFL, 0);
+    if (blocking) { flags &= ~O_NONBLOCK; }
+    else { flags  |= O_NONBLOCK; }
+    fcntl(s, F_SETFL, flags);
+}
 int unix_file_open(fdhandle_t *fd, const char *fname, int mode) {
-    *fd = open(fname, mode, 0644);
+    int open_mode = 0;
+
+    if (mode & MYOS_READ) open_mode |= O_RDONLY;
+    if (mode & MYOS_WRITE) open_mode |= O_WRONLY;
+    if (mode & MYOS_CREAT) open_mode |= O_CREAT;
+    if (mode & MYOS_APPEND) open_mode |= O_APPEND;
+
+    *fd = open(fname, open_mode, 0644);
     return *fd == -1 ? 1 : 0;
 }
 
 int unix_file_read(fdhandle_t s, char *buf, int len) {
-    return read(s, buf, len);
+    int rc = read(s, buf, len);
+    if (rc == -1) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return MYOS_EAGAIN;
+        if (errno == EINTR)
+            return MYOS_EINTR;
+    }
+    return rc;
 }
 int unix_file_write(fdhandle_t s, const char *buf, int len) {
-    return write(s, buf, len);
+    int rc = write(s, buf, len);
+    if (rc == -1) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return MYOS_EAGAIN;
+        if (errno == EINTR)
+            return MYOS_EINTR;
+    }
+    return rc;
 }
 int unix_file_close(fdhandle_t s) {
     close(s);
     return 0;
 }
+void unix_file_set_blocking(fdhandle_t s, int blocking) {
+    int flags = fcntl(s, F_GETFL, 0);
+    if (blocking) { flags &= ~O_NONBLOCK; }
+    else { flags  |= O_NONBLOCK; }
+    fcntl(s, F_SETFL, flags);
+}
 
 myos_t myos_unix = {
     .init = &unix_init,
     .get_last_error = &unix_get_last_error,
+    .get_last_socket_error = &unix_get_last_socket_error,
     .get_last_error_message = &unix_get_last_error_message,
+    .get_last_socket_error_message = &unix_get_last_socket_error_message,
     .socket_create = &unix_socket_create,
     .socket_connect = &unix_socket_connect,
     .socket_bind = &unix_socket_bind,
@@ -62,9 +124,12 @@ myos_t myos_unix = {
     .socket_read = &unix_socket_read,
     .socket_write = &unix_socket_write,
     .socket_close = &unix_socket_close,
+    .socket_select = &unix_socket_select,
     .socket_gethostbyname = &unix_socket_gethostbyname,
+    .socket_set_blocking = &unix_socket_set_blocking,
     .file_open = &unix_file_open,
     .file_read = &unix_file_read,
     .file_write = &unix_file_write,
     .file_close = &unix_file_close,
+    .file_set_blocking = &unix_file_set_blocking,
 };
