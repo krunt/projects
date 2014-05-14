@@ -1,5 +1,6 @@
 
 #include "myos.h"
+#include <errno.h>
 
 #pragma comment (lib, "Ws2_32.lib")
 
@@ -25,83 +26,81 @@ void win32_deinit(void) {
 }
 
 int win32_get_last_error(void) { 
-    return GetLastError();
-}
-
-int win32_get_last_socket_error(void) { 
-    return WSAGetLastError();
+    return errno;
 }
 
 void win32_get_last_error_message(char *buf, int buflen) {
     FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, 
-            NULL, GetLastError(), 0, buf, buflen, NULL);
-}
-void win32_get_last_socket_error_message(char *buf, int buflen) {
-    FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, 
-            NULL, WSAGetLastError(), 0, buf, buflen, NULL);
+            NULL, errno, 0, buf, buflen, NULL);
 }
 
+#define CHECK_CALL(x, y) \
+    if ((x) == (y)) { \
+        errno = GetLastError(); \
+    } 
+
+#define CHECK_SOCKET_CALL(x, y) \
+    if ((x) == (y)) { \
+        errno = WSAGetLastError(); \
+    } 
+
 int win32_socket_create(fdsocket_t *s, int af, int type, int protocol) { 
-    *s = socket(af, type, protocol);
+    CHECK_SOCKET_CALL(*s = socket(af, type, protocol), INVALID_SOCKET);
     return *s == INVALID_SOCKET ? 1 : 0;
 }
 int win32_socket_connect(fdsocket_t s, const struct sockaddr *addr, int addrlen) {
-    return connect(s, addr, addrlen) == SOCKET_ERROR ? 1 : 0;
+    int rc;
+    CHECK_SOCKET_CALL((rc = connect(s, addr, addrlen)), SOCKET_ERROR);
+    return rc == SOCKET_ERROR ? 1 : 0;
 }
 int win32_socket_bind(fdsocket_t s, const struct sockaddr *addr, int addrlen) {
-    return bind(s, addr, addrlen) == SOCKET_ERROR ? 1 : 0;
+    int rc;
+    CHECK_SOCKET_CALL((rc = bind(s, addr, addrlen)), SOCKET_ERROR);
+    return rc == SOCKET_ERROR ? 1 : 0;
 }
 int win32_socket_accept(fdsocket_t s, struct sockaddr *addr, int *addrlen,
     fdsocket_t *accepted_socket) 
 {
-    *accepted_socket = accept(s, addr, addrlen);
+    CHECK_SOCKET_CALL(*accepted_socket = accept(s, addr, addrlen), INVALID_SOCKET);
     return *accepted_socket == INVALID_SOCKET ? 1 : 0;
 }
 int win32_socket_getsockopt(fdsocket_t s, int level, int optname,
             void *optval, socklen_t *optlen)
 {
-    int rc = getsockopt(s, level, optname, optval, optlen);
+    int rc;
+    CHECK_SOCKET_CALL(rc = getsockopt(s, level, optname, optval, optlen), SOCKET_ERROR);
     return rc == SOCKET_ERROR ? 1 : 0;
 }
 int win32_socket_setsockopt(fdsocket_t s, int level, int optname,
             void *optval, socklen_t optlen)
 {
-    int rc = setsockopt(s, level, optname, optval, optlen);
+    int rc;
+    CHECK_SOCKET_CALL(rc= setsockopt(s, level, optname, optval, optlen), SOCKET_ERROR);
     return rc == SOCKET_ERROR ? 1 : 0;
 }
 int win32_socket_read(fdsocket_t s, char *buf, int len) {
-    int rc = recv(s, buf, len, 0);
-    if (rc == SOCKET_ERROR) {
-        if (WSAGetLastError() == WSAEWOULDBLOCK)
-            return MYOS_EAGAIN;
-        if (WSAGetLastError() == WSAEINTR)
-            return MYOS_EINTR;
-    }
-    return rc;
+    int rc;
+    CHECK_SOCKET_CALL(rc = recv(s, buf, len, 0), SOCKET_ERROR);
+    return rc == SOCKET_ERROR ? -1 : rc;
 }
 int win32_socket_write(fdsocket_t s, const char *buf, int len) {
-    int rc = send(s, buf, len, 0);
-    if (rc == SOCKET_ERROR) {
-        if (WSAGetLastError() == WSAEWOULDBLOCK)
-            return MYOS_EAGAIN;
-        if (WSAGetLastError() == WSAEINTR)
-            return MYOS_EINTR;
-    }
-    return rc;
+    int rc;
+    CHECK_SOCKET_CALL(rc = send(s, buf, len, 0), SOCKET_ERROR);
+    return rc == SOCKET_ERROR ? -1 : rc;
 }
 
 int win32_socket_close(fdsocket_t s) {
-    closesocket(s);
-    return 0;
+    int rc;
+    CHECK_SOCKET_CALL(rc = closesocket(s), SOCKET_ERROR);
+    return rc == SOCKET_ERROR ? 1 : 0;
 }
 
 int win32_socket_select(int nfds, fd_set *rfds, fd_set *wfds, fd_set *excfds,
             struct timeval *timeout) 
 {
-    int rc = select(nfds, rfds, wfds, excfds, timeout);
-    if (rc == SOCKET_ERROR && WSAGetLastError() == WSAEINTR)
-        return MYOS_EINTR;
-    return rc;
+    int rc;
+    CHECK_SOCKET_CALL(rc = select(nfds, rfds, wfds, excfds, timeout), SOCKET_ERROR);
+    return rc == SOCKET_ERROR ? -1 : rc;
 }
 
 struct hostent *win32_socket_gethostbyname(const char *name) {
@@ -134,31 +133,29 @@ int win32_file_open(fdhandle_t *fd, const char *fname, int mode)
         creation_mode |= CREATE_NEW;
     }
 
-    res = CreateFile(fname, access_mode, share_mode, NULL,
-        creation_mode, FILE_ATTRIBUTE_NORMAL, NULL);
-    
-    if (res == INVALID_HANDLE_VALUE) {
-        return 1;
-    }
-
-    return 0;
+    CHECK_CALL(res = CreateFile(fname, access_mode, share_mode, NULL,
+        creation_mode, FILE_ATTRIBUTE_NORMAL, NULL), INVALID_HANDLE_VALUE);
+    return res == INVALID_HANDLE_VALUE ? 1 : 0;
 }
 
 int win32_file_read(fdhandle_t s, char *buf, int len) {
+    BOOL rc;
     DWORD bytesRead;
-    BOOL rc = ReadFile(s, buf, len, &bytesRead, NULL);
+    CHECK_CALL(rc = ReadFile(s, buf, len, &bytesRead, NULL), FALSE);
     return !rc ? -1 : bytesRead;
 }
 
 int win32_file_write(fdhandle_t s, char *buf, int len) {
+    BOOL rc;
     DWORD bytesWritten;
-    BOOL rc = WriteFile(s, buf, len, &bytesWritten, NULL);
+    CHECK_CALL(rc = WriteFile(s, buf, len, &bytesWritten, NULL), FALSE);
     return !rc ? -1 : bytesWritten;
 }
 
 int win32_file_close(fdhandle_t fd) {
-    CloseHandle(fd);
-    return 0;
+    int rc;
+    CHECK_CALL(rc = CloseHandle(fd), FALSE);
+    return rc ? 0 : 1;
 }
 
 void win32_file_set_blocking(fdhandle_t s, int blocking) {
@@ -174,9 +171,7 @@ myos_t myos_win32 = {
     .init = &win32_init,
     .deinit = &win32_deinit,
     .get_last_error = &win32_get_last_error,
-    .get_last_socket_error = &win32_get_last_socket_error,
     .get_last_error_message = &win32_get_last_error_message,
-    .get_last_socket_error_message = &win32_get_last_socket_error_message,
     .socket_create = &win32_socket_create,
     .socket_connect = &win32_socket_connect,
     .socket_bind = &win32_socket_bind,

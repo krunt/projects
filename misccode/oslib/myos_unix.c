@@ -1,14 +1,13 @@
 
 #include "myos.h"
 
+#define MYOS_EAGAIN EAGAIN
+#define MYOS_EINTR  EINTR
+
 void unix_init(void) {}
 void unix_deinit(void) {}
 int unix_get_last_error(void) { return errno; }
-int unix_get_last_socket_error(void) { return errno; }
 void unix_get_last_error_message(char *buf, int buflen) {
-    strerror_r(errno, buf, buflen);
-}
-void unix_get_last_socket_error_message(char *buf, int buflen) {
     strerror_r(errno, buf, buflen);
 }
 int unix_socket_create(fdsocket_t *s, int af, int type, int protocol) { 
@@ -41,22 +40,10 @@ int unix_socket_setsockopt(fdsocket_t s, int level, int optname,
 }
 int unix_socket_read(fdsocket_t s, char *buf, int len) {
     int rc = read(s, buf, len);
-    if (rc == -1) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-            return MYOS_EAGAIN;
-        if (errno == EINTR)
-            return MYOS_EINTR;
-    }
     return rc;
 }
 int unix_socket_write(fdsocket_t s, const char *buf, int len) {
     int rc = write(s, buf, len);
-    if (rc == -1) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-            return MYOS_EAGAIN;
-        if (errno == EINTR)
-            return MYOS_EINTR;
-    }
     return rc;
 }
 int unix_socket_close(fdsocket_t s) {
@@ -94,22 +81,10 @@ int unix_file_open(fdhandle_t *fd, const char *fname, int mode) {
 
 int unix_file_read(fdhandle_t s, char *buf, int len) {
     int rc = read(s, buf, len);
-    if (rc == -1) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-            return MYOS_EAGAIN;
-        if (errno == EINTR)
-            return MYOS_EINTR;
-    }
     return rc;
 }
 int unix_file_write(fdhandle_t s, const char *buf, int len) {
     int rc = write(s, buf, len);
-    if (rc == -1) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-            return MYOS_EAGAIN;
-        if (errno == EINTR)
-            return MYOS_EINTR;
-    }
     return rc;
 }
 int unix_file_close(fdhandle_t s) {
@@ -131,9 +106,7 @@ unsigned int unix_socket_ntohl(unsigned int n) { return ntohl(n); }
 myos_t myos_unix = {
     .init = &unix_init,
     .get_last_error = &unix_get_last_error,
-    .get_last_socket_error = &unix_get_last_socket_error,
     .get_last_error_message = &unix_get_last_error_message,
-    .get_last_socket_error_message = &unix_get_last_socket_error_message,
     .socket_create = &unix_socket_create,
     .socket_connect = &unix_socket_connect,
     .socket_bind = &unix_socket_bind,

@@ -2,6 +2,7 @@
 #define MYCLIB_ALL_
 
 #include "common.h"
+#include "types.h"
 #include "logger.h"
 #include "list.h"
 #include "hlist.h"

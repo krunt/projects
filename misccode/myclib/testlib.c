@@ -257,10 +257,10 @@ void test_htable() {
 void test_serialize() {
     char buf[128], *p;
 
-    uint8_t a = 0xFE, a1;
-    uint16_t b = 0xBFEF, b1;
-    uint32_t c = 0xDDEDDEED, c1;
-    uint64_t d = 0xEDDEEDDEAFAF, d1;
+    u8 a = 0xFE, a1;
+    u16 b = 0xBFEF, b1;
+    u32 c = 0xDDEDDEED, c1;
+    u64 d = 0xEDDEEDDEAFAF, d1;
 
     p = buf;
     pack1(p, &a); p++;

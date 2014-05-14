@@ -19,9 +19,6 @@ fdhandle_t
 #define MYOS_CREAT 2 
 #define MYOS_APPEND 4
 
-#define MYOS_EAGAIN -2
-#define MYOS_EINTR -3
-
 struct sockaddr;
 
 typedef struct myos_s {
@@ -29,10 +26,7 @@ typedef struct myos_s {
     void (*deinit)(void);
 
     int (*get_last_error)(void);
-    int (*get_last_socket_error)(void);
-
     void (*get_last_error_message)(char *buf, int buflen);
-    void (*get_last_socket_error_message)(char *buf, int buflen);
 
     int (*socket_create)(fdsocket_t *s, int af, int type, int protocol);
     int (*socket_connect)(fdsocket_t s, const struct sockaddr *addr, int addrlen);

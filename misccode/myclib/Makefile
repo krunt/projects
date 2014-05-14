@@ -1,6 +1,6 @@
 
 CC=gcc
-OFILES=rbtree.o logger.o hash.o
+OFILES=rbtree.o logger.o hash.o utf8.o
 CFLAGS=-g -std=gnu99 -fPIC
 
 %.o: %.c
@@ -15,7 +15,7 @@ install: myclib
 	cp libmyclib.so /usr/lib/
 	cp -r *.h /usr/include/myclib
 
-test: testlib.o
+test: testlib.o myclib
 	$(CC) -o testlib testlib.o -lmyclib
 
 clean:
