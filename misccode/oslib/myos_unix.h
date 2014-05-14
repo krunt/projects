@@ -7,5 +7,8 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
+#define MYOS_EAGAIN EAGAIN
+#define MYOS_EINTR EINTR
+
 typedef int fdsocket_t;
 typedef int fdhandle_t;

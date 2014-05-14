@@ -1,6 +1,7 @@
 #ifndef MYCLIB_HLIST_
 #define MYCLIB_HLIST_
 
+#include <stdio.h>
 #include "common.h"
 
 struct hlist_head {

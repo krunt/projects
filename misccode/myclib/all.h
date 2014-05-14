@@ -10,5 +10,6 @@
 #include "hash.h"
 #include "time.h"
 #include "serialize.h"
+#include "utf8.h"
 
 #endif /* MYCLIB_ALL_ */
