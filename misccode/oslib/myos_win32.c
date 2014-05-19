@@ -169,12 +169,16 @@ unsigned int win32_socket_ntohl(unsigned int n) { return ntohl(n); }
 
 #define EPOCH_BIAS  116444736000000000LL
 int win32_gettimeofday(struct timeval *tv) {
-    FT_t ft;
+    FILETIME ft;
+    ULARGE_INTEGER g_64;
 
-    GetSystemTimeAfFileTime(&ft.ft_val);
+    GetSystemTimeAsFileTime(&ft);
 
-    tv->tv_sec = (long)((ft.ft_i64 - EPOCH_BIAS) / 10000000LL);
-    tv->tv_usec = (long)((ft.ft_i64 / 10LL) % 1000000LL);
+    g_64.u.LowPart = ft.dwLowDateTime;
+    g_64.u.HighPart = ft.dwHighDateTime;
+
+    tv->tv_sec = (long)((g_64.QuadPart - EPOCH_BIAS) / 10000000LL);
+    tv->tv_usec = (long)((g_64.QuadPart / 10LL) % 1000000LL);
 
     return 0;
 }
