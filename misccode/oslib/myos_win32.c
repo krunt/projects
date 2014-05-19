@@ -183,6 +183,10 @@ int win32_gettimeofday(struct timeval *tv) {
     return 0;
 }
 
+void win32_sleep(int usec) {
+    Sleep(usec);
+}
+
 myos_t myos_win32 = {
     .init = &win32_init,
     .deinit = &win32_deinit,
@@ -213,5 +217,6 @@ myos_t myos_win32 = {
     .file_set_blocking = &win32_file_set_blocking,
 
     .gettimeofday = &win32_gettimeofday,
+    .sleep = &win32_sleep,
 };
 

@@ -58,6 +58,7 @@ typedef struct myos_s {
     void (*file_set_blocking)(fdhandle_t fd, int blocking);
 
     int (*gettimeofday)(struct timeval *tv);
+    void (*sleep)(int usec);
 
 } myos_t;
 

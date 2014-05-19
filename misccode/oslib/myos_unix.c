@@ -109,6 +109,10 @@ int unix_gettimeofday(struct timeval *tv) {
     return 0;
 }
 
+void unix_sleep(int usec) {
+    usleep(usec);
+}
+
 myos_t myos_unix = {
     .init = &unix_init,
     .get_last_error = &unix_get_last_error,
@@ -138,4 +142,5 @@ myos_t myos_unix = {
     .file_set_blocking = &unix_file_set_blocking,
 
     .gettimeofday = unix_gettimeofday,
+    .sleep = unix_sleep,
 };

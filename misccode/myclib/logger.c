@@ -3,12 +3,14 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <time.h>
+#include <pthread.h>
 
 static int level = 6;
 static FILE * fd; 
 static const char * fn = 0;
 static int mode = 0;
 static const char * timeformat = "%d.%m.%Y-%H:%M:%S";
+static pthread_mutex_t g_logger_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static void logger_new_file();
 
@@ -43,6 +45,8 @@ void my_log(int type, const char * format, ...) {
     if (type > level) {
         return;
     }
+
+    pthread_mutex_lock(&g_logger_lock);
 
     time(&t);
     tm = localtime(&t);
@@ -87,6 +91,6 @@ void my_log(int type, const char * format, ...) {
     fprintf(fd, "\n");
 
     va_end(ap);
+
+    pthread_mutex_unlock(&g_logger_lock);
 }
-
-

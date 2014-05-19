@@ -43,7 +43,8 @@ int my_flv_write(flv_context_t *ctx, my_packet_t *pkt) {
     };
 
     pack3_be(p, &pkt->size); p += 3;
-    *p++ = (pkt->size >> 24) & 0xFF;
+    pack3_be(p, &pkt->pts); p += 3;
+    *p++ = (pkt->pts >> 24) & 0xFF;
     *p++ = 0; *p++ = 0; *p++ = 0;
 
     if (fwrite(b, 1, sizeof(b), ctx->fd) != sizeof(b))
@@ -51,6 +52,8 @@ int my_flv_write(flv_context_t *ctx, my_packet_t *pkt) {
 
     if (fwrite(pkt->data, 1, pkt->size, ctx->fd) != pkt->size)
         return 1;
+
+    ctx->prev_tagsize = pkt->size;
 
     return 0;
 }

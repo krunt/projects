@@ -1,6 +1,7 @@
 #include "utils.h"
 #include <string.h>
 #include <ctype.h>
+#include <myos.h>
 
 static const char hexdig[] = "0123456789abcdef";
 void rtmp_log_hex(const char *label, u8 *data, int len) {
@@ -51,3 +52,13 @@ void rtmp_log_hex(const char *label, u8 *data, int len) {
 
 	my_log_debug( "%s", line );
 }
+
+int rtmp_gettime() {
+    struct timeval tv;
+    if ((*myos()->gettimeofday)(&tv)) {
+        return 0;
+    }
+    return tv.tv_sec + tv.tv_usec / 1000;
+}
+
+

@@ -51,7 +51,7 @@ int rtmp_parse_uri(rtmp_state_t *st) {
     return 0;
 }
 
-int rtmp_state_init(rtmp_state_t *st) 
+int rtmp_state_init(rtmp_state_t *st, int to_write) 
 {
     st->state = RTMP_INIT;
     st->chunk_size = 128;
@@ -73,11 +73,18 @@ int rtmp_state_init(rtmp_state_t *st)
     st->read_buf_size = 0;
     st->stream_ready = 0;
     st->tx_seq = 0;
+    st->flags = to_write ? RTMP_FLAG_WRITE : 0;
 
-    if (!(st->flv_context = my_flv_open(st->flv_path, "w"))
+    st->ts_send_base = 0;
+    st->ts_recv_base = 0;
+
+    if (!(st->flags & RTMP_FLAG_WRITE)) {
+        if (!(st->flv_context = my_flv_open(st->flv_path, "w"))
             || my_flv_write_header(st->flv_context))
-        return 1;
+            return 1;
+    }
 
+    pthread_mutex_init(&st->t_lock, NULL);
     return 0;
 }
 
@@ -90,6 +97,7 @@ void rtmp_state_free(rtmp_state_t *st) {
         free(st->read_buf);
     if (st->flv_context)
         my_flv_close(st->flv_context); 
+    pthread_mutex_destroy(&st->t_lock);
 }
 
 rtmp_message_t *rmtp_message_new(rtmp_state_t *st) {
@@ -142,7 +150,7 @@ static u8 *rtmp_read(rtmp_state_t *st, int n) {
 #define CHECK_CALL(x) \
     if (!(x)) { return 1; }
 
-int rtmp_receive_chunk(rtmp_state_t *st, rtmp_message_t **msgout) 
+int rtmp_receive_chunk(rtmp_state_t *st, rtmp_message_t **msgout)
 {
     int rc, chunk_type, chunk_id, skip, to_read;
     u32 msg_timestamp = 0, msg_timestamp_delta = 0,
@@ -269,7 +277,7 @@ int rtmp_receive_chunk(rtmp_state_t *st, rtmp_message_t **msgout)
         list_add(&msg->node, &ch->msg_pending);
     }
 
-    msg->timestamp = msg_timestamp;
+    msg->timestamp = msg_timestamp - st->ts_recv_base;
     msg->timestamp_delta = msg_timestamp_delta;
     msg->is_timestamp_extended = msg_ts_extended;
     msg->length = msg_length;
@@ -370,18 +378,25 @@ int rtmp_encode_message(rtmp_state_t *st, rtmp_message_t *msg)
     assert(!ch->last_message);
     */
 
+    pthread_mutex_lock(&st->t_lock);
+
     written = 0;
     extended_timestamp = 0;
     while (written < msg->length) {
         if (rtmp_encode_chunk(st, msg,
                     &written, &extended_timestamp))
+        {
+            pthread_mutex_unlock(&st->t_lock);
             return 1;
+        }
     }
+
+    pthread_mutex_unlock(&st->t_lock);
     return 0;
 }
 
 int rtmp_handshake(rtmp_state_t *st) {
-    int i;
+    int i; u32 remote_ts_base;
     u8 *p, c0[1], c1[1536], c2[1536];
     u8 s0[1], s1[1536], s2[1536];
     my_url_proto_t *prot = st->proto;
@@ -395,6 +410,8 @@ int rtmp_handshake(rtmp_state_t *st) {
         p[i] = rand() & 0xFF;
     }
 
+    st->ts_send_base = rtmp_gettime();
+
     CHECK_CALL(my_url_write(prot, c1, sizeof(c1)) == 0);
     CHECK_CALL(my_url_read(prot, s0, sizeof(s0)) == 0);
     CHECK_CALL(my_url_read(prot, s1, sizeof(s1)) == 0);
@@ -403,6 +420,10 @@ int rtmp_handshake(rtmp_state_t *st) {
         my_log_debug("version mismatch %d != %d\n", c0[0], s0[0]);
         return 1;
     }
+
+    p = s1;
+    unpack4_be(&remote_ts_base, p);
+    st->ts_recv_base = remote_ts_base;
     
     memcpy(c2, s1, sizeof(c2));
     CHECK_CALL(my_url_write(prot, c2, sizeof(c2)) == 0);
@@ -470,10 +491,10 @@ int rtmp_send_connect(rtmp_state_t *st) {
     amf0_free(obj);
 
     msg.length = p - buf;
+    msg.timestamp = rtmp_gettime() - st->ts_send_base;
 
     rtmp_log_hex("connect_packet", msg.body, msg.length);
     CHECK_CALL(rtmp_encode_message(st, &msg) == 0);
-
     my_log_debug("sent connect message successfully");
 
     return 0;
@@ -522,9 +543,19 @@ int rtmp_receive_cmd(rtmp_state_t *st, rtmp_message_t *msg)
         break;
 
     case RTMP_CONNECTED:
-        if (rtmp_send_play(st))
-            return 1;
-        st->state = RTMP_READY_TO_PLAY;
+        if (st->flags & RTMP_FLAG_WRITE) {
+            if (rtmp_send_publish(st))
+                return 1;
+            st->state = RTMP_PRE_PUBLISHING;
+        } else {
+            if (rtmp_send_play(st))
+                return 1;
+            st->state = RTMP_READY_TO_PLAY;
+        }
+        break;
+
+    case RTMP_PRE_PUBLISHING:
+        st->state = RTMP_PUBLISHING;
         break;
 
     case RTMP_READY_TO_PLAY:
@@ -534,10 +565,54 @@ int rtmp_receive_cmd(rtmp_state_t *st, rtmp_message_t *msg)
     case RTMP_PLAYING:
         break;
 
+    case RTMP_PUBLISHING:
+        break;
+
     default: assert(0);
     };
 
     return 0;
+}
+
+int rtmp_process_message(rtmp_state_t *st, rtmp_message_t *msg) {
+    int rc, msgid = msg->type_id;
+
+    rc = 0;
+    switch (msgid) {
+    case RTMP_MSG_SET_CHUNK_SIZE:
+        rc = rtmp_set_chunksize(st, msg);
+        if (!rc && rtmp_send_chunk_size(st, st->chunk_size))
+            my_log_debug("error sending chunk-size-packet");
+        break;
+
+    case RTMP_MSG_USER_CONTROL:
+        rc = rtmp_process_control_message(st, msg);
+        break;
+
+    case RTMP_MSG_ABORT_MESSAGE:
+    case RTMP_MSG_ACKNOWLEDGE:
+    case RTMP_MSG_ACKNOWLEDGE_SIZE:
+    case RTMP_MSG_SET_PEER_BANDWIDTH:
+        break;
+
+    case RTMP_MSG_CMD_AMF0:
+        rc = rtmp_receive_cmd(st, msg);
+        break;
+
+    case RTMP_MSG_CMD_AMF3:
+    case RTMP_MSG_DATA_AMF0:
+    case RTMP_MSG_DATA_AMF3:
+    case RTMP_MSG_AUDIO:
+    case RTMP_MSG_VIDEO:
+    case RTMP_MSG_AGG:
+        break;
+
+    default:
+        assert(0);
+    };
+
+    rtmp_message_free(st, msg);
+    return rc;
 }
 
 int rtmp_process_control_message(rtmp_state_t *st, rtmp_message_t *msg)
@@ -613,6 +688,7 @@ int rtmp_send_play(rtmp_state_t *st) {
     amf0_free(obj);
 
     msg.length = p - buf;
+    msg.timestamp = rtmp_gettime() - st->ts_send_base;
 
     rtmp_log_hex("send-play packet", msg.body, msg.length);
     CHECK_CALL(rtmp_encode_message(st, &msg) == 0);
@@ -650,6 +726,7 @@ int rtmp_send_create_stream(rtmp_state_t *st) {
     CHECK_CALL(amf0_encode_null(&p, end) == 0);
 
     msg.length = p - buf;
+    msg.timestamp = rtmp_gettime() - st->ts_send_base;
 
     rtmp_log_hex("create-stream packet", msg.body, msg.length);
     CHECK_CALL(rtmp_encode_message(st, &msg) == 0);
@@ -673,10 +750,125 @@ int rtmp_send_pong(rtmp_state_t *st, rtmp_message_t *m) {
     msg.chunk_id = 2;
     msg.body = b;
     msg.length = 6;
+    msg.timestamp = rtmp_gettime() - st->ts_send_base;
 
     rtmp_log_hex("pong packet", msg.body, msg.length);
     CHECK_CALL(rtmp_encode_message(st, &msg) == 0);
     my_log_debug("sending pong-packet done");
+
+    return 0;
+}
+
+int rtmp_send_chunk_size(rtmp_state_t *st, int chunk_size) {
+    u8 b[4]; u32 sz = chunk_size;
+    rtmp_message_t msg;
+
+    pack4_be(b, &sz);
+
+    rtmp_message_init(&msg);
+    msg.type_id = RTMP_MSG_SET_CHUNK_SIZE;
+    msg.streamid = 0;
+    msg.chunk_id = 2;
+
+    msg.body = b;
+    msg.length = 4;
+    msg.timestamp = rtmp_gettime() - st->ts_send_base;
+
+    rtmp_log_hex("send set-chunk-size", msg.body, msg.length);
+    CHECK_CALL(rtmp_encode_message(st, &msg) == 0);
+    my_log_debug("sending set-chunk-size done");
+
+    return 0;
+}
+
+int rtmp_send_publish(rtmp_state_t *st) {
+    u8 *p, *end, buf[16384];
+    rtmp_message_t msg;
+    amf0_value_t *obj;
+
+    rtmp_message_init(&msg);
+    msg.type_id = RTMP_MSG_CMD_AMF0;
+    msg.streamid = 3;
+    msg.chunk_id =  RTMP_USER_CHUNK_STREAM_ID;
+
+    msg.body = buf;
+    msg.length = 0;
+
+    p = buf;
+    end = p + sizeof(buf);
+
+    my_log_debug("sending publish message");
+
+    CHECK_CALL(amf0_encode_string(obj = amf0_create_string("publish"), 
+                &p, end) == 0);
+    amf0_free(obj);
+
+    CHECK_CALL(amf0_encode_number(obj = amf0_create_number(0), 
+                &p, end) == 0);
+    amf0_free(obj);
+
+    CHECK_CALL(obj = amf0_encode_null(&p, end) == 0);
+    amf0_free(obj);
+
+    CHECK_CALL(amf0_encode_string(obj = amf0_create_string(st->stream_name),
+                &p, end) == 0);
+    amf0_free(obj);
+
+    CHECK_CALL(amf0_encode_string(obj = amf0_create_string("live"),
+                &p, end) == 0);
+    amf0_free(obj);
+
+    msg.length = p - buf;
+    msg.timestamp = rtmp_gettime() - st->ts_send_base;
+
+    rtmp_log_hex("publish_packet", msg.body, msg.length);
+    CHECK_CALL(rtmp_encode_message(st, &msg) == 0);
+    my_log_debug("sent publish message successfully");
+
+    return 0;
+}
+
+int rtmp_send_data(rtmp_state_t *st, int type_id, 
+        u8 *buf, int size, int abs_timestamp)
+{
+    rtmp_message_t msg;
+
+    rtmp_message_init(&msg);
+    msg.type_id = type_id;
+    msg.streamid = 3;
+    msg.chunk_id =  RTMP_USER_CHUNK_STREAM_ID;
+    msg.timestamp = abs_timestamp - st->ts_send_base;
+
+    msg.body = buf;
+    msg.length = size;
+
+    /* rtmp_log_hex("data message", msg.body, msg.length); */
+    CHECK_CALL(rtmp_encode_message(st, &msg) == 0);
+    /* my_log_debug("sent data message successfully"); */
+
+    return 0;
+}
+
+int rtmp_send_eof(rtmp_state_t *st) {
+    u8 *p, b[6], type = 1;
+    u32 eof_stream_id = RTMP_USER_CHUNK_STREAM_ID;
+    rtmp_message_t msg;
+
+    p = b;
+    pack2_be(p, &type); p += 2;
+    pack4_be(p, &eof_stream_id); p += 4;
+
+    rtmp_message_init(&msg);
+    msg.type_id = RTMP_MSG_USER_CONTROL;
+    msg.streamid = 0;
+    msg.chunk_id = 2;
+    msg.body = b;
+    msg.length = 6;
+    msg.timestamp = rtmp_gettime() - st->ts_send_base;
+
+    rtmp_log_hex("eof packet", msg.body, msg.length);
+    CHECK_CALL(rtmp_encode_message(st, &msg) == 0);
+    my_log_debug("sending eof-packet done");
 
     return 0;
 }
