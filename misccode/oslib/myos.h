@@ -57,6 +57,8 @@ typedef struct myos_s {
     int (*file_close)(fdhandle_t fd);
     void (*file_set_blocking)(fdhandle_t fd, int blocking);
 
+    int (*gettimeofday)(struct timeval *tv);
+
 } myos_t;
 
 #ifdef WIN32

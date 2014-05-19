@@ -167,6 +167,18 @@ unsigned int win32_socket_htonl(unsigned int n) { return htonl(n); }
 unsigned short win32_socket_ntohs(unsigned short n) { return ntohs(n); }
 unsigned int win32_socket_ntohl(unsigned int n) { return ntohl(n); }
 
+#define EPOCH_BIAS  116444736000000000LL
+int win32_gettimeofday(struct timeval *tv) {
+    FT_t ft;
+
+    GetSystemTimeAfFileTime(&ft.ft_val);
+
+    tv->tv_sec = (long)((ft.ft_i64 - EPOCH_BIAS) / 10000000LL);
+    tv->tv_usec = (long)((ft.ft_i64 / 10LL) % 1000000LL);
+
+    return 0;
+}
+
 myos_t myos_win32 = {
     .init = &win32_init,
     .deinit = &win32_deinit,
@@ -195,5 +207,7 @@ myos_t myos_win32 = {
     .file_write = &win32_file_write,
     .file_close = &win32_file_close,
     .file_set_blocking = &win32_file_set_blocking,
+
+    .gettimeofday = &win32_gettimeofday,
 };
 

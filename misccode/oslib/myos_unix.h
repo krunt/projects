@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 
 #define MYOS_EAGAIN EAGAIN
 #define MYOS_EINTR EINTR

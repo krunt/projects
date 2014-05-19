@@ -103,6 +103,12 @@ unsigned int unix_socket_htonl(unsigned int n) { return htonl(n); }
 unsigned short unix_socket_ntohs(unsigned short n) { return ntohs(n); }
 unsigned int unix_socket_ntohl(unsigned int n) { return ntohl(n); }
 
+int unix_gettimeofday(struct timeval *tv) {
+    if (gettimeofday(tv, NULL) == -1)
+        return 1;
+    return 0;
+}
+
 myos_t myos_unix = {
     .init = &unix_init,
     .get_last_error = &unix_get_last_error,
@@ -130,4 +136,6 @@ myos_t myos_unix = {
     .file_write = &unix_file_write,
     .file_close = &unix_file_close,
     .file_set_blocking = &unix_file_set_blocking,
+
+    .gettimeofday = unix_gettimeofday,
 };
