@@ -5,6 +5,7 @@
 #include <vector>
 #include <pthread.h>
 #include <iostream>
+#include <fstream>
 
 #include <netinet/in.h>
 #include <sys/types.h>
@@ -15,12 +16,47 @@
 #include <unistd.h>
 #include <string.h>
 
+struct MyImage {
+    MyImage(const std::string &filename)
+        : fname(filename), data(NULL)
+    {
+        std::ifstream fd(fname.c_str());
+        data = std::string(std::istreambuf_iterator<char>(fd), 
+                std::istreambuf_iterator<char>());
+
+        glGenTextures(1, &texnum);
+        glBindTexture(GL_TEXTURE_2D, texnum);
+        glTexImage2D(
+                GL_TEXTURE_2D, 0, 
+                GL_RGB8,
+                128,
+                128,
+                0,
+                GL_RGB,
+                GL_UNSIGNED_BYTE,
+                data.data());
+    }
+
+    ~MyImage() {
+        glDeleteTextures(1, &texnum);
+    }
+
+    void Bind() {
+        glBindTexture(GL_TEXTURE_2D, texnum);
+    }
+
+    std::string fname;
+    std::string data;
+    GLuint texnum;
+};
+
 struct MyPoint {
     float v[3];
     float &operator[](int i) { return v[i]; }
 };
 
 struct MyWinding {
+    int color;
     std::vector<MyPoint> p;
     MyPoint &operator[](int i) { return p[i]; }
 };
@@ -34,75 +70,104 @@ struct MyFrame {
         return w.empty();
     }
 
+    int sceneId;
     MyPoint b[2];
     std::vector<MyWinding> w;
 };
 
 int activeFrame = 0;
-MyFrame frame[2];
+MyFrame pendingFrame;
+std::vector<MyFrame> frames;
+
+MyImage pendingImage("pending.tga");
+
 pthread_t worker;
 pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
 
-void DrawActiveFrame() {
+void DrawPendingImage() {
+    pendingImage.Bind();
+
+    glLoadIdentity();
+
+	glBegin(GL_QUADS);
+
+    glVertex3f(0, 8192, 0);
+    glTexCoord2f(0, 0);
+
+    glVertex3f(8192, 8192, 0);
+    glTexCoord2f(0, 1);
+
+    glVertex3f(8192, 0, 0);
+    glTexCoord2f(1, 1);
+
+    glVertex3f(0, 0, 0);
+    glTexCoord2f(1, 0);
+
+    glEnd();
+}
+
+void DrawActiveFrame(int oldFrame) {
     int i, j, oldFrame;
 
-    pthread_mutex_lock(&mut);
-    oldFrame = activeFrame;
-    pthread_mutex_unlock(&mut);
+    if (size == oldFrame) {
+        DrawPendingImage();
+        return;
+    }
 
-    MyFrame &f = frame[oldFrame];
+    MyFrame &f = frames[oldFrame];
 
     if (f.Empty())
         return;
 
-
+    /*
 	for ( i = 0; i < f.w.size(); i++ ) {
 	    glColor3f( 1.0f, 0.0f, 0.0f );
 
 	    glBegin (GL_POLYGON);
         for ( j = 0; j < f.w[i].p.size(); ++j ) {
-		    //glVertex3f( 4096+f.w[i][j][0], 4096+f.w[i][j][1], 
-                    //(f.w[i][j][2] + 1024) / 2048.0f );
 		    glVertex3f( f.w[i][j][0], f.w[i][j][1], f.w[i][j][2] );
-                    //(f.w[i][j][2] + 1024) / 2048.0f );
         }
 		glVertex3f( f.w[i][0][0], f.w[i][0][1], f.w[i][0][2] );
 	    glEnd ();
     }
+    */
 
 	for ( i = 0; i < f.w.size(); i++ ) {
-	    glColor3f( 0.0f, 1.0f, 1.0f );
+	 //   glColor3f( 0.0f, 1.0f, 1.0f );
+	    glColor3f( ( f.w.color >> 16 & 0xFF ) / 256.0f,
+                   ( f.w.color >> 8 & 0xFF ) / 256.0f,
+                   ( f.w.color & 0xFF ) / 256.0f, 1.0f );
 
 	    glBegin (GL_LINE_LOOP);
         for ( j = 0; j < f.w[i].p.size(); ++j ) {
-		    //glVertex3f( 4096+f.w[i][j][0], 4096+f.w[i][j][1], 
-                    //(f.w[i][j][2] + 1024) / 2048.0f );
 		    glVertex3f( f.w[i][j][0], f.w[i][j][1], f.w[i][j][2] );
-                    //(f.w[i][j][2] + 1024) / 2048.0f );
         }
 		glVertex3f( f.w[i][0][0], f.w[i][0][1], f.w[i][0][2] );
 	    glEnd ();
     }
-
 }
 
 void RenderScene(void)
 	{
+        int oldFrame, size;
+
 	// Clear the window with current clearing color
 	glClear(GL_COLOR_BUFFER_BIT);
 
-    DrawActiveFrame();
+    pthread_mutex_lock(&mut);
+    oldFrame = activeFrame;
+    size = frames.size();
+    pthread_mutex_unlock(&mut);
 
-        /*
-	    glColor3f( 0.3f, 0.0f, 0.0f );
+    DrawActiveFrame(oldFrame, size);
 
-	    glBegin (GL_LINE_LOOP);
-		glVertex3f( 4096+1000, 4096+1000, -512.5 );
-		glVertex3f( 4096+1000, 4096-1000, 1 );
-		glVertex3f( 4096-1000, 4096+1000, 1 );
-		glVertex3f( 4096-1000, 4096-1000, 512 );
-	    glEnd ();
-        */
+    fprintf("scene_id=%d\n", oldFrame == size ? -1 : frames[oldFrame].sceneId );
+
+    /*
+    for (; oldFrame >= 0; --oldFrame) {
+        DrawActiveFrame(oldFrame);
+    }
+    */
 
 	    glutSwapBuffers();
 	}
@@ -133,19 +198,23 @@ void SetupRC()
 
 
 bool BeginScene(int peer_fd) {
-    int i, j, m;
+    int i, j, m, id;
     float s[6], *p = s;
 
     fprintf(stderr, "BeginScene()\n");
 
+    if ((m=read(peer_fd, &id, 4)) != 4)
+        return false;
+
     if ((m=read(peer_fd, s, 24)) != 24)
         return false;
 
-    MyFrame &f = frame[!activeFrame];
+    pendingFrame.Init();
+    pendingFrame.sceneId = id;
 
     for (i = 0; i < 2; ++i)
         for (j = 0; j < 3; ++j)
-            f.b[i][j] = *p++;
+            pendingFrame.b[i][j] = *p++;
 
     return true;
 }
@@ -155,25 +224,21 @@ bool EndScene(int peer_fd) {
     fprintf(stderr, "EndScene()\n");
 
     pthread_mutex_lock(&mut);
-    frame[activeFrame].Init();
-    activeFrame = !activeFrame;
+    frames.push_back(pendingFrame);
     pthread_mutex_unlock(&mut);
 
-    MyFrame &f = frame[activeFrame];
-
-    /*
-    fprintf(stderr, "%f/%f %f/%f %f/%f\n", f.b[0][0], f.b[1][0], f.b[0][1], f.b[1][1],
-            f.b[0][2], f.b[0][2]);
-            */
+    MyFrame &f = pendingFrame;
 
 	for ( i = 0; i < f.w.size(); i++ ) {
-        fprintf(stderr, "winding %d", i);
+        //fprintf(stderr, "winding %d", i);
         for ( j = 0; j < f.w[i].p.size(); ++j ) {
 		    glVertex3f( f.w[i][j][0], f.w[i][j][1], f.w[i][j][2] );
+            /*
             fprintf(stderr, " p[%d]=(%f , %f , %f)\n", 
                 j, f.w[i][j][0], f.w[i][j][1], f.w[i][j][2] );
+                */
         }
-        fprintf(stderr, "\n");
+        //fprintf(stderr, "\n");
     }
 
     glutPostRedisplay();
@@ -182,7 +247,7 @@ bool EndScene(int peer_fd) {
 }
 
 bool ReadWindings(int peer_fd) {
-    int m, i, j, num;
+    int m, i, j, num, color;
     float ptemp[3];
 
     fprintf(stderr, "ReadWindings()\n");
@@ -190,7 +255,10 @@ bool ReadWindings(int peer_fd) {
     if ((m=read(peer_fd, &num, 4)) != 4)
         return false;
 
-    MyFrame &f = frame[!activeFrame];
+    if ((m=read(peer_fd, &color, 4)) != 4)
+        return false;
+
+    MyFrame &f = pendingFrame;
     MyPoint p;
     MyWinding w;
     for (i = 0; i < num; ++i) {
@@ -199,6 +267,7 @@ bool ReadWindings(int peer_fd) {
         p[0] = -ptemp[2];
         p[1] = -ptemp[0];
         p[2] = ptemp[1];
+        w.color = color;
         w.p.push_back(p);
     }
     f.w.push_back(w);
@@ -276,12 +345,42 @@ void *NetworkThread(void *arg) {
     return NULL;
 }
 
+void MoveFrame(unsigned char code, int x, int y) {
+    int inc = 0, oldFrame;
+    switch (code) {
+    case GLUT_KEY_LEFT:
+        inc = -1;
+    break;
+    case GLUT_KEY_RIGHT:
+        inc = 1;
+    break;
+    };
+
+    oldFrame = activeFrame;
+
+    pthread_mutex_lock(&mut);
+
+    activeFrame += inc;
+
+    if (activeFrame < 0)
+        activeFrame = 0;
+    else if (activeFrame > frames.size()) {
+        activeFrame = frames.size();
+    }
+
+    pthread_mutex_unlock(&mut);
+
+    if (oldFrame != activeFrame)
+        glutPostRedisplay();
+}
+
 int main(int argc, char* argv[])
 	{
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
 	glutInitWindowSize(800,600);
 	glutCreateWindow("dmap visualizer");
+    glutKeyboardUpFunc(MoveFrame);
 	glutDisplayFunc(RenderScene);
 	SetupRC();
 

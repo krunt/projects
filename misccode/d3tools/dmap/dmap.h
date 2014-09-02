@@ -320,6 +320,7 @@ void		FreeDMapFile( void );
 void Draw_ClearWindow( void );
 void DrawWinding( const idWinding *w );
 void DrawAuxWinding( const idWinding *w );
+void DrawBounds(const idBounds &bounds, int color);
 
 void DrawLine( idVec3 v1, idVec3 v2, int color );
 
@@ -329,7 +330,7 @@ void GLS_Triangle( const mapTri_t *tri, int code );
 void GLS_EndScene( void );
 
 void InitScene();
-void BeginScene(idBounds &bounds);
+void BeginScene(idBounds &bounds, int id );
 void EndScene();
 
 

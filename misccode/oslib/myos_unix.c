@@ -20,6 +20,9 @@ int unix_socket_connect(fdsocket_t s, const struct sockaddr *addr, int addrlen) 
 int unix_socket_bind(fdsocket_t s, const struct sockaddr *addr, int addrlen) {
     return bind(s, addr, addrlen) == -1 ? 1 : 0;
 }
+int unix_socket_listen(fdsocket_t s, int backlog) {
+    return listen(s, backlog) ? 1 : 0;
+}
 int unix_socket_accept(fdsocket_t s, struct sockaddr *addr, int *addrlen,
     fdsocket_t *accepted_socket) 
 {
@@ -46,6 +49,14 @@ int unix_socket_write(fdsocket_t s, const char *buf, int len) {
     int rc = write(s, buf, len);
     return rc;
 }
+int unix_socket_recv(fdsocket_t s, char *buf, int len) {
+    int rc = recv(s, buf, len, 0);
+    return rc;
+}
+int unix_socket_send(fdsocket_t s, const char *buf, int len) {
+    int rc = send(s, buf, len, 0);
+    return rc;
+}
 int unix_socket_close(fdsocket_t s) {
     close(s);
     return 0;
@@ -53,10 +64,7 @@ int unix_socket_close(fdsocket_t s) {
 int unix_socket_select(int nfds, fd_set *rfds, fd_set *wfds, fd_set *excfds,
             struct timeval *timeout) 
 {
-    int rc = select(nfds, rfds, wfds, excfds, timeout);
-    if (rc == -1 && errno == EINTR)
-        return MYOS_EINTR;
-    return rc;
+    return select(nfds, rfds, wfds, excfds, timeout);
 }
 struct hostent *unix_socket_gethostbyname(const char *name) {
     return gethostbyname(name);
@@ -120,11 +128,14 @@ myos_t myos_unix = {
     .socket_create = &unix_socket_create,
     .socket_connect = &unix_socket_connect,
     .socket_bind = &unix_socket_bind,
+    .socket_listen = &unix_socket_listen,
     .socket_accept = &unix_socket_accept,
     .socket_getsockopt = &unix_socket_getsockopt,
     .socket_setsockopt = &unix_socket_setsockopt,
     .socket_read = &unix_socket_read,
     .socket_write = &unix_socket_write,
+    .socket_recv = &unix_socket_recv,
+    .socket_send = &unix_socket_send,
     .socket_close = &unix_socket_close,
     .socket_select = &unix_socket_select,
     .socket_gethostbyname = &unix_socket_gethostbyname,

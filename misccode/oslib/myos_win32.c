@@ -58,6 +58,11 @@ int win32_socket_bind(fdsocket_t s, const struct sockaddr *addr, int addrlen) {
     CHECK_SOCKET_CALL((rc = bind(s, addr, addrlen)), SOCKET_ERROR);
     return rc == SOCKET_ERROR ? 1 : 0;
 }
+int win32_socket_listen(fdsocket_t s, int backlog) {
+    int rc;
+    CHECK_SOCKET_CALL((rc = listen(s, backlog)), SOCKET_ERROR);
+    return rc == SOCKET_ERROR ? 1 : 0;
+}
 int win32_socket_accept(fdsocket_t s, struct sockaddr *addr, int *addrlen,
     fdsocket_t *accepted_socket) 
 {
@@ -195,11 +200,14 @@ myos_t myos_win32 = {
     .socket_create = &win32_socket_create,
     .socket_connect = &win32_socket_connect,
     .socket_bind = &win32_socket_bind,
+    .socket_listen = &win32_socket_listen,
     .socket_accept = &win32_socket_accept,
     .socket_getsockopt = &win32_socket_getsockopt,
     .socket_setsockopt = &win32_socket_setsockopt,
     .socket_read = &win32_socket_read,
     .socket_write = &win32_socket_write,
+    .socket_recv = &win32_socket_read,
+    .socket_send = &win32_socket_write,
     .socket_close = &win32_socket_close,
     .socket_select = &win32_socket_select,
     .socket_gethostbyname = &win32_socket_gethostbyname,

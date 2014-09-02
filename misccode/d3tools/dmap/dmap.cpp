@@ -49,7 +49,7 @@ void SetupGBounds( bspface_t *faces ) {
     dmapGlobals.drawBounds.ExpandSelf( gBounds.GetRadius( gBounds.GetCenter() ) * 0.2 );
 }
 
-void DrawFaceBSP_r( node_t *node ) {
+void DrawFaceBSP_r( node_t *node, idWinding &centerWinding ) {
     if ( !node || node->planenum == PLANENUM_LEAF ) {
         return;
     }
@@ -68,7 +68,12 @@ void DrawFaceBSP_r( node_t *node ) {
     w.AddPoint( center + vx * r + vy * r );
     w.AddPoint( center - vx * r + vy * r );
 
-    DrawWinding( &w );
+    centerWinding.AddPoint( center );
+
+    BeginScene( gBounds, 1 );
+    DrawWinding( &w, 0xFF0000 );
+    DrawWinding( &centerWinding, 0x00FF00 );
+    EndScene();
 
     DrawFaceBSP_r( node->children[0] );
     DrawFaceBSP_r( node->children[1] );
@@ -79,10 +84,203 @@ void DrawFaceBSP( tree_t *tree ) {
         return;
     }
 
-    BeginScene(gBounds);
-    DrawFaceBSP_r( tree->headnode );
+    //BeginScene(gBounds);
+    idWinding centerWinding;
+    DrawFaceBSP_r( tree->headnode, centerWinding );
+    //EndScene();
+}
+
+void DrawTreePortals_r( node_t *node ) {
+    int side;
+
+    if ( !node ) {
+        return;
+    }
+
+    if ( node->planenum == PLANENUM_LEAF ) {
+
+        for ( uPortal_t *portal = node->portals; portal ; 
+                portal = portal->next[side] )
+        {
+            if ( node == portal->nodes[0] ) {
+                side = 0;
+            } else {
+                side = 1;
+            }
+    
+            DrawWinding( portal->winding, 0x000000 );
+        }
+
+        return;
+    }
+
+    DrawTreePortals_r( node->children[0] );
+    DrawTreePortals_r( node->children[1] );
+}
+
+void DrawTreePortals( tree_t *tree ) {
+    if ( !dmapGlobals.drawflag ) {
+        return;
+    }
+
+    BeginScene( gBounds, 2 );
+    DrawTreePortals_r( tree->headnode );
     EndScene();
 }
+
+void DrawOccupiedBounds_r( node_t *node ) {
+    if ( !node ) {
+        return;
+    }
+
+    if ( node->planenum == PLANENUM_LEAF ) {
+        DrawBounds( node->bounds, 
+            node->occupied ? 0x000000 : 0xFF0000 );
+        return;
+    }
+
+    DrawOccupiedBounds_r( node->children[0] );
+    DrawOccupiedBounds_r( node->children[1] );
+}
+
+void DrawOccupiedBounds( tree_t *tree ) {
+    if ( !dmapGlobals.drawflag ) {
+        return;
+    }
+
+    BeginScene( gBounds, 3 );
+    DrawOccupiedBounds_r( tree->headnode );
+    EndScene();
+}
+
+void DrawSideWindings( uEntity_t *e ) {
+    int i;
+    primitive_t *prim;
+    uBrush_t *b;
+
+    if ( !dmapGlobals.drawflag ) {
+        return;
+    }
+
+    BeginScene( gBounds, 4 );
+
+    for ( prim = e->primitives ; prim ; prim = prim->next ) {
+        b = prim->brush;
+        if ( !b ) {
+            continue;
+        }
+
+        for ( i = 0; i < b->numsides; ++i ) {
+            side = &b->sides[i];
+            if ( !side->winding ) 
+                continue;
+            DrawWinding( side->winding, 0x0000FF );
+        }
+    }
+
+    EndScene();
+}
+
+void DrawSideVisibleHulls( uEntity_t *e ) {
+    int i;
+    primitive_t *prim;
+    uBrush_t *b;
+
+    if ( !dmapGlobals.drawflag ) {
+        return;
+    }
+
+    BeginScene( gBounds, 5 );
+
+    for ( prim = e->primitives ; prim ; prim = prim->next ) {
+        b = prim->brush;
+        if ( !b ) {
+            continue;
+        }
+
+        for ( i = 0; i < b->numsides; ++i ) {
+            side = &b->sides[i];
+            if ( !side->visibleHull ) 
+                continue;
+            DrawWinding( side->visibleHull, 0x000000 );
+        }
+    }
+
+    EndScene();
+}
+
+void DrawAreaOptimizedGroups_r( node_t *node ) {
+    uArea_t *area;
+    optimizeGroup_t *group;
+
+    if ( !node ) {
+        return;
+    }
+
+    if ( node->planenum == PLANENUM_LEAF ) {
+
+        if ( node->area >= 0 && !node->opaque ) {
+            area = &e->areas[node->area];
+            for ( group = area->groups ; group ; group = group->nextGroup ) {
+                DrawBounds( group->bounds, 0xFF00FF );
+            }
+        }
+
+        return;
+    }
+
+    DrawAreaOptimizedGroups_r( node->children[0] );
+    DrawAreaOptimizedGroups_r( node->children[1] );
+}
+
+void DrawAreaOptimizedGroups( tree_t *tree ) {
+    if ( !dmapGlobals.drawFlag )
+        return;
+
+    DrawAreaOptimizedGroups_r( tree->headnode );
+}
+
+void DrawAreaTriLists_r( node_t *node ) {
+    uArea_t *area;
+    optimizeGroup_t *group;
+
+    if ( !node ) {
+        return;
+    }
+
+    if ( node->planenum == PLANENUM_LEAF ) {
+
+        if ( node->area >= 0 && !node->opaque ) {
+            area = &e->areas[node->area];
+            for ( group = area->groups ; group ; group = group->nextGroup ) {
+                for ( tri = group->triList ; tri ; tri = tri->next ) {
+                    idWinding w;
+
+                    w.AddPoint( tri->v[0].xyz );
+                    w.AddPoint( tri->v[1].xyz );
+                    w.AddPoint( tri->v[2].xyz );
+
+                    DrawWinding( &w, 0xFF00FF );
+                }
+            }
+        }
+
+        return;
+    }
+
+    DrawAreaTriLists_r( node->children[0] );
+    DrawAreaTriLists_r( node->children[1] );
+}
+
+void DrawAreaTriLists( tree_t *tree ) {
+    if ( !dmapGlobals.drawFlag )
+        return;
+
+    BeginScene( gBounds, 6 );
+    DrawAreaTriLists_r( tree->headnode );
+    EndScene();
+}
+
 
 /*
 ============
@@ -106,6 +304,8 @@ bool ProcessModel( uEntity_t *e, bool floodFill ) {
 	// to allow flood filling
 	MakeTreePortals( e->tree );
 
+    DrawTreePortals( e->tree );
+
 	// classify the leafs as opaque or areaportal
 	FilterBrushesIntoTree( e );
 
@@ -126,6 +326,8 @@ bool ProcessModel( uEntity_t *e, bool floodFill ) {
 		}
 	}
 
+    DrawOccupiedBounds( e->tree );
+
 	// get minimum convex hulls for each visible side
 	// this must be done before creating area portals,
 	// because the visible hull is used as the portal
@@ -139,6 +341,12 @@ bool ProcessModel( uEntity_t *e, bool floodFill ) {
 	// all primitives will now be clipped into this, throwing away
 	// fragments in the solid areas
 	PutPrimitivesInAreas( e );
+
+    DrawSideWindings( e );
+    DrawSideVisibleHulls( e );
+
+    DrawAreaOptimizedGroups( e->tree );
+    DrawAreaTriLists( e->tree );
 
 	// now build shadow volumes for the lights and split
 	// the optimize lists by the light beam trees

@@ -279,6 +279,8 @@ void GLS_EndScene (void)
 void BeginScene ( void ) {}
 void EndScene ( void ) {}
 
+void DrawBounds(const idBounds &bounds, int color) {}
+
 #else
 void Draw_ClearWindow( void ) {
 }
@@ -319,8 +321,9 @@ void InitScene( void ) {
 	}
 }
 
-void BeginScene ( idBounds &bounds ) {
+void BeginScene ( idBounds &bounds, int id ) {
     if ( write( drawSocket, "\xFF", 1 ) != 1 
+        || write( drawSocket, &id, id ) != 4
         || write( drawSocket, bounds[0].ToFloatPtr(), 12 ) != 12 
         || write( drawSocket, bounds[1].ToFloatPtr(), 12 ) != 12 )
         common->Error( "BeginScene() error" );
@@ -331,15 +334,28 @@ void EndScene ( void ) {
         common->Error( "EndScene() error" );
 }
 
-void DrawWinding( const idWinding *w) {
+void DrawWinding( const idWinding *w, int color) {
     int m = w->GetNumPoints();
     if ( write( drawSocket, "\xA0", 1 ) != 1 
+        || write( drawSocket, &color, 4 ) != 4
         || write( drawSocket, &m, 4 ) != 4 )
             common->Error( "DrawWinding1() error" );
     for ( int i = 0; i < w->GetNumPoints(); ++i ) {
         if ( write( drawSocket, (*w)[i].ToFloatPtr(), 12 ) != 12 )
             common->Error( "DrawWinding2() error" );
     }
+}
+
+void DrawBounds(const idBounds &bounds, int color) {
+    int i;
+    idWinding w;
+    idVec3 points[8];
+
+    bounds.ToPoints( points );
+    for ( i = 0; i < 8; ++i ) {
+        w.AddPoint( points[i] );
+    }
+    DrawWinding( &w, color );
 }
 
 #endif
