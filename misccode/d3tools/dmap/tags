@@ -1,0 +1,538 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_AUTHOR	Darren Hiebert	/dhiebert@users.sourceforge.net/
+!_TAG_PROGRAM_NAME	Exuberant Ctags	//
+!_TAG_PROGRAM_URL	http://ctags.sourceforge.net	/official site/
+!_TAG_PROGRAM_VERSION	5.8	//
+AREANUM_DIFFERENT	output.cpp	52;"	d	file:
+AddEdgeIfNotAlready	optimize.cpp	/^void AddEdgeIfNotAlready( optVertex_t *v1, optVertex_t *v2 ) {$/;"	f
+AddInteriorEdges	optimize.cpp	/^static	void AddInteriorEdges( optIsland_t *island ) {$/;"	f	file:
+AddMapTriToAreas	usurface.cpp	/^void AddMapTriToAreas( mapTri_t *tri, uEntity_t *e ) {$/;"	f
+AddOriginalEdges	optimize.cpp	/^static	void AddOriginalEdges( optimizeGroup_t *opt ) {$/;"	f	file:
+AddOriginalTriangle	optimize.cpp	/^static void AddOriginalTriangle( optVertex_t *v[3] ) {$/;"	f	file:
+AddPortalToNodes	portals.cpp	/^void AddPortalToNodes (uPortal_t  *p, node_t *front, node_t *back) {$/;"	f
+AddTriListToArea	usurface.cpp	/^static void AddTriListToArea( uEntity_t *e, mapTri_t *triList, int planeNum, int areaNum, textureVectors_t *texVec ) {$/;"	f	file:
+AddVertexToIsland_r	optimize.cpp	/^static void AddVertexToIsland_r( optVertex_t *vert, optIsland_t *island ) {$/;"	f	file:
+AdjustEntityForOrigin	map.cpp	/^static void AdjustEntityForOrigin( uEntity_t *ent ) {$/;"	f	file:
+AllocBrush	ubrush.cpp	/^uBrush_t *AllocBrush (int numsides)$/;"	f
+AllocBspFace	facebsp.cpp	/^bspface_t	*AllocBspFace( void ) {$/;"	f
+AllocEdge	optimize.cpp	/^static optEdge_t	*AllocEdge( void ) {$/;"	f	file:
+AllocNode	ubrush.cpp	/^node_t *AllocNode (void)$/;"	f
+AllocPortal	portals.cpp	/^uPortal_t	*AllocPortal (void)$/;"	f
+AllocTree	ubrush.cpp	/^tree_t *AllocTree (void)$/;"	f
+AllocTri	tritools.cpp	/^mapTri_t	*AllocTri( void ) {$/;"	f
+BASE_WINDING_EPSILON	portals.cpp	249;"	d	file:
+BLOCK_SIZE	facebsp.cpp	186;"	d	file:
+BaseWindingForNode	portals.cpp	/^idWinding *BaseWindingForNode (node_t *node) {$/;"	f
+BoundBrush	ubrush.cpp	/^bool BoundBrush (uBrush_t *brush) {$/;"	f
+BoundOptimizeGroup	usurface.cpp	/^static void BoundOptimizeGroup( optimizeGroup_t *group ) {$/;"	f	file:
+BoundTriList	tritools.cpp	/^void BoundTriList( const mapTri_t *list, idBounds &b ) {$/;"	f
+BrushFromBounds	ubrush.cpp	/^uBrush_t	*BrushFromBounds( const idBounds &bounds ) {$/;"	f
+BrushMostlyOnSide	ubrush.cpp	/^int BrushMostlyOnSide (uBrush_t *brush, idPlane &plane) {$/;"	f
+BrushSizeForSides	ubrush.cpp	/^int BrushSizeForSides( int numsides ) {$/;"	f
+BrushVolume	ubrush.cpp	/^float BrushVolume (uBrush_t *brush) {$/;"	f
+BuildFaceTree_r	facebsp.cpp	/^void	BuildFaceTree_r( node_t *node, bspface_t *list ) {$/;"	f
+BuildLightShadows	usurface.cpp	/^static void BuildLightShadows( uEntity_t *e, mapLight_t *light ) {$/;"	f	file:
+BuildOptTriangles	optimize.cpp	/^static void BuildOptTriangles( optIsland_t *island ) {$/;"	f	file:
+CLIP_EPSILON	dmap.h	281;"	d
+COLINEAR_EPSILON	optimize.cpp	606;"	d	file:
+COLINEAR_EPSILON	tritjunction.cpp	86;"	d	file:
+COSINE_EPSILON	output.cpp	151;"	d	file:
+CalcNodeBounds	portals.cpp	/^void CalcNodeBounds (node_t *node)$/;"	f
+CarveGroupsByLight	usurface.cpp	/^static void CarveGroupsByLight( uEntity_t *e, mapLight_t *light ) {$/;"	f	file:
+CheckAreas_r	portals.cpp	/^void CheckAreas_r( node_t *node ) {$/;"	f
+CheckWindingInAreas_r	usurface.cpp	/^static int CheckWindingInAreas_r( const idWinding *w, node_t *node ) {$/;"	f	file:
+CleanupOptimizedShadowTris	shadowopt3.cpp	/^void CleanupOptimizedShadowTris( srfTriangles_t *tri ) {$/;"	f
+CleanupUTriangles	output.cpp	/^static void CleanupUTriangles( srfTriangles_t *tri ) {$/;"	f	file:
+ClearAreas_r	portals.cpp	/^void ClearAreas_r( node_t *node ) {$/;"	f
+ClipOccluders	shadowopt3.cpp	/^static void ClipOccluders( idVec4 *verts, glIndex_t *indexes, int numIndexes, $/;"	f	file:
+ClipSideByTree_r	usurface.cpp	/^static void ClipSideByTree_r( idWinding *w, side_t *side, node_t *node ) {$/;"	f	file:
+ClipSidesByTree	usurface.cpp	/^void ClipSidesByTree( uEntity_t *e ) {$/;"	f
+ClipTriByLight	usurface.cpp	/^static void ClipTriByLight( const mapLight_t *light, const mapTri_t *tri, $/;"	f	file:
+ClipTriIntoTree_r	usurface.cpp	/^void ClipTriIntoTree_r( idWinding *w, mapTri_t *originalTri, uEntity_t *e, node_t *node ) {$/;"	f
+ClipTriList	tritools.cpp	/^void	ClipTriList( const mapTri_t *list, const idPlane &plane, float epsilon, $/;"	f
+ClipTriangle_r	shadowopt3.cpp	/^static void ClipTriangle_r( const shadowTri_t *tri, int startTri, int skipTri, int numTris, const shadowTri_t *tris ) {$/;"	f	file:
+CombineColinearEdges	optimize.cpp	/^static	void CombineColinearEdges( optIsland_t *island ) {$/;"	f	file:
+CopyBrush	ubrush.cpp	/^uBrush_t *CopyBrush (uBrush_t *brush)$/;"	f
+CopyMapTri	tritools.cpp	/^mapTri_t	*CopyMapTri( const mapTri_t *tri ) {$/;"	f
+CopyTriList	tritools.cpp	/^mapTri_t	*CopyTriList( const mapTri_t *a ) {$/;"	f
+CountBrushList	ubrush.cpp	/^int	CountBrushList (uBrush_t *brushes)$/;"	f
+CountGroupListTris	tritjunction.cpp	/^int CountGroupListTris( const optimizeGroup_t *groupList ) {$/;"	f
+CountTriList	tritools.cpp	/^int	CountTriList( const mapTri_t *tri ) {$/;"	f
+CountUniqueShaders	output.cpp	/^static int CountUniqueShaders( optimizeGroup_t *groups ) {$/;"	f	file:
+CreateBrushWindings	ubrush.cpp	/^bool CreateBrushWindings (uBrush_t *brush) {$/;"	f
+CreateEdgesForTri	shadowopt3.cpp	/^static void CreateEdgesForTri( shadowTri_t *tri ) {$/;"	f	file:
+CreateLightShadow	shadowopt3.cpp	/^srfTriangles_t *CreateLightShadow( optimizeGroup_t *shadowerGroups, const mapLight_t *light ) {;$/;"	f
+CreateMapLight	map.cpp	/^static void CreateMapLight( const idMapEntity *mapEnt ) {$/;"	f	file:
+CreateMapLights	map.cpp	/^static void CreateMapLights( const idMapFile *dmapFile ) {$/;"	f	file:
+CreateOptTri	optimize.cpp	/^static void CreateOptTri( optVertex_t *first, optEdge_t *e1, optEdge_t *e2, optIsland_t *island ) {$/;"	f	file:
+CullUnusedVerts	optimize.cpp	/^static void CullUnusedVerts( optIsland_t *island ) {$/;"	f	file:
+DIST_EPSILON	map.cpp	67;"	d	file:
+Dmap	dmap.cpp	/^void Dmap( const idCmdArgs &args ) {$/;"	f
+DmapHelp	dmap.cpp	/^void DmapHelp( void ) {$/;"	f
+Dmap_f	dmap.cpp	/^void Dmap_f( const idCmdArgs &args ) {$/;"	f
+DontSeparateIslands	optimize.cpp	/^static void DontSeparateIslands( optimizeGroup_t *opt ) {$/;"	f	file:
+DrawAllEdges	optimize.cpp	/^static	void DrawAllEdges( void ) {$/;"	f	file:
+DrawAuxWinding	gldraw.cpp	/^void DrawAuxWinding ( const idWinding *w) {$/;"	f
+DrawAuxWinding	gldraw.cpp	/^void DrawAuxWinding ( const idWinding *w)$/;"	f
+DrawBrushList	ubrush.cpp	/^void DrawBrushList (uBrush_t *brush)$/;"	f
+DrawEdges	optimize.cpp	/^static	void DrawEdges( optIsland_t *island ) {$/;"	f	file:
+DrawLine	gldraw.cpp	/^void DrawLine( idVec3 v1, idVec3 v2, int color ) {$/;"	f
+DrawOriginalEdges	optimize.cpp	/^static void DrawOriginalEdges( int numOriginalEdges, originalEdges_t *originalEdges ) {$/;"	f	file:
+DrawTri	tritools.cpp	/^void DrawTri( const mapTri_t *tri ) {$/;"	f
+DrawVerts	optimize.cpp	/^static void DrawVerts( optIsland_t *island ) {$/;"	f	file:
+DrawWinding	gldraw.cpp	/^void DrawWinding ( const idWinding *w )$/;"	f
+DrawWinding	gldraw.cpp	/^void DrawWinding( const idWinding *w) {$/;"	f
+Draw_ClearWindow	gldraw.cpp	/^void Draw_ClearWindow( void ) {$/;"	f
+Draw_SetBlack	gldraw.cpp	/^void Draw_SetBlack (void)$/;"	f
+Draw_SetGrey	gldraw.cpp	/^void Draw_SetGrey (void)$/;"	f
+Draw_SetRed	gldraw.cpp	/^void Draw_SetRed (void)$/;"	f
+EDGE_EPSILON	shadowopt3.cpp	/^static const float EDGE_EPSILON = 0.1f;$/;"	v	file:
+EDGE_PLANE_EPSILON	shadowopt3.cpp	/^static float EDGE_PLANE_EPSILON	= 0.1f;$/;"	v	file:
+EdgeIntersection	optimize.cpp	/^static	optVertex_t *EdgeIntersection( const optVertex_t *p1, const optVertex_t *p2, $/;"	f	file:
+EdgeSort	shadowopt3.cpp	/^static int EdgeSort( const void *a,  const void *b ) {$/;"	f	file:
+EdgesCross	optimize.cpp	/^static	bool EdgesCross( optVertex_t *a1, optVertex_t *a2, optVertex_t *b1, optVertex_t *b2 ) {$/;"	f	file:
+EmitFragmentedSilQuads	shadowopt3.cpp	/^static void EmitFragmentedSilQuads( void ) {$/;"	f	file:
+EmitUnoptimizedSilEdges	shadowopt3.cpp	/^static void EmitUnoptimizedSilEdges( void ) {$/;"	f	file:
+FaceBSP	facebsp.cpp	/^tree_t *FaceBSP( bspface_t *list ) {$/;"	f
+FillOutside	portals.cpp	/^void FillOutside( uEntity_t *e ) {$/;"	f
+FillOutside_r	portals.cpp	/^void FillOutside_r (node_t *node)$/;"	f
+FilterBrushIntoTree_r	ubrush.cpp	/^int FilterBrushIntoTree_r( uBrush_t *b, node_t *node ) {$/;"	f
+FilterBrushesIntoTree	ubrush.cpp	/^void FilterBrushesIntoTree( uEntity_t *e ) {$/;"	f
+FindAreas_r	portals.cpp	/^void FindAreas_r( node_t *node ) {$/;"	f
+FindFloatPlane	map.cpp	/^int FindFloatPlane( const idPlane &plane, bool *fixedDegeneracies ) {$/;"	f
+FindInterAreaPortals_r	portals.cpp	/^static void FindInterAreaPortals_r( node_t *node ) {$/;"	f	file:
+FindOptVertex	optimize.cpp	/^static optVertex_t *FindOptVertex( idDrawVert *v, optimizeGroup_t *opt ) {$/;"	f	file:
+FindOptVertex	optimize_gcc.cpp	/^optVertex_t *FindOptVertex( idDrawVert *v, optimizeGroup_t *opt ) {$/;"	f
+FindSideForPortal	portals.cpp	/^static side_t	*FindSideForPortal( uPortal_t *p ) {$/;"	f	file:
+FindUniqueVert	shadowopt3.cpp	/^static int FindUniqueVert( idVec3 &v ) {$/;"	f	file:
+FinishBrush	map.cpp	/^static uBrush_t *FinishBrush( void ) {$/;"	f	file:
+FixAreaGroupsTjunctions	tritjunction.cpp	/^void	FixAreaGroupsTjunctions( optimizeGroup_t *groupList ) {$/;"	f
+FixEntityTjunctions	tritjunction.cpp	/^void	FixEntityTjunctions( uEntity_t *e ) {$/;"	f
+FixGlobalTjunctions	tritjunction.cpp	/^void	FixGlobalTjunctions( uEntity_t *e ) {$/;"	f
+FixTriangleAgainstHash	tritjunction.cpp	/^static mapTri_t	*FixTriangleAgainstHash( const mapTri_t *tri ) {$/;"	f	file:
+FixTriangleAgainstHashVert	tritjunction.cpp	/^static mapTri_t *FixTriangleAgainstHashVert( const mapTri_t *a, const hashVert_t *hv ) {$/;"	f	file:
+FlipTriList	tritools.cpp	/^void	FlipTriList( mapTri_t *tris ) {$/;"	f
+FloodAreas	portals.cpp	/^void FloodAreas( uEntity_t *e ) {$/;"	f
+FloodAreas_r	portals.cpp	/^void FloodAreas_r (node_t *node)$/;"	f
+FloodEntities	portals.cpp	/^bool FloodEntities( tree_t *tree ) {$/;"	f
+FloodPortals_r	portals.cpp	/^void FloodPortals_r (node_t *node, int dist) {$/;"	f
+FragmentSilQuad	shadowopt3.cpp	/^static void FragmentSilQuad( silQuad_t quad, silPlane_t *silPlane, $/;"	f	file:
+FragmentSilQuads	shadowopt3.cpp	/^static void FragmentSilQuads( void ) {$/;"	f	file:
+FreeBrush	ubrush.cpp	/^void FreeBrush (uBrush_t *brushes)$/;"	f
+FreeBrushList	ubrush.cpp	/^void FreeBrushList (uBrush_t *brushes)$/;"	f
+FreeBspFace	facebsp.cpp	/^void	FreeBspFace( bspface_t *f ) {$/;"	f
+FreeBuildBrush	map.cpp	/^static void FreeBuildBrush( void ) {$/;"	f	file:
+FreeDMapFile	map.cpp	/^void FreeDMapFile( void ) {$/;"	f
+FreeOptTriangles	optimize.cpp	/^static void FreeOptTriangles( optIsland_t *island ) {$/;"	f	file:
+FreeOptimizeGroupList	map.cpp	/^void FreeOptimizeGroupList( optimizeGroup_t *groups ) {$/;"	f
+FreePortal	portals.cpp	/^void FreePortal (uPortal_t  *p)$/;"	f
+FreeTJunctionHash	tritjunction.cpp	/^void FreeTJunctionHash( void ) {$/;"	f
+FreeTree	facebsp.cpp	/^void FreeTree( tree_t *tree ) {$/;"	f
+FreeTreePortals_r	facebsp.cpp	/^void FreeTreePortals_r (node_t *node)$/;"	f
+FreeTree_r	facebsp.cpp	/^void FreeTree_r (node_t *node)$/;"	f
+FreeTri	tritools.cpp	/^void		FreeTri( mapTri_t *tri ) {$/;"	f
+FreeTriList	tritools.cpp	/^void FreeTriList( mapTri_t *a ) {$/;"	f
+GLSERV_PORT	gldraw.cpp	198;"	d	file:
+GLS_BeginScene	gldraw.cpp	/^void GLS_BeginScene (void) {$/;"	f
+GLS_BeginScene	gldraw.cpp	/^void GLS_BeginScene (void)$/;"	f
+GLS_EndScene	gldraw.cpp	/^void GLS_EndScene (void)$/;"	f
+GLS_Triangle	gldraw.cpp	/^void GLS_Triangle( const mapTri_t *tri, int code ) {$/;"	f
+GLS_Winding	gldraw.cpp	/^void GLS_Winding( const idWinding *w, int code ) {$/;"	f
+GLS_Winding	gldraw.cpp	/^void GLS_Winding( const idWinding *w, int code )$/;"	f
+GenerateSilEdges	shadowopt3.cpp	/^static void GenerateSilEdges( void ) {$/;"	f	file:
+GenerateSilPlanes	shadowopt3.cpp	/^void GenerateSilPlanes( void ) {$/;"	f
+GetHashVert	tritjunction.cpp	/^struct hashVert_s	*GetHashVert( idVec3 &v ) {$/;"	f
+GroupsAreSurfaceCompatible	output.cpp	/^static bool GroupsAreSurfaceCompatible( const optimizeGroup_t *a, const optimizeGroup_t *b ) {$/;"	f	file:
+HASH_BINS	tritjunction.cpp	88;"	d	file:
+HashBlocksForTri	tritjunction.cpp	/^static void HashBlocksForTri( const mapTri_t *tri, int blocks[2][3] ) {$/;"	f	file:
+HashTriangles	tritjunction.cpp	/^void HashTriangles( optimizeGroup_t *groupList ) {$/;"	f
+IsTriangleDegenerate	optimize.cpp	/^static bool IsTriangleDegenerate( const optVertex_t *v1, const optVertex_t *v2, const optVertex_t *v3 ) {$/;"	f	file:
+IsTriangleValid	optimize.cpp	/^static bool IsTriangleValid( const optVertex_t *v1, const optVertex_t *v2, const optVertex_t *v3 ) {$/;"	f	file:
+LeakFile	leakfile.cpp	/^void LeakFile (tree_t *tree)$/;"	f
+LengthSort	optimize.cpp	/^static	int LengthSort( const void *a, const void *b ) {$/;"	f	file:
+LinkEdge	optimize.cpp	/^static	void LinkEdge( optEdge_t *e ) {$/;"	f	file:
+LinkTriToEdge	optimize.cpp	/^static void LinkTriToEdge( optTri_t *optTri, optEdge_t *edge ) {$/;"	f	file:
+LoadDMapFile	map.cpp	/^bool LoadDMapFile( const char *filename ) {		$/;"	f
+MAX_BUILD_SIDES	map.cpp	53;"	d	file:
+MAX_GROUP_LIGHTS	dmap.h	186;"	d
+MAX_INTER_AREA_PORTALS	dmap.h	337;"	d
+MAX_OPT_EDGES	optimize.cpp	56;"	d	file:
+MAX_OPT_VERTEXES	optimize.cpp	52;"	d	file:
+MAX_OPT_VERTEXES	optimize_gcc.cpp	42;"	d	file:
+MAX_PATCH_SIZE	dmap.h	79;"	d
+MAX_QPATH	dmap.h	178;"	d
+MAX_SHADOW_TRIS	shadowopt3.cpp	/^static const int MAX_SHADOW_TRIS = 32768;$/;"	v	file:
+MAX_SIL_EDGES	shadowopt3.cpp	/^static const int MAX_SIL_EDGES = MAX_SHADOW_TRIS*3;$/;"	v	file:
+MAX_SIL_QUADS	shadowopt3.cpp	/^static const int MAX_SIL_QUADS = MAX_SHADOW_TRIS*3;$/;"	v	file:
+MakeHeadnodePortals	portals.cpp	/^static void MakeHeadnodePortals( tree_t *tree ) {$/;"	f	file:
+MakeNodePortal	portals.cpp	/^static void MakeNodePortal( node_t *node ) {$/;"	f	file:
+MakeStructuralBspFaceList	facebsp.cpp	/^bspface_t	*MakeStructuralBspFaceList( primitive_t *list ) {$/;"	f
+MakeTreePortals	portals.cpp	/^void MakeTreePortals (tree_t *tree)$/;"	f
+MakeTreePortals_r	portals.cpp	/^void MakeTreePortals_r (node_t *node)$/;"	f
+MakeVisibleBspFaceList	facebsp.cpp	/^bspface_t	*MakeVisibleBspFaceList( primitive_t *list ) {$/;"	f
+MapTriArea	tritools.cpp	/^float MapTriArea( const mapTri_t *tri ) {$/;"	f
+MatchVert	output.cpp	/^static bool MatchVert( const idDrawVert *a, const idDrawVert *b ) {$/;"	f	file:
+MergeTriLists	tritools.cpp	/^mapTri_t	*MergeTriLists( mapTri_t *a, mapTri_t *b ) {$/;"	f
+NORMAL_EPSILON	map.cpp	66;"	d	file:
+NodeForPoint	facebsp.cpp	/^node_t *NodeForPoint( node_t *node, idVec3 origin ) {$/;"	f
+NumberNodes_r	output.cpp	/^static int NumberNodes_r( node_t *node, int nextNumber ) {$/;"	f	file:
+OptimizeEntity	optimize.cpp	/^void	OptimizeEntity( uEntity_t *e ) {$/;"	f
+OptimizeGroupList	optimize.cpp	/^void	OptimizeGroupList( optimizeGroup_t *groupList ) {$/;"	f
+OptimizeIsland	optimize.cpp	/^static void OptimizeIsland( optIsland_t *island ) {$/;"	f	file:
+OptimizeOptList	optimize.cpp	/^static	void OptimizeOptList( optimizeGroup_t *opt ) {$/;"	f	file:
+OptimizeOutputTris	shadowopt3.cpp	/^static void OptimizeOutputTris( void ) {$/;"	f	file:
+OutputPortal	glfile.cpp	/^void OutputPortal( uPortal_t *p, idFile *glview ) {$/;"	f
+OutputWinding	glfile.cpp	/^void OutputWinding( idWinding *w, idFile *glview )$/;"	f
+PLANENUM_LEAF	dmap.h	81;"	d
+PLANESIDE_EPSILON	ubrush.cpp	40;"	d	file:
+PSIDE_BACK	dmap.h	285;"	d
+PSIDE_BOTH	dmap.h	286;"	d
+PSIDE_FACING	dmap.h	287;"	d
+PSIDE_FRONT	dmap.h	284;"	d
+ParseBrush	map.cpp	/^static void ParseBrush( const idMapBrush *mapBrush, int primitiveNum ) {$/;"	f	file:
+ParsePatch	map.cpp	/^static void ParsePatch( const idMapPatch *patch, int primitiveNum ) {$/;"	f	file:
+ParseSurface	map.cpp	/^static void ParseSurface( const idMapPatch *patch, const idSurface *surface, const idMaterial *material ) {$/;"	f	file:
+PlaceOccupant	portals.cpp	/^bool PlaceOccupant( node_t *headnode, idVec3 origin, uEntity_t *occupant ) {$/;"	f
+PlaneForTri	tritools.cpp	/^void	PlaneForTri( const mapTri_t *tri, idPlane &plane ) {$/;"	f
+PointInSourceTris	optimize.cpp	/^static bool PointInSourceTris( float x, float y, float z, optimizeGroup_t *opt ) {$/;"	f	file:
+PointInTri	optimize.cpp	/^static bool PointInTri( const idVec3 &p, const mapTri_t *tri, optIsland_t *island ) {$/;"	f	file:
+PointsStraddleLine	optimize.cpp	/^static	bool PointsStraddleLine( optVertex_t *p1, optVertex_t *p2, optVertex_t *l1, optVertex_t *l2 ) {$/;"	f	file:
+PortalVisibleSides	glfile.cpp	/^int PortalVisibleSides( uPortal_t *p )$/;"	f
+Portal_Passable	portals.cpp	/^static bool Portal_Passable( uPortal_t  *p ) {$/;"	f	file:
+Prelight	usurface.cpp	/^void Prelight( uEntity_t *e ) {$/;"	f
+PrintBrush	ubrush.cpp	/^void PrintBrush (uBrush_t *brush)$/;"	f
+PrintPortal	portals.cpp	/^void PrintPortal (uPortal_t *p)$/;"	f
+PrintTree_r	facebsp.cpp	/^void PrintTree_r (node_t *node, int depth)$/;"	f
+ProcessMapEntity	map.cpp	/^static bool	ProcessMapEntity( idMapEntity *mapEnt ) {$/;"	f	file:
+ProcessModel	dmap.cpp	/^bool ProcessModel( uEntity_t *e, bool floodFill ) {$/;"	f
+ProcessModels	dmap.cpp	/^bool ProcessModels( void ) {$/;"	f
+ProjectUniqued	shadowopt3.cpp	/^static void ProjectUniqued( idVec3 projectionOrigin, idPlane projectionPlane ) {$/;"	f	file:
+PruneNodes_r	output.cpp	/^int	PruneNodes_r( node_t *node ) {$/;"	f
+PutPrimitivesInAreas	usurface.cpp	/^void PutPrimitivesInAreas( uEntity_t *e ) {$/;"	f
+PutWindingIntoAreas_r	usurface.cpp	/^static void PutWindingIntoAreas_r( uEntity_t *e, const idWinding *w, side_t *side, node_t *node ) {$/;"	f	file:
+RegenerateTriangles	optimize.cpp	/^static	void	RegenerateTriangles( optIsland_t *island ) {$/;"	f	file:
+RemoveBadTris	tritools.cpp	/^mapTri_t	*RemoveBadTris( const mapTri_t *list ) {$/;"	f
+RemoveDegenerateTriangles	shadowopt3.cpp	/^static void RemoveDegenerateTriangles( srfTriangles_t *tri ) {$/;"	f	file:
+RemoveDuplicateBrushPlanes	map.cpp	/^static bool RemoveDuplicateBrushPlanes( uBrush_t * b ) {$/;"	f	file:
+RemoveEdgeFromVert	optimize.cpp	/^static	void RemoveEdgeFromVert( optEdge_t *e1, optVertex_t *vert ) {$/;"	f	file:
+RemoveIfColinear	optimize.cpp	/^static	void RemoveIfColinear( optVertex_t *ov, optIsland_t *island ) {$/;"	f	file:
+RemoveInteriorEdges	optimize.cpp	/^static	void RemoveInteriorEdges( optIsland_t *island ) {$/;"	f	file:
+RemovePortalFromNode	portals.cpp	/^void RemovePortalFromNode (uPortal_t  *portal, node_t *l)$/;"	f
+ReportNearbyVertexes	optimize.cpp	/^static void ReportNearbyVertexes( const optVertex_t *v, const optIsland_t *island ) {$/;"	f	file:
+ResetDmapGlobals	dmap.cpp	/^void ResetDmapGlobals( void ) {$/;"	f
+SIDESPACE	portals.cpp	179;"	d	file:
+SNAP_FLOAT_TO_INT	usurface.cpp	150;"	d	file:
+SNAP_FRACTIONS	tritjunction.cpp	80;"	d	file:
+SNAP_INT_TO_FLOAT	usurface.cpp	151;"	d	file:
+SO_CLIP_OCCLUDERS	dmap.h	/^	SO_CLIP_OCCLUDERS,	\/\/ 3$/;"	e	enum:__anon6
+SO_CLIP_SILS	dmap.h	/^	SO_CLIP_SILS,		\/\/ 4$/;"	e	enum:__anon6
+SO_CULL_OCCLUDED	dmap.h	/^	SO_CULL_OCCLUDED,	\/\/ 2$/;"	e	enum:__anon6
+SO_MERGE_SURFACES	dmap.h	/^	SO_MERGE_SURFACES,	\/\/ 1$/;"	e	enum:__anon6
+SO_NONE	dmap.h	/^	SO_NONE,			\/\/ 0$/;"	e	enum:__anon6
+SO_SIL_OPTIMIZE	dmap.h	/^	SO_SIL_OPTIMIZE		\/\/ 5$/;"	e	enum:__anon6
+SPLIT_WINDING_EPSILON	portals.cpp	250;"	d	file:
+ST_EPSILON	output.cpp	150;"	d	file:
+SaveQuad	shadowopt3.cpp	/^static void SaveQuad( silPlane_t *silPlane, silQuad_t &quad ) {$/;"	f	file:
+SelectSplitPlaneNum	facebsp.cpp	/^int SelectSplitPlaneNum( node_t *node, bspface_t *list ) {$/;"	f
+SeparateIslands	optimize.cpp	/^static void SeparateIslands( optimizeGroup_t *opt ) {$/;"	f	file:
+SetBrushContents	map.cpp	/^static void SetBrushContents( uBrush_t *b ) {$/;"	f	file:
+SetGroupTriPlaneNums	optimize.cpp	/^void SetGroupTriPlaneNums( optimizeGroup_t *groups ) {$/;"	f
+ShareMapTriVerts	output.cpp	/^srfTriangles_t	*ShareMapTriVerts( const mapTri_t *tris ) {$/;"	f
+SplitBrush	ubrush.cpp	/^void SplitBrush (uBrush_t *brush, int planenum, uBrush_t **front, uBrush_t **back) {$/;"	f
+SplitNodePortals	portals.cpp	/^static void SplitNodePortals( node_t *node ) {$/;"	f	file:
+SplitOriginalEdgesAtCrossings	optimize.cpp	/^void SplitOriginalEdgesAtCrossings( optimizeGroup_t *opt ) {$/;"	f
+SuperOptimizeOccluders	shadowopt3.cpp	/^optimizedShadow_t SuperOptimizeOccluders( idVec4 *verts, glIndex_t *indexes, int numIndexes, $/;"	f
+TEXTURE_OFFSET_EQUAL_EPSILON	usurface.cpp	35;"	d	file:
+TEXTURE_VECTOR_EQUAL_EPSILON	usurface.cpp	36;"	d	file:
+TexVecForTri	usurface.cpp	/^static void TexVecForTri( textureVectors_t *texVec, mapTri_t *tri ) {$/;"	f	file:
+TriBehindTri	shadowopt3.cpp	/^static bool TriBehindTri( const shadowTri_t *a, const shadowTri_t *b ) {$/;"	f	file:
+TriListForSide	usurface.cpp	/^mapTri_t *TriListForSide( const side_t *s, const idWinding *w ) {$/;"	f
+TriOutsideTri	shadowopt3.cpp	/^static bool TriOutsideTri( const shadowTri_t *a, const shadowTri_t *b ) {$/;"	f	file:
+TriVertsFromOriginal	tritools.cpp	/^void		TriVertsFromOriginal( mapTri_t *tri, const mapTri_t *original ) {$/;"	f
+TryAddNewEdge	optimize.cpp	/^static	bool TryAddNewEdge( optVertex_t *v1, optVertex_t *v2, optIsland_t *island ) {$/;"	f	file:
+UNIQUE_EPSILON	shadowopt3.cpp	/^static float UNIQUE_EPSILON = 0.1f;$/;"	v	file:
+UniqueVerts	shadowopt3.cpp	/^static void UniqueVerts( void ) {$/;"	f	file:
+UnlinkEdge	optimize.cpp	/^static	void UnlinkEdge( optEdge_t *e, optIsland_t *island ) {$/;"	f	file:
+VERTEX_EPSILON	tritjunction.cpp	84;"	d	file:
+ValidateEdgeCounts	optimize.cpp	/^static void ValidateEdgeCounts( optIsland_t *island ) {$/;"	f	file:
+VertexBetween	optimize.cpp	/^static bool VertexBetween( const optVertex_t *p1, const optVertex_t *v1, const optVertex_t *v2 ) {$/;"	f	file:
+WIN_SIZE	gldraw.cpp	40;"	d	file:
+WindingForTri	tritools.cpp	/^idWinding *WindingForTri( const mapTri_t *tri ) {$/;"	f
+WindingToTriList	tritools.cpp	/^mapTri_t *WindingToTriList( const idWinding *w, const mapTri_t *originalTri ) {$/;"	f
+Write1DMatrix	output.cpp	/^void Write1DMatrix( idFile *f, int x, float *m ) {$/;"	f
+WriteBspBrushMap	ubrush.cpp	/^void WriteBspBrushMap( const char *name, uBrush_t *list ) {$/;"	f
+WriteFloat	output.cpp	/^static void WriteFloat( idFile *f, float v )$/;"	f	file:
+WriteGLView	glfile.cpp	/^void WriteGLView( tree_t *tree, char *source )$/;"	f
+WriteGLView_r	glfile.cpp	/^void WriteGLView_r( node_t *node, idFile *glview )$/;"	f
+WriteNode_r	output.cpp	/^static void WriteNode_r( node_t *node ) {$/;"	f	file:
+WriteOutputEntity	output.cpp	/^static void WriteOutputEntity( int entityNum ) {$/;"	f	file:
+WriteOutputFile	output.cpp	/^void WriteOutputFile( void ) {$/;"	f
+WriteOutputNodes	output.cpp	/^static void WriteOutputNodes( node_t *node ) {$/;"	f	file:
+WriteOutputPortals	output.cpp	/^static void WriteOutputPortals( uEntity_t *e ) {$/;"	f	file:
+WriteOutputSurfaces	output.cpp	/^static void WriteOutputSurfaces( int entityNum, int areaNum ) {$/;"	f	file:
+WriteShadowTriangles	output.cpp	/^static void WriteShadowTriangles( const srfTriangles_t *tri ) {$/;"	f	file:
+WriteUTriangles	output.cpp	/^static void WriteUTriangles( const srfTriangles_t *uTris ) {$/;"	f	file:
+XYZ_EPSILON	output.cpp	149;"	d	file:
+addedToIsland	dmap.h	/^	bool	addedToIsland;$/;"	m	struct:optEdge_s
+addedToIsland	dmap.h	/^	bool	addedToIsland;$/;"	m	struct:optVertex_s
+area	dmap.h	/^	int					area;		\/\/ determined by flood filling up to areaportals$/;"	m	struct:node_s
+area0	dmap.h	/^	int		area0, area1;$/;"	m	struct:__anon8
+area1	dmap.h	/^	int		area0, area1;$/;"	m	struct:__anon8
+areaNum	dmap.h	/^	int					areaNum;$/;"	m	struct:optimizeGroup_s
+areas	dmap.h	/^	uArea_t *			areas;$/;"	m	struct:__anon2
+axis	dmap.h	/^	idVec3				axis[2];			\/\/ orthogonal to the plane, so optimization can be 2D$/;"	m	struct:optimizeGroup_s
+backTri	dmap.h	/^	struct optTri_s	*frontTri, *backTri;$/;"	m	struct:optEdge_s	typeref:struct:optEdge_s::
+bounds	dmap.h	/^	idBounds			bounds;			\/\/ set in CarveGroupsByLight$/;"	m	struct:optimizeGroup_s
+bounds	dmap.h	/^	idBounds			bounds;		\/\/ valid after portalization$/;"	m	struct:node_s
+bounds	dmap.h	/^	idBounds			bounds;$/;"	m	struct:bspbrush_s
+bounds	dmap.h	/^	idBounds	bounds;$/;"	m	struct:tree_s
+brush	dmap.h	/^	struct bspbrush_s *	brush;$/;"	m	struct:primitive_s	typeref:struct:primitive_s::bspbrush_s
+brushlist	dmap.h	/^	uBrush_t *			brushlist;	\/\/ fragments of all brushes in this leaf$/;"	m	struct:node_s
+brushnum	dmap.h	/^	int					brushnum;			\/\/ editor numbering for messages$/;"	m	struct:bspbrush_s
+bspbrush_s	dmap.h	/^typedef struct bspbrush_s {$/;"	s
+bspface_s	dmap.h	/^typedef struct bspface_s {$/;"	s
+bspface_t	dmap.h	/^} bspface_t;$/;"	t	typeref:struct:bspface_s
+buildBrush	map.cpp	/^static	uBrush_t	*buildBrush;$/;"	v	file:
+c_active_brushes	ubrush.cpp	/^int		c_active_brushes;$/;"	v
+c_active_portals	portals.cpp	/^int		c_active_portals;$/;"	v
+c_areaFloods	portals.cpp	/^static	int		c_areaFloods;$/;"	v	file:
+c_areaportals	map.cpp	/^static	int		c_areaportals;$/;"	v	file:
+c_areas	portals.cpp	/^static	int		c_areas;$/;"	v	file:
+c_faceLeafs	facebsp.cpp	/^int			c_faceLeafs;$/;"	v
+c_floodedleafs	portals.cpp	/^int		c_floodedleafs;$/;"	v
+c_glfaces	glfile.cpp	/^int		c_glfaces;$/;"	v
+c_inside	portals.cpp	/^static	int		c_inside;$/;"	v	file:
+c_nodes	ubrush.cpp	/^int		c_nodes;$/;"	v
+c_numMapPatches	map.cpp	/^static	int		c_numMapPatches;$/;"	v	file:
+c_outside	portals.cpp	/^static	int		c_outside;$/;"	v	file:
+c_peak_portals	portals.cpp	/^int		c_peak_portals;$/;"	v
+c_removedFragments	shadowopt3.cpp	/^static int c_removedFragments;$/;"	v	file:
+c_solid	portals.cpp	/^static	int		c_solid;$/;"	v	file:
+c_tinyportals	portals.cpp	/^int		c_tinyportals;$/;"	v
+checked	dmap.h	/^	bool				checked;		\/\/ used by SelectSplitPlaneNum()$/;"	m	struct:bspface_s
+children	dmap.h	/^	struct node_s *		children[2];$/;"	m	struct:node_s	typeref:struct:node_s::node_s
+combined	dmap.h	/^	bool	combined;		\/\/ combined from two or more colinear edges$/;"	m	struct:optEdge_s
+contentShader	dmap.h	/^	const idMaterial *	contentShader;	\/\/ one face's shader will determine the volume attributes$/;"	m	struct:bspbrush_s
+contents	dmap.h	/^	int					contents;$/;"	m	struct:bspbrush_s
+created	dmap.h	/^	bool	created;		\/\/ not one of the original edges$/;"	m	struct:optEdge_s
+def	dmap.h	/^	idRenderLightLocal	def;$/;"	m	struct:__anon5
+dmapFile	dmap.h	/^	idMapFile	*dmapFile;$/;"	m	struct:__anon7
+dmapGlobals	dmap.cpp	/^dmapGlobals_t	dmapGlobals;$/;"	v
+dmapGlobals_t	dmap.h	/^} dmapGlobals_t;$/;"	t	typeref:struct:__anon7
+drawBounds	dmap.h	/^	idBounds	drawBounds;$/;"	m	struct:__anon7
+drawSurfRef_s	dmap.h	/^typedef struct drawSurfRef_s {$/;"	s
+drawSurfRef_t	dmap.h	/^} drawSurfRef_t;$/;"	t	typeref:struct:drawSurfRef_s
+draw_socket	gldraw.cpp	/^int			draw_socket;$/;"	v
+drawflag	dmap.h	/^	bool	drawflag;$/;"	m	struct:__anon7
+edge	shadowopt3.cpp	/^	idVec3	edge[3];	\/\/ positive side is inside the triangle$/;"	m	struct:__anon12	file:
+edgeCrossing_s	optimize.cpp	/^typedef struct edgeCrossing_s {$/;"	s	file:
+edgeCrossing_t	optimize.cpp	/^} edgeCrossing_t;$/;"	t	typeref:struct:edgeCrossing_s	file:
+edgeLength_t	optimize.cpp	/^} edgeLength_t;$/;"	t	typeref:struct:__anon10	file:
+edges	dmap.h	/^	optEdge_t	*edges;$/;"	m	struct:__anon9
+edges	dmap.h	/^	struct optEdge_s *edges;$/;"	m	struct:optVertex_s	typeref:struct:optVertex_s::optEdge_s
+edges	shadowopt3.cpp	/^	shadowOptEdge_t	*edges;$/;"	m	struct:__anon13	file:
+emited	dmap.h	/^	bool	emited;			\/\/ when regenerating triangles$/;"	m	struct:optVertex_s
+entityNum	dmap.h	/^	int			entityNum;$/;"	m	struct:__anon7
+entityPrimitive	map.cpp	/^static	int		entityPrimitive;		\/\/ to track editor brush numbers$/;"	v	file:
+entitynum	dmap.h	/^	int					entitynum;			\/\/ editor numbering for messages$/;"	m	struct:bspbrush_s
+farV	shadowopt3.cpp	/^	int		farV[2];		\/\/ will always be a projection of near[]$/;"	m	struct:silQuad_s	file:
+filled	dmap.h	/^	bool	filled;$/;"	m	struct:optTri_s
+fragmentedQuads	shadowopt3.cpp	/^	silQuad_t		*fragmentedQuads;$/;"	m	struct:__anon13	file:
+frontTri	dmap.h	/^	struct optTri_s	*frontTri, *backTri;$/;"	m	struct:optEdge_s	typeref:struct:optEdge_s::optTri_s
+fullCarve	dmap.h	/^	bool	fullCarve;$/;"	m	struct:__anon7
+glview	dmap.h	/^	bool	glview;$/;"	m	struct:__anon7
+group	dmap.h	/^	optimizeGroup_t	*group;$/;"	m	struct:__anon9
+groupLights	dmap.h	/^	mapLight_t *		groupLights[MAX_GROUP_LIGHTS];	\/\/ lights effecting this list$/;"	m	struct:optimizeGroup_s
+groups	dmap.h	/^	struct optimizeGroup_s	*groups;$/;"	m	struct:__anon1	typeref:struct:__anon1::optimizeGroup_s
+hashBounds	tritjunction.cpp	/^static idBounds	hashBounds;$/;"	v	file:
+hashIntMins	tritjunction.cpp	/^static int		hashIntMins[3], hashIntScale[3];$/;"	v	file:
+hashIntScale	tritjunction.cpp	/^static int		hashIntMins[3], hashIntScale[3];$/;"	v	file:
+hashScale	tritjunction.cpp	/^static idVec3	hashScale;$/;"	v	file:
+hashVert	dmap.h	/^	const struct hashVert_s *hashVert[3];$/;"	m	struct:mapTri_s	typeref:struct:mapTri_s::hashVert_s
+hashVert_s	tritjunction.cpp	/^typedef struct hashVert_s {$/;"	s	file:
+hashVert_t	tritjunction.cpp	/^} hashVert_t;$/;"	t	typeref:struct:hashVert_s	file:
+hashVerts	tritjunction.cpp	/^static hashVert_t	*hashVerts[HASH_BINS][HASH_BINS][HASH_BINS];$/;"	v	file:
+headnode	dmap.h	/^	node_t		*headnode;$/;"	m	struct:tree_s
+height	dmap.h	/^	int					width, height;$/;"	m	struct:__anon3
+index	shadowopt3.cpp	/^	glIndex_t	index[2];$/;"	m	struct:shadowOptEdge_s	file:
+index	shadowopt3.cpp	/^	glIndex_t	index[3];$/;"	m	struct:__anon12	file:
+interAreaPortal_t	dmap.h	/^} interAreaPortal_t;$/;"	t	typeref:struct:__anon8
+interAreaPortals	portals.cpp	/^interAreaPortal_t interAreaPortals[MAX_INTER_AREA_PORTALS];$/;"	v
+islandLink	dmap.h	/^	struct optEdge_s	*islandLink;$/;"	m	struct:optEdge_s	typeref:struct:optEdge_s::optEdge_s
+islandLink	dmap.h	/^	struct optVertex_s	*islandLink;$/;"	m	struct:optVertex_s	typeref:struct:optVertex_s::optVertex_s
+iv	tritjunction.cpp	/^	int					iv[3];$/;"	m	struct:hashVert_s	file:
+length	optimize.cpp	/^	float		length;$/;"	m	struct:__anon10	file:
+mapEntity	dmap.h	/^	idMapEntity *		mapEntity;		\/\/ points into mapFile_t data$/;"	m	struct:__anon2
+mapFileBase	dmap.h	/^	char		mapFileBase[1024];$/;"	m	struct:__anon7
+mapLight_t	dmap.h	/^} mapLight_t;$/;"	t	typeref:struct:__anon5
+mapLights	dmap.h	/^	idList<mapLight_t*>	mapLights;$/;"	m	struct:__anon7
+mapPlanes	dmap.h	/^	idPlaneSet	mapPlanes;$/;"	m	struct:__anon7
+mapTri_s	dmap.h	/^typedef struct mapTri_s {$/;"	s
+mapTri_t	dmap.h	/^} mapTri_t;$/;"	t	typeref:struct:mapTri_s
+material	dmap.h	/^	const idMaterial *	material;$/;"	m	struct:mapTri_s
+material	dmap.h	/^	const idMaterial *	material;$/;"	m	struct:optimizeGroup_s
+material	dmap.h	/^	const idMaterial *	material;$/;"	m	struct:parseMesh_s
+material	dmap.h	/^	const idMaterial *	material;$/;"	m	struct:side_s
+maxRetIndexes	shadowopt3.cpp	/^static	int		maxRetIndexes;$/;"	v	file:
+maxUniqued	shadowopt3.cpp	/^static	int		maxUniqued;$/;"	v	file:
+mergeGroup	dmap.h	/^	void *				mergeGroup;		\/\/ if this differs (guiSurfs, mirrors, etc), the$/;"	m	struct:optimizeGroup_s
+mergeGroup	dmap.h	/^	void *				mergeGroup;		\/\/ we want to avoid merging triangles$/;"	m	struct:mapTri_s
+mesh	dmap.h	/^	mesh_t				mesh;$/;"	m	struct:parseMesh_s
+mesh_t	dmap.h	/^} mesh_t;$/;"	t	typeref:struct:__anon3
+midpoint	dmap.h	/^	idVec3		midpoint;$/;"	m	struct:optTri_s
+name	dmap.h	/^	char		name[MAX_QPATH];		\/\/ for naming the shadow volume surface and interactions$/;"	m	struct:__anon5
+nearV	shadowopt3.cpp	/^	int		nearV[2];$/;"	m	struct:silQuad_s	file:
+next	dmap.h	/^	struct bspbrush_s *	next;$/;"	m	struct:bspbrush_s	typeref:struct:bspbrush_s::bspbrush_s
+next	dmap.h	/^	struct bspface_s *	next;$/;"	m	struct:bspface_s	typeref:struct:bspface_s::bspface_s
+next	dmap.h	/^	struct mapTri_s *	next;$/;"	m	struct:mapTri_s	typeref:struct:mapTri_s::mapTri_s
+next	dmap.h	/^	struct optTri_s	*next;$/;"	m	struct:optTri_s	typeref:struct:optTri_s::optTri_s
+next	dmap.h	/^	struct parseMesh_s *next;$/;"	m	struct:parseMesh_s	typeref:struct:parseMesh_s::parseMesh_s
+next	dmap.h	/^	struct primitive_s *next;$/;"	m	struct:primitive_s	typeref:struct:primitive_s::primitive_s
+next	dmap.h	/^	struct uPortal_s	*next[2];$/;"	m	struct:uPortal_s	typeref:struct:uPortal_s::uPortal_s
+next	optimize.cpp	/^	struct edgeCrossing_s	*next;$/;"	m	struct:edgeCrossing_s	typeref:struct:edgeCrossing_s::edgeCrossing_s	file:
+next	tritjunction.cpp	/^	struct hashVert_s	*next;$/;"	m	struct:hashVert_s	typeref:struct:hashVert_s::hashVert_s	file:
+nextEdge	shadowopt3.cpp	/^	struct shadowOptEdge_s	*nextEdge;$/;"	m	struct:shadowOptEdge_s	typeref:struct:shadowOptEdge_s::shadowOptEdge_s	file:
+nextGroup	dmap.h	/^	struct optimizeGroup_s	*nextGroup;$/;"	m	struct:optimizeGroup_s	typeref:struct:optimizeGroup_s::optimizeGroup_s
+nextQuad	shadowopt3.cpp	/^	struct silQuad_s	*nextQuad;$/;"	m	struct:silQuad_s	typeref:struct:silQuad_s::silQuad_s	file:
+nextRef	dmap.h	/^	struct drawSurfRef_s *	nextRef;$/;"	m	struct:drawSurfRef_s	typeref:struct:drawSurfRef_s::drawSurfRef_s
+noClipSides	dmap.h	/^	bool	noClipSides;		\/\/ don't cut sides by solid leafs, use the entire thing$/;"	m	struct:__anon7
+noCurves	dmap.h	/^	bool	noCurves;$/;"	m	struct:__anon7
+noFlood	dmap.h	/^	bool	noFlood;$/;"	m	struct:__anon7
+noLightCarve	dmap.h	/^	bool	noLightCarve;		\/\/ extra triangle subdivision by light frustums$/;"	m	struct:__anon7
+noModelBrushes	dmap.h	/^	bool	noModelBrushes;$/;"	m	struct:__anon7
+noOptimize	dmap.h	/^	bool	noOptimize;$/;"	m	struct:__anon7
+noShadow	dmap.h	/^	bool	noShadow;			\/\/ don't create optimized shadow volumes$/;"	m	struct:__anon7
+noTJunc	dmap.h	/^	bool	noTJunc;$/;"	m	struct:__anon7
+nodeNumber	dmap.h	/^	int					nodeNumber;	\/\/ set after pruning$/;"	m	struct:node_s
+node_s	dmap.h	/^typedef struct node_s {$/;"	s
+node_t	dmap.h	/^} node_t;$/;"	t	typeref:struct:node_s
+nodes	dmap.h	/^	node_t		*nodes[2];		\/\/ [0] = front side of plane$/;"	m	struct:uPortal_s
+nomerge	dmap.h	/^	bool	nomerge;$/;"	m	struct:__anon7
+normal	shadowopt3.cpp	/^	idVec3	normal;	\/\/ all sil planes go through the projection origin$/;"	m	struct:__anon13	file:
+numAreas	dmap.h	/^	int					numAreas;$/;"	m	struct:__anon2
+numGroupLights	dmap.h	/^	int					numGroupLights;$/;"	m	struct:optimizeGroup_s
+numHashVerts	tritjunction.cpp	/^static int		numHashVerts, numTotalVerts;$/;"	v	file:
+numInterAreaPortals	portals.cpp	/^int					numInterAreaPortals;$/;"	v
+numOptEdges	optimize.cpp	/^static	int		numOptEdges;$/;"	v	file:
+numOptVerts	optimize.cpp	/^int			numOptVerts;$/;"	v
+numOriginalEdges	optimize.cpp	/^static	int				numOriginalEdges;$/;"	v	file:
+numOutputTris	shadowopt3.cpp	/^static	int		numOutputTris;$/;"	v	file:
+numSilEdges	shadowopt3.cpp	/^static	int		numSilEdges;$/;"	v	file:
+numSilPlanes	shadowopt3.cpp	/^static int		numSilPlanes;$/;"	v	file:
+numSilQuads	shadowopt3.cpp	/^static int		numSilQuads;$/;"	v	file:
+numTotalVerts	tritjunction.cpp	/^static int		numHashVerts, numTotalVerts;$/;"	v	file:
+numUniqued	shadowopt3.cpp	/^static	int		numUniqued;$/;"	v	file:
+numUniquedBeforeProjection	shadowopt3.cpp	/^static	int		numUniquedBeforeProjection;$/;"	v	file:
+num_entities	dmap.h	/^	int			num_entities;$/;"	m	struct:__anon7
+numsides	dmap.h	/^	int					numsides;$/;"	m	struct:bspbrush_s
+occupant	dmap.h	/^	uEntity_t *			occupant;	\/\/ for leak file testing$/;"	m	struct:node_s
+occupied	dmap.h	/^	int					occupied;	\/\/ 1 or greater can reach entity$/;"	m	struct:node_s
+onnode	dmap.h	/^	node_t		*onnode;		\/\/ NULL = outside box$/;"	m	struct:uPortal_s
+opaque	dmap.h	/^	bool				opaque;		\/\/ view can never be inside$/;"	m	struct:node_s
+opaque	dmap.h	/^	bool				opaque;$/;"	m	struct:bspbrush_s
+optBounds	optimize.cpp	/^idBounds	optBounds;$/;"	v
+optEdge_s	dmap.h	/^typedef struct optEdge_s {$/;"	s
+optEdge_t	dmap.h	/^} optEdge_t;$/;"	t	typeref:struct:optEdge_s
+optEdges	optimize.cpp	/^static	optEdge_t	optEdges[MAX_OPT_EDGES];$/;"	v	file:
+optIsland_t	dmap.h	/^} optIsland_t;$/;"	t	typeref:struct:__anon9
+optTri_s	dmap.h	/^typedef struct optTri_s {$/;"	s
+optTri_t	dmap.h	/^} optTri_t;$/;"	t	typeref:struct:optTri_s
+optVert	dmap.h	/^	struct optVertex_s *optVert[3];$/;"	m	struct:mapTri_s	typeref:struct:mapTri_s::optVertex_s
+optVertex_s	dmap.h	/^typedef struct optVertex_s {$/;"	s
+optVertex_t	dmap.h	/^} optVertex_t;$/;"	t	typeref:struct:optVertex_s
+optVerts	optimize.cpp	/^optVertex_t optVerts[MAX_OPT_VERTEXES];$/;"	v
+optimizeGroup_s	dmap.h	/^typedef struct optimizeGroup_s {$/;"	s
+optimizeGroup_t	dmap.h	/^} optimizeGroup_t;$/;"	t	typeref:struct:optimizeGroup_s
+orandom	optimize.cpp	/^static idRandom orandom;$/;"	v	file:
+origin	dmap.h	/^	idVec3				origin;$/;"	m	struct:__anon2
+original	dmap.h	/^	struct bspbrush_s *	original;	\/\/ chopped up brushes will reference the originals$/;"	m	struct:bspbrush_s	typeref:struct:bspbrush_s::bspbrush_s
+originalEdges	optimize.cpp	/^static	originalEdges_t	*originalEdges;$/;"	v	file:
+originalEdges_t	optimize.cpp	/^} originalEdges_t;$/;"	t	typeref:struct:__anon11	file:
+outputNumber	dmap.h	/^	int						outputNumber;$/;"	m	struct:drawSurfRef_s
+outputNumber	dmap.h	/^	int					outputNumber;		\/\/ set when the brush is written to the file list$/;"	m	struct:bspbrush_s
+outputTris	shadowopt3.cpp	/^static	shadowTri_t	outputTris[MAX_SHADOW_TRIS];$/;"	v	file:
+outside_node	dmap.h	/^	node_t		outside_node;$/;"	m	struct:tree_s
+ov	optimize.cpp	/^	optVertex_t		*ov;$/;"	m	struct:edgeCrossing_s	file:
+parent	dmap.h	/^	struct node_s *		parent;$/;"	m	struct:node_s	typeref:struct:node_s::node_s
+parseMesh_s	dmap.h	/^typedef struct parseMesh_s {$/;"	s
+parseMesh_t	dmap.h	/^} parseMesh_t;$/;"	t	typeref:struct:parseMesh_s
+plane	dmap.h	/^	idPlane		plane;$/;"	m	struct:uPortal_s
+plane	shadowopt3.cpp	/^	idPlane	plane;		\/\/ positive side is forward for the triangle, which is away from the light$/;"	m	struct:__anon12	file:
+planeNum	dmap.h	/^	int					planeNum;			\/\/ not set universally, just in some areas$/;"	m	struct:mapTri_s
+planeNum	dmap.h	/^	int					planeNum;$/;"	m	struct:optimizeGroup_s
+planeNum	shadowopt3.cpp	/^	int		planeNum;	\/\/ from original triangle, not calculated from the clipped verts$/;"	m	struct:__anon12	file:
+planenum	dmap.h	/^	int					planenum;	\/\/ -1 = leaf node$/;"	m	struct:node_s
+planenum	dmap.h	/^	int					planenum;$/;"	m	struct:bspface_s
+planenum	dmap.h	/^	int					planenum;$/;"	m	struct:side_s
+portal	dmap.h	/^	bool				portal;			\/\/ all portals will be selected before$/;"	m	struct:bspface_s
+portals	dmap.h	/^	struct uPortal_s *	portals;	\/\/ also on nodes during construction$/;"	m	struct:node_s	typeref:struct:node_s::uPortal_s
+primitive_s	dmap.h	/^typedef struct primitive_s {$/;"	s
+primitive_t	dmap.h	/^} primitive_t;$/;"	t	typeref:struct:primitive_s
+primitives	dmap.h	/^	primitive_t *		primitives;$/;"	m	struct:__anon2
+procFile	output.cpp	/^static	idFile	*procFile;$/;"	v	file:
+pv	dmap.h	/^	idVec3	pv;					\/\/ projected against planar axis, third value is 0$/;"	m	struct:optVertex_s
+regeneratedTris	dmap.h	/^	mapTri_t *			regeneratedTris;	\/\/ after each island optimization$/;"	m	struct:optimizeGroup_s
+ret	shadowopt3.cpp	/^static	optimizedShadow_t	ret;$/;"	v	file:
+shadowOptEdge_s	shadowopt3.cpp	/^typedef struct shadowOptEdge_s {$/;"	s	file:
+shadowOptEdge_t	shadowopt3.cpp	/^} shadowOptEdge_t;$/;"	t	typeref:struct:shadowOptEdge_s	file:
+shadowOptLevel	dmap.h	/^	shadowOptLevel_t	shadowOptLevel;$/;"	m	struct:__anon7
+shadowOptLevel_t	dmap.h	/^} shadowOptLevel_t;$/;"	t	typeref:enum:__anon6
+shadowTri_t	shadowopt3.cpp	/^} shadowTri_t;$/;"	t	typeref:struct:__anon12	file:
+shadowTris	dmap.h	/^	srfTriangles_t	*shadowTris;$/;"	m	struct:__anon5
+side	dmap.h	/^	side_t	*side;$/;"	m	struct:__anon8
+side	dmap.h	/^	side_t *			side;		\/\/ the side that created the node$/;"	m	struct:node_s
+side_s	dmap.h	/^typedef struct side_s {$/;"	s
+side_t	dmap.h	/^} side_t;$/;"	t	typeref:struct:side_s
+sides	dmap.h	/^	side_t				sides[6];			\/\/ variably sized$/;"	m	struct:bspbrush_s
+silEdges	shadowopt3.cpp	/^static	shadowOptEdge_t	silEdges[MAX_SIL_EDGES];$/;"	v	file:
+silPlane_t	shadowopt3.cpp	/^} silPlane_t;$/;"	t	typeref:struct:__anon13	file:
+silPlanes	shadowopt3.cpp	/^static silPlane_t	*silPlanes;$/;"	v	file:
+silQuad_s	shadowopt3.cpp	/^typedef struct silQuad_s {$/;"	s	file:
+silQuad_t	shadowopt3.cpp	/^} silQuad_t;$/;"	t	typeref:struct:silQuad_s	file:
+silQuads	shadowopt3.cpp	/^static	silQuad_t	silQuads[MAX_SIL_QUADS];$/;"	v	file:
+smoothed	dmap.h	/^	bool				smoothed;				\/\/ curves will never merge with brushes$/;"	m	struct:optimizeGroup_s
+surfaceEmited	dmap.h	/^	bool				surfaceEmited;$/;"	m	struct:optimizeGroup_s
+texVec	dmap.h	/^	textureVectors_t	texVec;$/;"	m	struct:optimizeGroup_s
+texVec	dmap.h	/^	textureVectors_t	texVec;$/;"	m	struct:side_s
+textureVectors_t	dmap.h	/^} textureVectors_t;$/;"	t	typeref:struct:__anon4
+totalShadowTriangles	dmap.h	/^	int		totalShadowTriangles;$/;"	m	struct:__anon7
+totalShadowVerts	dmap.h	/^	int		totalShadowVerts;$/;"	m	struct:__anon7
+tree	dmap.h	/^	struct tree_s *		tree;$/;"	m	struct:__anon2	typeref:struct:__anon2::tree_s
+tree_s	dmap.h	/^typedef struct tree_s {$/;"	s
+tree_t	dmap.h	/^} tree_t;$/;"	t	typeref:struct:tree_s
+triList	dmap.h	/^	mapTri_t *			triList;$/;"	m	struct:optimizeGroup_s
+tris	dmap.h	/^	optTri_t	*tris;$/;"	m	struct:__anon9
+tris	dmap.h	/^	struct mapTri_s *	tris;$/;"	m	struct:primitive_s	typeref:struct:primitive_s::mapTri_s
+uArea_t	dmap.h	/^} uArea_t;$/;"	t	typeref:struct:__anon1
+uBrush_t	dmap.h	/^} uBrush_t;$/;"	t	typeref:struct:bspbrush_s
+uEntities	dmap.h	/^	uEntity_t	*uEntities;$/;"	m	struct:__anon7
+uEntity	map.cpp	/^static	uEntity_t	*uEntity;$/;"	v	file:
+uEntity_t	dmap.h	/^} uEntity_t;$/;"	t	typeref:struct:__anon2
+uPortal_s	dmap.h	/^typedef struct uPortal_s {$/;"	s
+uPortal_t	dmap.h	/^} uPortal_t;$/;"	t	typeref:struct:uPortal_s
+uniqued	shadowopt3.cpp	/^static	idVec3	*uniqued;$/;"	v	file:
+v	dmap.h	/^	idDrawVert			v[3];$/;"	m	struct:mapTri_s
+v	dmap.h	/^	idDrawVert	v;$/;"	m	struct:optVertex_s
+v	dmap.h	/^	idVec4		v[2];		\/\/ the offset value will always be in the 0.0 to 1.0 range$/;"	m	struct:__anon4
+v	dmap.h	/^	optVertex_t	*v[3];$/;"	m	struct:optTri_s
+v	shadowopt3.cpp	/^	idVec3	v[3];$/;"	m	struct:__anon12	file:
+v	tritjunction.cpp	/^	idVec3				v;$/;"	m	struct:hashVert_s	file:
+v1	dmap.h	/^	optVertex_t	*v1, *v2;$/;"	m	struct:optEdge_s
+v1	optimize.cpp	/^	optVertex_t	*v1, *v2;$/;"	m	struct:__anon10	file:
+v1	optimize.cpp	/^	optVertex_t	*v1, *v2;$/;"	m	struct:__anon11	file:
+v1link	dmap.h	/^	struct optEdge_s *v1link, *v2link;$/;"	m	struct:optEdge_s	typeref:struct:optEdge_s::optEdge_s
+v2	dmap.h	/^	optVertex_t	*v1, *v2;$/;"	m	struct:optEdge_s
+v2	optimize.cpp	/^	optVertex_t	*v1, *v2;$/;"	m	struct:__anon10	file:
+v2	optimize.cpp	/^	optVertex_t	*v1, *v2;$/;"	m	struct:__anon11	file:
+v2link	dmap.h	/^	struct optEdge_s *v1link, *v2link;$/;"	m	struct:optEdge_s	typeref:struct:optEdge_s::
+verbose	dmap.h	/^	bool	verbose;$/;"	m	struct:__anon7
+verboseentities	dmap.h	/^	bool	verboseentities;$/;"	m	struct:__anon7
+verts	dmap.h	/^	idDrawVert *		verts;$/;"	m	struct:__anon3
+verts	dmap.h	/^	optVertex_t	*verts;$/;"	m	struct:__anon9
+visibleHull	dmap.h	/^	idWinding *			visibleHull;	\/\/ also clipped to the solid parts of the world$/;"	m	struct:side_s
+w	dmap.h	/^	idWinding *			w;$/;"	m	struct:bspface_s
+width	dmap.h	/^	int					width, height;$/;"	m	struct:__anon3
+winding	dmap.h	/^	idWinding	*winding;$/;"	m	struct:uPortal_s
+winding	dmap.h	/^	idWinding *			winding;		\/\/ only clipped to the other sides of the brush$/;"	m	struct:side_s
+wins_init	gldraw.cpp	/^bool	wins_init;$/;"	v

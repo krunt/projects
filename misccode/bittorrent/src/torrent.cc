@@ -1,3 +1,4 @@
+#include <iostream>
 #include <include/settings.h>
 #include <include/torrent.h>
 #include <include/peer.h>

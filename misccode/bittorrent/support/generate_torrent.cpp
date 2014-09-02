@@ -60,7 +60,7 @@ void calculate_piece_hashes(std::string &hashes,
 void create_torrent(const std::string &filename, const std::string &outfilename) {
     value_t::dictionary_type root, info;
 
-    info["name"] = value_t(boost::filesystem::path(filename).filename().native());
+    info["name"] = value_t(boost::filesystem::path(filename).filename());
     info["length"] = value_t(get_file_size(filename));
     info["piece length"] = value_t(PIECE_SIZE);
 

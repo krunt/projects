@@ -71,7 +71,7 @@ DEFINE_METHOD(void, torrent_storage_t::setup_files)
         data_path /= info.m_files[i].m_path;
 
         torrent_info_t::file_t fcopy = info.m_files[i];
-        fcopy.m_path = data_path.native();
+        fcopy.m_path = data_path.string();
 
         GLOG->debug("preallocating file %s", fcopy.m_path.c_str());
 

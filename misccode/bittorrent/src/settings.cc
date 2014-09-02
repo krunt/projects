@@ -7,7 +7,7 @@ settings_t *gsettings() { return &global_settings; }
 
 settings_t::settings_t()
         : m_piece_part_size(16 << 10), /* 16 kb */
-          m_torrents_data_path("/home/akuts/datastorage"),
+          m_torrents_data_path("/home/alexey/datastorage"),
           m_max_check_connections(3),
           m_max_active_connections(10),
           m_download_time_interval(1),
