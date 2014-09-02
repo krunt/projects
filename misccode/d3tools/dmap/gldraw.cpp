@@ -323,7 +323,7 @@ void InitScene( void ) {
 
 void BeginScene ( idBounds &bounds, int id ) {
     if ( write( drawSocket, "\xFF", 1 ) != 1 
-        || write( drawSocket, &id, id ) != 4
+        || write( drawSocket, &id, 4 ) != 4
         || write( drawSocket, bounds[0].ToFloatPtr(), 12 ) != 12 
         || write( drawSocket, bounds[1].ToFloatPtr(), 12 ) != 12 )
         common->Error( "BeginScene() error" );
