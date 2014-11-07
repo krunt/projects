@@ -131,6 +131,7 @@ void GLSLProgram::Bind( const std::string &name, const idMat2 &v ) {
 }
 
 void GLSLProgram::Bind( const std::string &name, const idMat3 &v ) {
+    idMat3 tv = v.Transpose();
     GLint location = glGetUniformLocation( m_program, name.c_str() );
     glUniformMatrix3fv( location, 1, false, v.ToFloatPtr() );
 }
