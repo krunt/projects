@@ -815,6 +815,7 @@ public:
 	float			w;
 
 					idVec4( void );
+					idVec4( const idVec3 &v, const float w );
 					explicit idVec4( const float x, const float y, const float z, const float w );
 
 	void 			Set( const float x, const float y, const float z, const float w );
@@ -863,6 +864,13 @@ extern idVec4 vec4_origin;
 #define vec4_zero vec4_origin
 
 ID_INLINE idVec4::idVec4( void ) {
+}
+
+ID_INLINE idVec4::idVec4( const idVec3 &v, const float w ) {
+	this->x = v.x;
+	this->y = v.y;
+	this->z = v.z;
+	this->w = w;
 }
 
 ID_INLINE idVec4::idVec4( const float x, const float y, const float z, const float w ) {

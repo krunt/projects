@@ -386,6 +386,67 @@ bool GLTexture::Init( const std::string &name, int textureUnit ) {
     return true;
 }
 
+bool GLTexture::Init( byte *data, int width, int height, 
+            int format, int textureUnit ) 
+{
+    GLuint texture;
+    byte *pic, *picCopy;
+
+    _CH(glActiveTexture( GL_TEXTURE0 + textureUnit ));
+    _CH(glGenTextures( 1, &texture ));
+    _CH(glBindTexture( GL_TEXTURE_2D, texture ));
+    _CH(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+    _CH(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+
+    pic = data;
+    picCopy = (byte *)malloc( width * height * 4 );
+
+    int mipmap = 0;
+    while ( width > 1 || height > 1 ) {
+        _CH(glTexImage2D( GL_TEXTURE_2D,
+            mipmap,
+            format,
+            width,
+            height,
+            0,
+            format,
+            GL_UNSIGNED_BYTE,
+            pic));
+
+        int oldWidth, oldHeight;
+
+        oldWidth = width;
+        oldHeight = height;
+
+        if ( width > 1 ) {
+            width >>= 1;
+        }
+
+        if ( height > 1 ) {
+            height >>= 1;
+        }
+
+        R_ResampleTexture( pic, picCopy, oldWidth, oldHeight, width, height );
+
+        std::swap( pic, picCopy );
+
+        mipmap += 1;
+    }
+
+    if ( pic != data ) {
+        free( pic );
+    }
+
+    if ( picCopy != data ) {
+        free( picCopy );
+    }
+
+    m_texture = texture;
+    m_loadOk = true;
+    m_textureUnit = textureUnit;
+    return true;
+}
+
 void GLTexture::Bind( void ) {
     assert( IsOk() );
     _CH(glActiveTexture( GL_TEXTURE0 + m_textureUnit ));

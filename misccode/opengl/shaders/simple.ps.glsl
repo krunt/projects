@@ -1,4 +1,3 @@
-
 #version 410 core 
 layout (binding = 0) uniform sampler2D sq_tex; 
 layout (binding = 1) uniform sampler2D tex; 
@@ -10,15 +9,9 @@ in VS_OUT
 } fs_in; 
 out vec4 color; 
 
-uniform vec3 light_pos;
-uniform vec3 light_dir;
-
 uniform vec3 eye_pos;
 
 void main(void) { 
- //color = vec4( 1.0f, 0.0f, 0.0f, 1.0f ); 
- //color = texture(tex, fs_in.texcoord);
-
  vec3 distv = light_pos - fs_in.position;
  float dist = length(distv);
 
@@ -37,5 +30,4 @@ void main(void) {
 
  vec4 texture_color = texture(tex, fs_in.texcoord);
  color = texture_color * light_coeff;
- //color = vec4( 1.0f, 0, 0, 1.0f );
 } 

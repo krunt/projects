@@ -22,10 +22,12 @@ static float flipMatrixData[4][4] = {
 
 static const idMat4 flipMatrix( flipMatrixData );
 
-static GLTexture logoTexture;
+static idVec3 ToWorld( idVec3 &v ) {
+    return ( flipMatrix * idVec4( v, 1.0f ) ).ToVec3();
+}
 
 struct material_t {
-    GLuint m_matId;
+    GLTexture *m_matPtr;
 };
 
 struct __attribute__((packed)) drawVert_t {
@@ -80,11 +82,6 @@ struct playerView_t {
     int m_width, m_height;
 };
 
-struct light_t {
-    idVec3 m_pos;
-    idVec3 m_dir;
-};
-
 class MyRender {
 public:
     void Init( void );
@@ -93,8 +90,8 @@ public:
     void AddSurface( const glsurf_t &s ) {
         m_surfs.push_back( s );
     }
-    void AddLight( const light_t &lt ) {
-        m_lights.push_back( lt );
+    void AddLight( const GLLight &lt ) {
+        m_lights.push_back( &lt );
     }
     void Shutdown( void );
 
@@ -106,11 +103,12 @@ private:
     void RenderSurface( const glsurf_t &surf );
 
     std::vector<glsurf_t> m_surfs;
-    std::vector<light_t> m_lights;
+    std::vector<GLLight *> m_lights;
 
-    idVec3 m_eye; /* eye-position */
+    idVec4 m_eye; /* eye-position */
 
-    GLuint m_whiteTexture;
+    GLTexture m_whiteTexture;
+    GLTexture m_logoTexture;
 
     GLSLProgram m_shaderProgram;
 
@@ -180,34 +178,11 @@ void MyRender::CreateStandardShaders( void ) {
           0x00, 0x00, 0xFF, 0xFF,
         };
 
-    _CH(glActiveTexture( GL_TEXTURE0 ));
-    _CH(glGenTextures( 1, &m_whiteTexture ));
-    _CH(glBindTexture( GL_TEXTURE_2D, m_whiteTexture ));
-    _CH(glTexImage2D( GL_TEXTURE_2D, 
-            0, /* level */
-            GL_RGBA,  /* format */
-            2,  /* w */
-            2,  /* h */
-            0,  /* border */
-            GL_RGBA,  /* format */
-            GL_UNSIGNED_BYTE, /* type */
-            white ));
-    _CH(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
-    _CH(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+    if ( !m_whiteTexture.Init( white, 2, 2, GL_RGBA, 0 ) ) {
+        exit(1);
+    }
 
-    /*
-    _CH(glActiveTexture( GL_TEXTURE0 ));
-    _CH(glGenTextures( 1, &m_whiteTexture ));
-    _CH(glBindTexture( GL_TEXTURE_2D, m_whiteTexture ));
-    _CH(glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGB8, 2, 2));
-    _CH(glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 2, 2, GL_RGBA, GL_UNSIGNED_BYTE, white));
-    _CH(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
-    _CH(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
-    */
-
-    _CH(glBindTexture( GL_TEXTURE_2D, 0 ));
-
-    if ( !logoTexture.Init( "images/logo1.tga", 1 ) ) {
+    if ( !m_logoTexture.Init( "images/logo1.tga", 1 ) ) {
         exit(1);
     }
 }
@@ -255,7 +230,9 @@ void MyRender::CacheSurface( const surf_t &s, cached_surf_t &cached ) {
     cached.m_indexBuffer = indexBuffer;
 
     if ( s.m_matName == "white" ) {
-        cached.m_material.m_matId = m_whiteTexture;
+        cached.m_material.m_matPtr = &m_whiteTexture;
+    } else if ( s.m_matName == "logo" ) {
+        cached.m_material.m_matPtr = &m_logoTexture;
     } else {
         assert( 0 );
     }
@@ -267,13 +244,14 @@ void MyRender::Init( void ) {
 }
 
 void MyRender::Shutdown( void ) {
-    _CH(glDeleteTextures( 1, &m_whiteTexture ));
 }
 
 void MyRender::RenderSurface( const glsurf_t &surf ) {
+    int i;
     idMat4 mvpMatrix;
 
-    mvpMatrix = m_projectionMatrix * flipMatrix * m_viewMatrix * surf.m_modelMatrix;
+    mvpMatrix = m_projectionMatrix * flipMatrix 
+        * m_viewMatrix * surf.m_modelMatrix;
 
     /*
     printVector( flipMatrix * idVec4( 0, 10, 10, 1 ) );
@@ -290,32 +268,29 @@ void MyRender::RenderSurface( const glsurf_t &surf ) {
     m_shaderProgram.Bind( "mvp_matrix", mvpMatrix.Transpose() );
 
     if ( !m_lights.empty() ) {
-        m_shaderProgram.Bind( "light_pos", m_lights[0].m_pos );
-        m_shaderProgram.Bind( "light_dir", m_lights[0].m_dir );
+        for ( i = 0; i < m_lights.size(); ++i ) {
+            m_shaderProgram.Bind( m_lights[i]->GetName(), m_lights[i] );
+        }
     }
 
-    m_shaderProgram.Bind( "eye_pos", m_eye );
+    m_shaderProgram.Bind( "eye_pos", ToWorld( m_eye ) );
 
     _CH(glBindVertexArray( surf.m_surf.m_vao ));
 
-    glActiveTexture( GL_TEXTURE0 );
-    _CH(glBindTexture( GL_TEXTURE_2D, surf.m_surf.m_material.m_matId ));
-
-    logoTexture.Bind();
+    surf.m_surf.m_material.m_matPtr->Bind();
 
     _CH(glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, surf.m_surf.m_indexBuffer ));
 
-    _CH(glDrawElements( GL_TRIANGLES, surf.m_surf.m_numIndices, GL_UNSIGNED_SHORT, 0 ));
+    _CH(glDrawElements( GL_TRIANGLES, 
+                surf.m_surf.m_numIndices, GL_UNSIGNED_SHORT, 0 ));
 
-    logoTexture.Unbind();
-
-    _CH(glBindTexture( GL_TEXTURE_2D, 0 ) );
+    surf.m_surf.m_material.m_matPtr->Unbind();
 }
 
 void MyRender::Render( const playerView_t &view ) {
     int i;
 
-    m_eye = view.m_pos;
+    m_eye = idVec4( view.m_pos, 1.0f );
 
     SetupViewMatrix( view );
     SetupProjectionMatrix( view );
@@ -621,32 +596,15 @@ static void ProcessEvents( void )
             float xFrac = (float)deltaX / (float)v.m_width;
             float yFrac = (float)deltaY / (float)v.m_height;
 
-            float alphaX = -DEG2RAD( xFrac * angleStepSize );
+            float alphaX = DEG2RAD( xFrac * angleStepSize );
             float alphaY = DEG2RAD( yFrac * angleStepSize );
 
-            idMat3 rotationOZ( GetRotationOZ( alphaX ) );
+            idAngles angles( v.m_axis[0] );
 
-            idMat3 rotationOY( GetRotationOY( alphaY ) );
+            angles.yaw += -alphaX;
+            angles.pitch += alphaY;
 
-            idMat3 rotationMatrix( rotationOZ * rotationOY );
-
-            v.m_axis = rotationMatrix * v.m_axis;
-
-            /*
-            idRotation rotationOZ( v.m_pos, v.m_axis[2], alphaX );
-            idRotation rotationOX( v.m_pos, v.m_axis[0], alphaY );
-            idVec3 newPos = v.m_pos + stepSize * v.m_axis[1];
-
-            newPos = rotationOX * ( rotationOZ * newPos );
-            newPos -= v.m_pos;
-
-            newPos.Normalize();
-
-            idVec3 left, up;
-            newPos.OrthogonalBasis( left, up );
-
-            v.m_axis = idMat3( left, newPos, up );
-            */
+            v.m_axis = angles.ToMat3();
 
             break;
         }
@@ -661,83 +619,23 @@ static void ProcessEvents( void )
 }
 
 void SetupOpengl( int width, int height ) {
-    /*
-     * Change to the projection matrix and set
-     * our viewing volume.
-     */
-    /*
-    glMatrixMode( GL_PROJECTION );
-    glLoadIdentity( );
-
-    glDisable( GL_CULL_FACE );
-    glDisable( GL_DEPTH_TEST );
-    glDisable( GL_STENCIL_TEST );
-    glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT );
-
-    gl_playerView.m_pos = idVec3( 0, 0, -50 );
-    gl_playerView.m_axis = mat3_identity;
-
-    gl_playerView.m_axis[0][0] = +gl_playerView.m_axis[0][0];
-    gl_playerView.m_axis[1][0] = +gl_playerView.m_axis[1][0];
-    gl_playerView.m_axis[2][0] = +gl_playerView.m_axis[2][0];
-
-    gl_playerView.m_fovx = 90;
-    gl_playerView.m_fovy = 90;
-
-    gl_playerView.m_znear = 3.0f;
-    gl_playerView.m_zfar = 10000.0f;
-
-    gl_playerView.m_width = 512;
-    gl_playerView.m_height = 512;
-
-    if ( glewInit() != GLEW_OK ) {
-        fprintf( stderr, "glewInit() != GLEW_OK\n" );
-        Quit( 1 );
-    }
-    */
-
-    float ratio = (float) width / (float) height;
-
-    /* Our shading model--Gouraud (smooth). */
-    //glShadeModel( GL_SMOOTH );
-
     /* Culling. */
     glCullFace( GL_BACK );
     glFrontFace( GL_CW );
     //glEnable( GL_CULL_FACE );
-    
-    //glDisable( GL_CULL_FACE );
 
-    /* Set the clear color. */
     glClearColor( 0, 0, 0, 0 );
 
-    /* Setup our viewport. */
     glViewport( 0, 0, width, height );
-
-    /*
-     * Change to the projection matrix and set
-     * our viewing volume.
-     */
-    /*
-    glMatrixMode( GL_PROJECTION );
-    glLoadIdentity( );
-    */
-    /*
-     * EXERCISE:
-     * Replace this with a call to glFrustum.
-     */
-    //gluPerspective( 60.0, ratio, 1.0, 1024.0 );
 
     //glDisable( GL_CULL_FACE );
     glDisable( GL_DEPTH_TEST );
     glDisable( GL_STENCIL_TEST );
     glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT );
 
-    gl_playerView.m_pos = idVec3( -50, 0, 0 );
+    // in local space
+    gl_playerView.m_pos = idVec3( -50, 0, 0 ); 
     gl_playerView.m_axis = mat3_identity;
-
-    //gl_playerView.m_axis[0] = -gl_playerView.m_axis[0];
-    //gl_playerView.m_axis[1] = -gl_playerView.m_axis[1];
 
     gl_playerView.m_fovx = 74;
     gl_playerView.m_fovy = 74;
@@ -879,10 +777,12 @@ int main() {
     gl_game.AddEntity( floor );
     */
 
-    light.m_pos = idVec3( -50, 50, 50 );
-    light.m_dir = idVec3( 0, 0, 0 ) - light.m_pos;
-    light.m_dir.Normalize();
-    gl_render.AddLight( light );
+    lightPos = idVec4( -50, 50, 50, 1 );
+    lightDir = idVec4( 0, 0, 0, 1 ) - lightPos;
+
+    GLDirectionLight light( 
+            ToWorld( lightPos ), ToWorld( lightDir ) );
+    gl_render.AddLight( &light );
 
     MyQuad quad;
     gl_game.AddEntity( quad );

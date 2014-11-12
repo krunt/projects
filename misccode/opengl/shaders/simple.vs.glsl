@@ -10,10 +10,6 @@ out VS_OUT
 } vs_out; 
  
 uniform mat4 mvp_matrix; 
-
-uniform vec3 light_pos;
-uniform vec3 light_dir;
-
 uniform vec3 eye_pos;
  
 void main(void) 

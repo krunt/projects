@@ -139,3 +139,71 @@ void GLSLProgram::Bind( const std::string &name, const idMat4 &v ) {
     glUniformMatrix4fv( location, 1, false, v.ToFloatPtr() );
 }
 
+int GLSLProgram::GetUniformSize( const std::string &name ) 
+{
+    GLuint uboIndex; GLint uboSize;
+    uboIndex = glGetUniformBlockIndex( m_program, name.c_str() );
+    _CH(glGetActiveUniformBlockiv( m_program, 
+        uboIndex, GL_UNIFORM_BLOCK_DATA_SIZE, &uboSize ));
+    return uboSize;
+}
+
+std::vector<GLint> GLSLProgram::GetUniformOffsets( 
+        const std::string &name ) const 
+{
+    int i;
+    GLuint uboIndex;
+    std::vector<GLint> indices, offsets;
+
+    uboIndex = glGetUniformBlockIndex( m_program, name.c_str() );
+    _CH(glGetActiveUniformBlockiv( m_program, 
+        uboIndex, GL_UNIFORM_BLOCK_ACTIVE_UNIFORMS, &uniformCount ));
+
+    indices.resize( uniformCount );
+    _CH(glGetActiveUniformBlockiv( m_program, 
+        uboIndex, GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES, indices.data() ));
+
+    offsets.resize( uniformCount );
+    glGetActiveUniformsiv( m_program, uniformCount, 
+            indices.data(), GL_UNIFORM_OFFSET, offsets.data() );
+
+    return offsets;
+}
+
+void GLSLProgram::CreateUniformBuffer( const std::string &name ) {
+    GLuint ubo, uboIndex;
+
+    uboIndex = glGetUniformBlockIndex( m_program, name.c_str() );
+
+    _CH(glGenBuffers( 1, &ubo ));
+    _CH(glBindBuffer( GL_UNIFORM_BUFFER, ubo ));
+    _CH(glBufferData( GL_UNIFORM_BUFFER, 
+        GetUniformSize( name ), NULL, GL_DYNAMIC_DRAW );
+    glBindBufferBase( GL_UNIFORM_BUFFER, uboIndex, ubo );
+
+    m_uniformMap[ name ] = std::make_pair( uboIndex, ubo );
+}
+
+void GLSLProgram::Bind( const std::string &name, const GLLight &light ) {
+    BufIndexPair bPair;
+
+    if ( m_uniformMap.find( name ) == m_uniformMap.end() ) {
+        CreateUniformBuffer( name );
+    }
+    
+    bPair = m_uniformMap[name];
+
+    glBindBuffer( GL_UNIFORM_BUFFER, bPair.second );
+    byte *pBuffer = glMapBufferRange( GL_UNIFORM_BUFFER, 0, 
+        GetUniformSize( name ), GL_MAP_READ_BIT | GL_MAP_WRITE_BIT );
+
+    checkError();
+
+    assert( pBuffer );
+
+    light.Pack( pBuffer, GetUniformOffsets( name ) );
+
+    glUnmapBuffer( GL_UNIFORM_BUFFER );
+
+    glBindBufferBase( GL_UNIFORM_BUFFER, bPair.first, bPair.second );
+}

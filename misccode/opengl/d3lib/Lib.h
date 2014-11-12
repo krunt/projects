@@ -150,5 +150,6 @@ template<class T> ID_INLINE T	Min( T x, T y ) { return ( x < y ) ? x : y; }
 #include "Vector.h"
 #include "Matrix.h"
 #include "Rotation.h"
+#include "Angles.h"
 
 #endif	/* !__LIB_H__ */
