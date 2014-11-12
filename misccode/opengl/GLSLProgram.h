@@ -1,3 +1,9 @@
+#ifndef GLSLPROGRAM__H_
+#define GLSLPROGRAM__H_
+
+#include <string>
+#include <vector>
+#include "d3lib/Lib.h"
 
 class GLSLProgram {
 public:
@@ -16,9 +22,11 @@ public:
 
     void Use();
 
-    void IsOk() const { return m_linkedOk; }
+    bool IsOk() const { return m_linkedOk; }
 
 private:
     int m_program;
     bool m_linkedOk;
 };
+
+#endif

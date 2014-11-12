@@ -1,23 +1,19 @@
+#include <stdio.h>
 #include <string>
-#include <fstream>
-#include <streambuf>
 #include <assert.h>
 
-static bool EndsWith( const std::string &what, const std::string &suffix ) {
-    if ( suffix.size() >= what.size() ) {
-        return false;
-    }
-    return what.substr( what.size() - suffix.size() ) == suffix;
-}
+#include <GL/glew.h>
+#include <GL/gl.h>
+#include <GL/glu.h>
 
-static void BloatFile( const std::string &filename, std::string &contents ) {
-    std::ifstream t( filename );
-    contents = std::string((std::istreambuf_iterator<char>(t)),
-        std::istreambuf_iterator<char>());
-}
+#include "Utils.h"
+
+#include "GLSLProgram.h"
 
 GLSLProgram::~GLSLProgram() {
-    glDeleteProgram( m_program );
+    if ( IsOk() ) {
+        glDeleteProgram( m_program );
+    }
 }
 
 bool GLSLProgram::Init( const std::vector<std::string> &progs ) {
@@ -36,7 +32,7 @@ bool GLSLProgram::Init( const std::vector<std::string> &progs ) {
         if ( EndsWith( progs[i], ".vs.glsl" ) ) {
             type = GL_VERTEX_SHADER;
         }
-        if ( endsWith( progs[i], ".fs.glsl" ) ) {
+        if ( EndsWith( progs[i], ".ps.glsl" ) ) {
             type = GL_FRAGMENT_SHADER;
         }
         if ( EndsWith( progs[i], ".gs.glsl" ) ) {
@@ -60,7 +56,9 @@ bool GLSLProgram::Init( const std::vector<std::string> &progs ) {
         BloatFile( progs[i], contents );
 
         shader = glCreateShader( type );
-        glShaderSource( shader, 1, (const GLchar **)&contents.data(), NULL );
+
+        const GLchar *ds = contents.data();
+        glShaderSource( shader, 1, (const GLchar **)&ds, NULL );
         glCompileShader( shader );
 
         glGetShaderiv( shader, GL_COMPILE_STATUS, &compileStatus );

@@ -1,3 +1,14 @@
+
+#include <stdio.h>
+
+#include <GL/glew.h>
+#include <GL/gl.h>
+#include <GL/glu.h>
+
+#include "GLTexture.h"
+#include "Utils.h"
+#include "d3lib/Lib.h"
+
 void R_VerticalFlip( byte *data, int width, int height ) {
 	int		i, j;
 	int		temp;
@@ -37,6 +48,8 @@ static byte *R_LoadTGA( const std::string &filename, int &width,
 
     BloatFile( filename, contents );
 
+    fileSize = contents.size();
+
     buffer = (byte *)contents.data();
 
 	buf_p = buffer;
@@ -62,21 +75,23 @@ static byte *R_LoadTGA( const std::string &filename, int &width,
 	targa_header.attributes = *buf_p++;
 
 	if ( targa_header.image_type != 2 && targa_header.image_type != 10 && targa_header.image_type != 3 ) {
-		Error( "R_LoadTGA( %s ): Only type 2 (RGB), 3 (gray), and 10 (RGB) TGA images supported\n", name );
+		msg_failure( "R_LoadTGA( %s ): Only type 2 (RGB), 3 (gray), and 10 (RGB) TGA images supported\n", filename.c_str() );
 	}
 
 	if ( targa_header.colormap_type != 0 ) {
-		Error( "R_LoadTGA( %s ): colormaps not supported\n", name );
+		msg_failure( "R_LoadTGA( %s ): colormaps not supported\n", 
+                filename.c_str() );
 	}
 
 	if ( ( targa_header.pixel_size != 32 && targa_header.pixel_size != 24 ) && targa_header.image_type != 3 ) {
-		Error( "R_LoadTGA( %s ): Only 32 or 24 bit images supported (no colormaps)\n", name );
+		msg_failure( "R_LoadTGA( %s ): Only 32 or 24 bit images supported (no colormaps)\n", 
+                filename.c_str() );
 	}
 
 	if ( targa_header.image_type == 2 || targa_header.image_type == 3 ) {
 		numBytes = targa_header.width * targa_header.height * ( targa_header.pixel_size >> 3 );
 		if ( numBytes > fileSize - 18 - targa_header.id_length ) {
-			Error( "R_LoadTGA( %s ): incomplete file\n", name );
+			msg_failure( "R_LoadTGA( %s ): incomplete file\n", filename.c_str() );
 		}
 	}
 
@@ -88,6 +103,7 @@ static byte *R_LoadTGA( const std::string &filename, int &width,
 	height = rows;
 
 	targa_rgba = (byte *)malloc(numPixels*4);
+    memset( targa_rgba, 0, numPixels*4 );
 	pic = targa_rgba;
 
 	if ( targa_header.id_length != 0 ) {
@@ -136,8 +152,8 @@ static byte *R_LoadTGA( const std::string &filename, int &width,
 					*pixbuf++ = alphabyte;
 					break;
 				default:
-					Error( "LoadTGA( %s ): illegal pixel_size '%d'\n", 
-                            name, targa_header.pixel_size );
+					msg_failure( "LoadTGA( %s ): illegal pixel_size '%d'\n", 
+                            filename.c_str(), targa_header.pixel_size );
 					break;
 				}
 			}
@@ -171,8 +187,8 @@ static byte *R_LoadTGA( const std::string &filename, int &width,
 								alphabyte = *buf_p++;
 								break;
 						default:
-							Error( "LoadTGA( %s ): illegal pixel_size '%d'\n", 
-                                    name, targa_header.pixel_size );
+							msg_failure( "LoadTGA( %s ): illegal pixel_size '%d'\n", 
+                                    filename.c_str(), targa_header.pixel_size );
 							break;
 					}
 	
@@ -217,8 +233,8 @@ static byte *R_LoadTGA( const std::string &filename, int &width,
 									*pixbuf++ = alphabyte;
 									break;
 							default:
-								Error( "LoadTGA( %s ): illegal pixel_size '%d'\n", 
-                                        name, targa_header.pixel_size );
+								msg_failure( "LoadTGA( %s ): illegal pixel_size '%d'\n", 
+                                        filename.c_str(), targa_header.pixel_size );
 								break;
 						}
 						column++;
@@ -240,8 +256,10 @@ static byte *R_LoadTGA( const std::string &filename, int &width,
 	}
 
 	if ( (targa_header.attributes & (1<<5)) ) {			// image flp bit
-		R_VerticalFlip( *pic, *width, *height );
+		R_VerticalFlip( pic, width, height );
 	}
+
+    return pic;
 }
 
 #define	MAX_DIMENSION	4096
@@ -291,17 +309,18 @@ void R_ResampleTexture( const byte *in, byte *out, int inwidth, int inheight,
 			out_p[j*4+3] = (pix1[3] + pix2[3] + pix3[3] + pix4[3])>>2;
 		}
 	}
-
-	return out;
 }
 
 GLTexture::~GLTexture() {
-    glDeleteTextures( 1, &texture );
+    if ( IsOk() ) {
+        glDeleteTextures( 1, &m_texture );
+    }
 }
 
-bool GLTexture::Init( const std::string &name ) {
+bool GLTexture::Init( const std::string &name, int textureUnit ) {
     byte *pic, *picCopy;
-    int texture, width, height, format;
+    GLuint texture;
+    int width, height, format;
 
     format = GL_RGBA;
 
@@ -318,14 +337,17 @@ bool GLTexture::Init( const std::string &name ) {
         return false;
     }
 
-    picCopy = malloc( width * height * SizeOfFormat( format ) );
+    picCopy = (byte *)malloc( width * height * 4 );
 
-    glGenTextures( 1, &texture );
-    glBindTexture( GL_TEXTURE_2D, texture );
+    _CH(glActiveTexture( GL_TEXTURE0 + textureUnit ));
+    _CH(glGenTextures( 1, &texture ));
+    _CH(glBindTexture( GL_TEXTURE_2D, texture ));
+    _CH(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+    _CH(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
 
     int mipmap = 0;
     while ( width > 1 || height > 1 ) {
-        glTexImage2D( GL_TEXTURE_2D,
+        _CH(glTexImage2D( GL_TEXTURE_2D,
             mipmap,
             format,
             width,
@@ -333,7 +355,7 @@ bool GLTexture::Init( const std::string &name ) {
             0,
             format,
             GL_UNSIGNED_BYTE,
-            pic);
+            pic));
 
         int oldWidth, oldHeight;
 
@@ -348,7 +370,7 @@ bool GLTexture::Init( const std::string &name ) {
             height >>= 1;
         }
 
-        R_ResampleTexture( picCopy, pic, oldWidth, oldHeight, width, height );
+        R_ResampleTexture( pic, picCopy, oldWidth, oldHeight, width, height );
 
         std::swap( pic, picCopy );
 
@@ -359,13 +381,18 @@ bool GLTexture::Init( const std::string &name ) {
     free( picCopy );
 
     m_texture = texture;
+    m_loadOk = true;
+    m_textureUnit = textureUnit;
     return true;
 }
 
-void GLTexture::Bind( int textureUnit = 0 ) {
+void GLTexture::Bind( void ) {
     assert( IsOk() );
-
-    glActiveTexture( textureUnit );
-    glBindTexture( GL_TEXTURE_2D, m_texture );
+    _CH(glActiveTexture( GL_TEXTURE0 + m_textureUnit ));
+    _CH(glBindTexture( GL_TEXTURE_2D, m_texture ));
 }
 
+void GLTexture::Unbind( void ) {
+    _CH(glActiveTexture( GL_TEXTURE0 + m_textureUnit ));
+    _CH(glBindTexture( GL_TEXTURE_2D, 0 ));
+}
