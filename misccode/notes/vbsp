@@ -1,0 +1,34 @@
+(model aka "doom3")
+
+main:
+-> LoadBSPFile
+-> LoadMapFile
+-> ProcessModels
+   for each entity:
+   -> ProcessWorldModel
+   -> ProcessSubModel
+
+ProcessWorldModel:
+-> MakeBSPBrushlist() in blocks
+-> BlockTree()
+-> MakeTreePortals()
+-> MarkVisibleSides()
+-> FloodAreas()
+-> MakeFaces()
+-> FixTjuncs()
+-> WriteBSP()
+
+ProcessSubModel:
+-> MakeBSPBrushlist()
+-> MakeTreePortals()
+-> MarkVisibleSides()
+-> MakeFaces()
+-> FixTJuncs()
+-> WriteBSP()
+
+MakeBSPBrushlist:
+-> SplitBrush() on block
+-> tree = BrushBSP()
+
+BrushBSP:
+-> BuildTree_r()

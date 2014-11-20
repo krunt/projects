@@ -1,0 +1,16 @@
+
+RunVVis()
+-> LoadPortals()
+
+CalcVis()
+-> BasePortalVis() for each portal
+
+-> SortPortals()
+   -> sort portals by mightsee attribute
+
+-> PortalFlow()
+   -> RecursiveLeafFlow()
+
+CalcPAS()
+
+BuildClusterTable()

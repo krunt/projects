@@ -1,0 +1,249 @@
+renderer in materialsystem
+
+launcher in launcher/ 
+    - IEngineAPI *api = GetProcAddress("CreateInterface") for engine.dll, vgui2.dll, vguimatsurface.dll, materialsystem.dll
+    - api->Run()
+
+mainloop: (engine/sys_dll2.cpp)
+- if ( game->Init() && 
+       eng->Load() ) {
+    while (1) {
+        game->DispatchAllStoredGameMessages()
+        eng->Frame()
+    }
+  }
+
+eng::Load() -> 
+    Sys_InitGame()
+        Host_Init()
+            Init .. lot of init funcs of subsystems
+
+eng - is CEngine (g_Engine) in engine/sys_engine.cpp
+
+eng->Frame()
+-> g_HostState.FrameUpdate()
+    -> Host_RunFrame
+       -> _Host_RunFrame
+            
+_Host_RunFrame
+-> _Host_RunFrame_Input
+-> _Host_RunFrame_Client
+    -> CL_ReadPackets()
+        -> CL_ParseServerMessage()
+           -> CL_DispatchRegularMessage()
+            -> cl_parsefuncs[]() parse server to client messages here
+
+on gameevent receive
+-> listener->Receive() for each listener
+on entity receive
+-> entity->ReceiveMessage()
+on user message receive
+-> (usermessage->clienthook)()
+
+-> _Host_RunFrame_Render
+    -> HostUpdateScreen
+        -> V_RenderView
+            -> RenderView
+                -> ViewDrawScene()
+                -> DrawViewModels()
+                    -> for each ent -> drawModel() if ent->shouldDraw()
+                -> scene->DrawLights()
+                -> DoScreenSpaceBloom()
+
+DrawModel()
+-> C_BaseEntity::DrawModel() -> DrawBrushModel()
+    -> R_DrawBrushModel()
+
+orientation in materialSystem->SetViewMatrix()
+- 
+
+ViewDrawScene()
+-> render->ViewSetup3D
+-> 
+
+DrawModel(): (CModelRender::DrawModel)
+-> ComputeModelLod()
+    -> projecting model to screen, estimate height
+-> SetupBones()
+-> RenderModel()
+
+-> _Host_RunFrame_Sound
+-> _Host_RunFrame_Server
+    -> SV_Frame()
+        -> Process Cmds from clients
+            ProcessUsercmds()
+        -> SV_ReadPackets
+            -> Player->Think()
+        -> SV_SendClientMessages()
+        -> SV_Physics()
+           -> GameFrame()
+
+SV_SendClientMessages()
+-> TakeTickSnapshot()
+-> SV_SendClientDatagrams()
+    - SV_ComputeClientPacks()
+
+GameFrame()
+-> StartGameFrame()
+    -> rules->Think()
+-> Physics_RunThinkFunctions()
+    -> Physics_SimulateEntity(ent) for each ent
+        -> ent->PhysicsRunThink()
+-> ServiceEventQueue()
+    -> for each event
+        eventDstTarget->AcceptInput()
+        delete event
+-> EndGameFrame()
+
+on client every frame:
+OnRenderStart:
+-> SimulateEntities()
+-> PhysicsSimulate()
+-> ...
+-> engine->FireEvents()
+-> tempents->Update()
+-> Particles->Simulate()
+
+here is receiving props-logic
+engine->FireEvents()
+-> Unpacking through RecvTable_Decode()
+-> pCE->PostDataUpdate()
+
+Effects transmition
+effect registration on client
+via DECLARE_CLIENT_EFFECT(name, callback)
+and on server transmition via DispatchEffect(name)
+next
+client receives effect in PostDataUpdate()
+and submits model to viewmodels()
+rendering than draw all models from viewmodels
+
+R_StudioRenderModel()
+-> fill bodyparts[i] = R_StudioSetupModel()
+-> R_StudioRenderFinal()
+
+R_StudioRenderFinal()
+-> R_StudioDrawPoints() for each submodel from nbodypartcount
+
+R_StudioDrawPoints()
+-> R_StudioDrawMesh() for each mesh from submodel->meshes
+
+R_StudioDrawMesh()
+-> R_StudioDrawStaticMesh()
+-> R_StudioDrawDynamicMesh()
+
+R_StudioDrawStaticMesh()
+if ( software-lighting ){
+-> R_StudioSoftwareProcessMesh()
+-> R_StudioDrawGroupSWSkin()
+} 
+if ( flexed ) {
+    R_StudioProcessFlexed()
+    R_StudioDrawGroupSWSkin
+}
+
+R_StudioDrawDynamicMesh()
+-> if ( flex ) R_StudioFlexVerts()
+-> R_StudioSoftwareProcessMesh() or R_StudioProcessFlexedMesh()
+-> R_StudioDrawGroupSWSkin
+
+drawing in order:
+-> mesh:groups -> group:strips
+
+render-path:
+CSkyboxView::DrawInternal()
+-> BuildWorldRenderLists()
+-> BuildRenderableRenderLists()
+-> shadowmgr->ComputeShadowTextures()
+-> DrawWorld()
+-> DrawOpaqueRenderables()
+-> DrawTranslucentRenderables()
+-> DoEnginePostProcessing()
+
+BuildWorldRenderLists()
+-> R_BuildWorldLists()
+   -> R_RecursiveWorldNode()
+   -> draw leaf via R_DrawLeaf()
+   -> else draw tree node via R_DrawSurface()
+
+R_DrawSurface()
+-> AddSurfaceToTail(m_sortList, surf)
+
+R_DrawLeaf()
+-> R_AddSurface() for each leaf-marksurfaces
+
+DrawOpaqueRenderables() ( game/client/viewrender.cpp:3748)
+-> SetupBonesOnBaseAnimating()
+-> DrawOpaqueRenderables_DrawBrushModels()
+-> DrawOpaqueRenderables_Range()
+-> DrawOpaqueRenderables_DrawStaticProps()
+-> RopeManager()->DrawRenderCache()
+-> ParticleSystem->DrawRenderCache()
+
+DrawOpaqueRenderables_DrawStaticProps()
+-> DrawModelExStaticProp()
+
+DrawModelExStaticProp()
+-> DrawModelStaticProp()
+DrawModelStaticProp()
+-> R_StudioRenderModel()
+-> DrawDecal()
+-> DrawShadows()
+-> DrawFlashlightDecals()
+
+mat->DrawMesh()
+-> ShaderSystem()->DrawElements()
+
+OnRenderStart()
+-> InterpolateServerEntities()
+-> UpdateClientSideAnimations()
+...
+
+UpdateClientSideAnimations()
+-> FrameAdvance()
+
+InterpolateServerEntities():
+-> for each ent 
+    ent->Interp_UpdateInterpolationAmounts()
+        -> SetInterpolationAmount()
+            -> amount = value
+-> ProcessInterpolatedList()
+
+C_BaseEntity::Interpolate()
+-> BaseInterpolatePart1()
+   -> for each interpolated var 
+      var->Interpolate() - here is core interpolation code 
+        ( interpolatedvar.h: 988-1016)
+      extrapolation:
+        ( interpolatedvar.h: 979-1005)
+-> BaseInterpolatePart2()
+
+client sending moves via CL_Move()
+
+CL_Move():
+-> CL_SendMove()
+
+server receives via ProcessMessageMove
+CGameClient::ProcessMove(CLC_Move *msg)
+-> get from clients through IServerGameClients interface
+-> serverGameClients->ProcessUsercmds()
+    -> player->ProcessUsercmds()
+
+player packs commands in command contexts on receive
+and chooses some commands to run and some commands to roll over
+( game/server/player.cpp:3231-3269 - execution)
+-> for each cmd
+    PlayerRunCommand( cmd )
+    -> CPlayerMove()->RunCommand()
+
+snapshotting: reliable?
+temp-entities: unreliable
+string-tables: 
+game-events:                (broadcast)
+user-messages:              (unicast)
+entity-messages: unreliable
+
+CClientState: receive server - messages
+
+client messages on server via ClientMessageHandler
+server messages on client via ServerMessageHandler

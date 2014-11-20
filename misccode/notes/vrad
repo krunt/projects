@@ -1,0 +1,64 @@
+VRAD_Main()
+-> RunVRAD()
+
+RunVRAD()
+-> VRAD_LoadBSP()
+-> RadWorld_Go()
+
+VRAD_LoadBSP:
+-> Load_BSP()
+-> RadWorld_Start()
+
+RadWorld_Start()
+-> MakePatches() - 1 patch for each face
+-> SubdividePatches()
+-> CreateDirectLights()
+
+RadWorld_Go()
+-> InitMacroTexture()
+-> BuildFacesVisibleToLights()
+-> BuildFacelights(facenum) for each facenum
+-> PrecompLightmapOffsets()
+-> MakeAllScales() - visibility between patches
+-> BounceLight()
+-> FinalLightFace(facenum) for each facenum
+
+BuildFacesVisibleToLights:
+- gather all pvs in one place from all activelights-pvs
+- prepare bitmap<g_FacesVisibleToLights[index of bsp-leaf]> = 0|1
+
+BuildFacelights:
+- InitLightinfo(facenum)
+- CalcPoints()
+- ComputeIlluminationPointAndNormalsSSE(l,poses,normals)
+- GatherSamplesLightAt4Points(sampleInfo)
+- BuildPatchLights(facenum)
+
+CalcPoints:
+- BuildSamplesAndLuxels_DoFast()
+  fill samples and luxels arrays
+
+MakeAllScales:
+-> BuildVisMatrix()
+
+BuildVisMatrix()
+-> BuildVisLeafs() for each cluster
+-> BuildVisLeafs_Cluster()
+
+BuildVisLeafs_Cluster()
+-> BuildVisRow() -> testing visibility of patch-patch 
+                    and get results in RayTracingSingleResult*
+-> MakeScales() -> compute transfers
+
+BounceLight:
+-> GatherLight() for each patch
+-> CollectLight()
+
+GatherLight:
+-> compute addlight for each patch in addlight[j].light[0]
+
+CollectLight:
+-> pull received light from children
+
+VRAD_ComputeOtherLighting::StaticPropMgr::ComputeLighting()
+for each vertex compute direct and indirect lighting

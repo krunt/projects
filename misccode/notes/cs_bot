@@ -1,0 +1,12 @@
+
+CCSBot::Update()
+-> DoorCheck()
+
+-> if (threat)
+
+-> curState->Update()
+
+BotManager->StartFrame()
+-> bot->Upkeep()
+-> bot->Update()
+-> bot->UpdatePlayer()

@@ -1,0 +1,133 @@
+########################
+Server:
+########################
+
+------------
+To Clients:
+------------
+
+SV_Frame() ->  SV_CalcPings() -> SV_SendClientMessages() -> SV_SendClientSnapshot()
+
+SV_SendClientMessages():
+for each client SV_SendClientSnapshot()
+
+SV_SendClientSnapshot(client):
+-> SV_BuildClientSnapshot()
+    -> SV_AddEntToSnapshot() for each entity in client pvs
+-> SV_UpdateServerCommandsToClients() - send reliable commands to client
+-> SV_WriteSnapshotToClient()
+-> SV_WriteDownloadToClient()
+-> SV_SendMessageToClient(msg)
+
+SV_SendMessageToClient(msg)
+-> setup nextSnapshotTime
+-> TransmitMessage( msg );
+
+Snapshot rate to client is updated in SV_UserinfoChanged(client)
+
+------------
+From Clients:
+------------
+
+-> SV_Netchan_Process()
+-> SV_ExecuteClientMessage()
+   for cmd ( each client's cmd ) {
+    Client_chink()
+   }
+   SV_UserMove()
+   ClientEvents(client)
+   ClientTimerActions(client)
+
+SV_UserMove():
+-> SV_ClientThink() -> ClientThink_Real()
+
+ClientThink_Real()
+-> Pmove()
+-> ClientEvents()
+
+Pmove()
+-> PMoveSingle()
+   -> PM_WalkMove()
+   -> PM_Animate()
+   -> PM_Weapon()
+   -> PM_Footsteps()
+   -> PM_WaterEvents()
+
+
+########################
+Client:
+########################
+
+------------
+From Server:
+------------
+
+Com_Frame() -> CL_PacketEvent() -> CL_ParseServerMessage():
+-> CL_ParseCommandString()
+-> CL_ParseGameState()
+-> CL_ParseSnapshot()
+
+CL_ParseSnapshot:
+-> CL_ParsePacketEntities() (Update Entities)
+
+------------
+To Server:
+------------
+
+CL_Frame() -> CL_SendCmd() 
+
+CL_CreateNewCommands()
+if ( CL_ReadyToSendPacket() ) {
+    CL_WritePacket()
+}
+
+CL_CreateNewCommands:
+-> CL_CreateCmd()
+
+CL_CreateCmd(cmd):
+-> CL_CmdButtons(cmd)
+-> CL_KeyMove(cmd)
+-> CL_MouseMove(cmd)
+
+CL_WritePacket():
+-> send all reliable unaknowledged commands
+-> send packets with fields 
+  { realtime = cls.realtime, 
+    serverTime = oldCmd->serverTime, 
+    cmdNumber = cl.cmdNumber }
+
+    cls.realtime is updated every frame like ( cls.realtime += cls.frametime )
+
+
+
+------------------------
+prediction,interpolation
+------------------------
+
+CG_DrawActiveFrame()
+-> CG_ProcessSnapshots()
+-> CG_PredictPlayerState()
+-> CG_AddPacketEntities()
+
+CG_PredictPlayerState()
+
+CG_AddPacketEntities()
+   CG_CalcEntityLerpPositions()
+-> Interpolate all positions ( between cur-snap and next-snap )
+
+CG_ProcessSnapshots:
+  while ( !cg.nextSnap ) 
+    s = CG_ReadNextSnapshot();
+    CG_SetNextSnap(s)
+    if ( snapshot is good
+        cg.time >= cg.snap->serverTime 
+        && cg.time < cg.nextSnap->serverTime )
+     {
+     break;
+     }
+    CG_TransitionSnapshot()
+
+CG_TransitionSnapshot:
+-> CG_ExecuteNewServerCommands()
+-> CG_TransitionEntity()
+-> CG_TransitionPlayerState()

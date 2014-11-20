@@ -1,0 +1,192 @@
+UpdateClientSideAnimations()
+
+SendWeaponAnim(act)
+-> SetIdealActivity(act)
+    -> seq = SelectWeightedSequence()
+    -> FindTransitionSequence()
+    -> SetActivity()
+    -> SetSequence()
+    -> SendViewModelAnim()
+
+
+CBaseAnimating::GetBoneCache()
+-> CBaseAnimating::SetupBones()
+    if ( m_pIk )
+        -> m_pIk->Init()
+        -> GetSkeleton
+        -> CalculateIKLocks()
+        -> m_pIk->SolveDependencies()
+    else
+        -> GetSkeleton()
+
+    BuildMatricesWithBoneMerge()
+    Studio_BuildMatrices()
+
+GetSkeleton()
+-> InitPose(boneflags), where boneflags is one of BONE_USED_BY_{...}
+-> AccumulatePose()
+-> if ( m_pIk ) {
+        CalcAutoplaySequences(..m_pIk..);
+   } else {
+        CalcAutoplaySequences(..NULL..);
+   }
+-> CalcBoneAdj()
+
+AccumulatePose()
+-> AddSequenceLocks()
+-> if ( CalcPoseSingle() ) {
+   -> AddLocalLayers()
+   -> SlerpBones()
+   }
+-> if ( pIk ) { pIk->AddDependencies(); }
+-> AddSequenceLayers()
+-> if ( seq_ik) { seq_ik->SolveSequenceLocks }
+
+AddSequenceLocks()
+-> for iklock
+    BuldBoneChain(pos[], q[])
+
+AddLocalLayers()
+-> for layer ( local autolayers )
+    AccumulateLayer()
+
+AddSequenceLayers()
+-> for layer ( non-local autolayers )
+    AccumulateLayer()
+
+AccumulateLayer()
+-> AccumulatePose() for each needed layer
+
+SlerpBones()
+-> 
+
+CalcPoseSingle:
+ (mstudioseqdesc_t)
+->  localposeparameter( seq, 0, s0, t0 );
+->  localposeparameter( seq, 1, s1, t1 );
+-> if (s0 ~ 0) 
+      if (s1 ~ 0)
+        CalcAnimation(i0,i1)
+      else
+      if (s1 ~ 1)
+        CalcAnimation(i0,i1+1)
+      else
+        CalcAnimation(i0,i1)
+        CalcAnimation(i0,i1+1)
+        BlendBones()
+    /* same is for s0 ~ 1 */
+
+    if ( s0 !~ 0 && s0 != 1
+        && s1 !~ 0 && s1 !~ 1 )
+    {
+        if ( !anim_3wayblend ) {
+            CalcAnimation(i0,i1)
+            CalcAnimation(i0+1,i1)
+            BlendBones()
+    
+            CalcAnimation(i0,i1+1)
+            CalcAnimation(i0+1,i1+1)
+            BlendBones()
+        } else {
+            Calc3WayBlendIndicies();
+            ...
+        }
+    }
+
+CalcAnimation()
+-> for each bone
+    CalcBoneQuaternion()
+    CalcBonePosition()
+
+CalcBonePosition(s):
+-> ExtractAnimValue()
+
+CalcBoneQuaternion(s)
+-> 
+
+BlendBones()
+->
+
+StandardBlendingRules()
+-> GetPoseParameters()
+-> InitPose()
+-> AccumulatePose()
+-> MaintainSequenceTransitions()
+-> AccumulateLayers()
+-> CalcAutoplaySequences()
+-> CalcBoneAdj() from bone-controllers
+-> UnragdollBlend()
+
+GetPoseParameters(params[]) - trivial
+InitPose(pose) - trivial
+AccumulatePose(pose)
+
+C_BaseAnimating::SetupBones()
+-> StandardBlendingRules()
+-> UpdateIKLocks()
+-> ik->UpdateTargets()
+-> CalculateIKLocks()
+-> ik->SolveDependencies()
+-> BuildTransformations()
+
+BuildTransformations()
+-> concat bonetoworld with toview matrix
+
+UpdateIKLocks()
+-> for each target
+    target->UpdateOwner() (updating latching variables)
+
+CalculateIKLocks()
+-> find the ground or external attachment points need by ik
+
+UpdateClientSideAnimations()
+-> FrameAdvance()
+
+FrameAdvance()
+-> 
+
+SetupBonesOnBaseAnimating()
+-> SetupBones()
+
+Studio_LocalPoseParameter()
+-> from (poseParameter,iSequence) to (flSetting, index)
+
+Studio_SeqAnims()
+
+IKContext->AddDependencies()
+-> fills m_ikChainRule with rules and weight for each sequence
+
+IKContext->UpdateTargets() 
+consider rules, fill target.trace
+
+IKContext->SolveDependencies()
+-> compute chain results (interpolate 
+    between ideal position and actual position )
+-> Studio_SolveIK()
+-> SolveBone() for i in (1..3)
+
+Studio_SolveIK(b1,b2,b3)
+-> Studio_SolveIK( targetFoot, targetKneerDir )
+   -> cik.solve() ( cik - CIKSolver ) -> (pBoneToWorld[] matrices 
+        for thigh knee foot)
+
+SolveBone()
+-> derive local transform from world bone transform
+
+IKContext->AddAutoplayLocks()
+-> initialize m_ikLock[i] for i in (1..numIKAutoplayLocks())
+
+IKContext->SolveAutoplayLocks()
+-> for each lock
+    CIKContext->SolveLock(i) -> (pos[],q[]) of each bone
+
+-//-
+IKContext->AddSequenceLocks() 
+IKContext->SolveSequenceLocks()
+
+-//-
+IKContext->AddAllLocks() 
+IKContext->SolveAllLocks()
+
+CBaseAnimatingOverlay
+-> blending |< MAX_OVERLAYS| animations

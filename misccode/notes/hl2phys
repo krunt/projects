@@ -1,0 +1,21 @@
+movevars_shared.cpp sv_gravity=600
+
+PhysicsHook->LevelInitPreEntity()
+-> physenv = CraeteEnvironment()
+-> ...
+-> worldEntity = PhysCreateWorld()
+
+PhysicsHook->FrameUpdatePostEntityThink()
+-> PhysFrame()
+
+PhysFrame()
+-> PhysicsSimulate()
+-> for each active
+    -> VPhysicsUpdate()
+-> for each shadow-entity
+    -> VPhysicsShadowUpdate()
+
+touch events throu
+
+VPhysicsCollision()
+VPhysicsFriction() are through CCollisionEvent

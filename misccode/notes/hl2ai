@@ -1,0 +1,52 @@
+
+RunAI:
+-> GatherConditions()
+-> PreScheduleThink()
+-> MaintainSchedule()
+-> PostScheduleThink()
+
+GatherConditions:
+-> PerformSensing()
+-> ChooseEnemy()
+-> CheckAmmo()
+-> CheckSquad()
+
+PerformSensing:
+-> Look(dist)
+-> Listen
+
+Look:
+-> LookForHighPriorityEntities(dist)
+-> LookForNPCs(dist)
+-> LookForObjects(dist)
+
+Listen:
+-> CanHearSound() for sound in active_list
+
+MaintainSchedule:
+-> ...
+    GetNewSchedule()
+-> t=GetTask()
+-> StartTask(t)
+-> for (i = 0; i < 8; ++i) {
+   -> RunTask(t)
+   }
+
+StartTask()
+-> CAI_BaseNPC::StartTask() if no task found
+-> switch ( case taskid: <actions>; }
+
+GetNewSchedule()
+-> SelectSchedule()
+   -> SelectIdleSchedule()
+   -> SelectAlertSchedule()
+   -> SelectCombatSchedule()
+   -> SelectDeadSchedule()
+   -> SelectScriptSchedule()
+
+-> MaintainActivity()
+
+CAI_MoveProbe
+CAI_Motor
+CAI_Navigator
+CAI_Pathfinder

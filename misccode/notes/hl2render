@@ -1,0 +1,111 @@
+
+
+shader in constructor
+shaderlist->AddToTail( me );
+
+Material Rendering:
+-> renderContext->Bind( material )
+   -> materail->Precache()
+-> mesh->draw()
+
+Material::Precache()
+-> if (Precached()) return;
+-> PrecacheVars()
+-> shaderSystem->InitShaderInstance()
+   -> shader->InitShaderInstance()
+
+Material::PrecacheVars()
+-> InitializeShader()
+-> InitializeMaterialProxy()
+   -> factory->CreateProxy()
+
+InitializeShader()
+-> ParseMaterialVars()
+-> InitShaderParameters()
+   -> shader->InitShaderParams()
+-> if FallbackShader() is non-null, 
+   replace it with ours shader
+
+Mesh Rendering:
+meshdx->DrawMesh()
+    -> shaderapi->DrawMesh()
+        -> material->DrawMesh()
+            -> ShaderSystem()->DrawElements()
+
+R_DrawPortals()
+-> draw portal bounds with debugging material (debug/debugportals)
+
+DrawWorldAndEntities()
+-> just setup view via AddViewToScene()
+
+pack entities in rendergroups via CClientLeafSystem->BuildRenderablesList()
+-> CollateRenderablesInLeaf()
+-> SortEntities() for translucent entities
+-> DrawRenderablesInList()
+-> DrawRenderablesInlist()
+
+DrawRenderablesInlist
+-> for each renderable
+    renderable->DrawModel()
+
+DrawWorld()
+-> Shader_WorldEnd( world-render-list )
+  -> Shader_WorldShadowDepthFill() if _SHADOWDEPTH
+  -> R_DrawSkyBox() if CLIPSKYBOX
+  -> Shader_WorldZFill if rejecting z
+  -> Shader_DrawDispChain()
+  -> Shader_DrawChains()
+  -> RenderFlashlights()
+  -> RenderOverlays()
+  -> DecalSurfaceDraw()
+  -> DrawFlashlightDecals()
+  -> RenderShadows()
+
+R_PushDLights() each frame
+-> R_MarkLists()
+   -> R_TryLightMarkSurface()
+    if (surface receives dlight)
+        MSurf_Flags(surf_id) |= SURFDRAW_HASDLIGHT;
+
+crender->BuildWorldLists()
+-> update lightmaps begin
+    -> materials->BeginUpdateLightmaps()
+-> R_BuildWorldLists()
+-> update lightmaps end
+    -> materials->EndUpdateLightmaps()
+
+crender->DrawWorldLists()
+-> R_DrawWorldLists()
+   -> Shader_WorldEnd()
+
+HostUpdateScreen()
+-> V_RenderView
+    -> view->Render( rect ) (CViewRender::Render())
+       
+Render() (client/viewrender.cpp)
+-> SetMainView()
+-> RenderView()
+-> PostRender()
+
+SetMainView()
+-> setup vectors and origin
+
+RenderView()
+-> render->SceneBegin()
+-> SetupMain3DView() 
+    -> Push3DView()
+       -> build world-to-view, world-to-projection, view-matrix
+    -> R_SceneBegin()
+    -> occlusion->SetView()
+-> ViewDrawScene()
+-> render->DrawLights()
+-> RenderPlayerSprites()
+-> DrawViewModels()
+-> PerformScreenOverlay()
+-> PerformScreenSpaceEffects()
+
+ViewDrawScene()
+-> SetupCurrentView()
+-> DrawWorldAndEntities()
+-> clienteffects->DrawEffects()
+

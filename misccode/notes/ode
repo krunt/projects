@@ -1,0 +1,39 @@
+Stage0_Bodies:
+- filling bodies m_invI
+- filling body->facc
+
+Stage0_Joints:
+- calling getInfo1() for each joint
+- filling m and mfb
+
+Stage1:
+- filling mindex - array of joint offsets 
+- filling findex - for dependent constraints
+- adding rhs_tmp
+
+Stage2a:
+- calling joint->getInfo2() filling joint->info
+- initialiing rhs_row and cfm_row and 
+    rhs - c
+    cfm - cfm
+    m_jb - index of bodies for rhs part
+
+Stage2b:
+- rhs_tmp <- -(v/h + invM*fe)
+  h - step_size, fe - external force
+
+Stage2c:
+- Jrhsi = J*rhs_tmp
+- rhs <- J * (-v/h + invM*fe)
+
+Stage3:
+- SOR_LCP
+- dxStepBody for each body
+
+SOR_LCP:
+- compute invM * J
+- Ad - w/(sum+cfm)
+- b *= Ad
+- J *= Ad
+
+- c - error correction term for every joint
