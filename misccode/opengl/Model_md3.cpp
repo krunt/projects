@@ -2,6 +2,10 @@
 #include "d3lib/Lib.h"
 #include "Model_md3.h"
 
+#include "Render.h"
+
+#include "Utils.h"
+
 #define	LL(x) x=LittleLong(x)
 
 void GLRenderModelMD3::Spawn( void ) {
@@ -24,7 +28,7 @@ void GLRenderModelMD3::Precache( void )
 	md3Tag_t			*tag;
 	int					version;
 	int					size;
-        const byte *md3;
+        md3Header_t *md3;
         std::string buffer;
         surf_t gsurf;
 
@@ -43,7 +47,7 @@ void GLRenderModelMD3::Precache( void )
 
 	size = LittleLong(pinmodel->ofsEnd);
 
-        md3 = static_cast<const byte *>(buffer.data());
+        md3 = reinterpret_cast<md3Header_t *>(const_cast<char *>(buffer.data()));
 
         LL(md3->ident);
         LL(md3->version);
@@ -56,10 +60,8 @@ void GLRenderModelMD3::Precache( void )
         LL(md3->ofsEnd);
 
 	if ( md3->numFrames < 1 ) {
-		common->Warning( 
                 msg_warning( "InitFromFile: %s has no frames", 
                     m_fileName.c_str() );
-		fileSystem->FreeFile( buffer );
 		return;
 	}
     
@@ -129,13 +131,15 @@ void GLRenderModelMD3::Precache( void )
 		}
 
         // register the shaders
+        /*
         shader = (md3Shader_t *) ( (byte *)surf + surf->ofsShaders );
         for ( j = 0 ; j < surf->numShaders ; j++, shader++ ) {
-            if ( !shader->shader->Init( shader->name ) ) {
-                msg_failure0( "shader with name `%s' failed to initialize\n",
+            if ( !shader->shader.Init( shader->name ) ) {
+                msg_failure( "shader with name `%s' failed to initialize\n",
                        shader->name );
             }
         }
+        */
 
 		// swap all the triangles
 		tri = (md3Triangle_t *) ( (byte *)surf + surf->ofsTriangles );
@@ -203,7 +207,7 @@ void GLRenderModelMD3::Think( int ms ) {
 }
 
 void GLRenderModelMD3::Render( void ) {
-    gsurf_t surf;
+    glsurf_t surf;
 
     surf.m_modelMatrix = idMat4( m_axis, m_pos );
     surf.m_surf = m_surf;

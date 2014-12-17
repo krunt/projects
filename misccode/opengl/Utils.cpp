@@ -4,10 +4,6 @@
 
 #include "Utils.h"
 
-#include <GL/glew.h>
-#include <GL/gl.h>
-#include <GL/glu.h>
-
 bool EndsWith( const std::string &what, const std::string &suffix ) {
     if ( suffix.size() >= what.size() ) {
         return false;
@@ -26,6 +22,8 @@ bool IsPowerOf2( int v ) {
 }
 
 unsigned short LittleShort ( int b ) { return b; }
+unsigned int LittleLong( int b ) { return b; }
+float LittleFloat( float b ) { return b; }
 
 void checkError() {
     int err, anyErr = 0;

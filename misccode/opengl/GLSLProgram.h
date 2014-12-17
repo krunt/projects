@@ -1,9 +1,8 @@
 #ifndef GLSLPROGRAM__H_
 #define GLSLPROGRAM__H_
 
-#include <string>
-#include <vector>
 #include "d3lib/Lib.h"
+#include "GLLight.h"
 
 class GLSLProgram {
 public:
@@ -37,4 +36,4 @@ private:
     std::map<std::string, BufIndexPair> m_uniformMap;
 };
 
-#endif
+#endif /* GLSLPROGRAM__H_ */

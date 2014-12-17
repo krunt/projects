@@ -1,10 +1,6 @@
 
 #include <stdio.h>
 
-#include <GL/glew.h>
-#include <GL/gl.h>
-#include <GL/glu.h>
-
 #include "GLTexture.h"
 #include "Utils.h"
 #include "d3lib/Lib.h"

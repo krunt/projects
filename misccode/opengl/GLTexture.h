@@ -1,8 +1,12 @@
 #ifndef TEXTURE__H_
 #define TEXTURE__H_
 
-#include <string>
 #include "d3lib/Lib.h"
+
+#include <GL/glew.h>
+#include <GL/glext.h>
+#include <GL/gl.h>
+#include <GL/glu.h>
 
 class GLTexture {
 public:

@@ -3,10 +3,12 @@
 
 #include "d3lib/Lib.h"
 
-class GLLight { 
+#include "Common.h"
+
+class GLLight {
 public:
     GLLight( const std::string &name );
-    virtual void Pack( byte *buf, int *offsets, int count ) const = 0;
+    virtual void Pack( byte *buf, const std::vector<GLint> &offsets ) const = 0;
 
     std::string GetName() const { return m_name; }
 
@@ -17,7 +19,7 @@ private:
 class GLDirectionLight : public GLLight {
 public:
     GLDirectionLight( const idVec3 &dir );
-    virtual void Pack( byte *buf, int *offsets ) const;
+    virtual void Pack( byte *buf, const std::vector<GLint> &offsets ) const;
 
 private:
     idVec3 m_dir;
@@ -26,7 +28,7 @@ private:
 class GLPointLight : public GLLight {
 public:
     GLPointLight( const idVec3 &dir );
-    virtual void Pack( byte *buf, int *offsets ) const;
+    virtual void Pack( byte *buf, const std::vector<GLint> &offsets ) const;
 
 private:
     idVec3 m_pos;
@@ -36,12 +38,12 @@ private:
 
 class GLSpotLight : public GLLight {
 public:
-    GLPointLight( const idVec3 &dir );
-    virtual void Pack( byte *buf, int *offsets ) const;
+    GLSpotLight( const idVec3 &dir );
+    virtual void Pack( byte *buf, const std::vector<GLint> &offsets ) const;
 
 private:
     idVec3 m_pos;
-    idVec  m_dir;
+    idVec3  m_dir;
     float  m_range;
     float  m_atten;
 };

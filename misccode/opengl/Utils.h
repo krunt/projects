@@ -1,9 +1,7 @@
 #ifndef UTILS__H_
 #define UTILS__H_
 
-#include <stdio.h>
-#include <string>
-#include "d3lib/Lib.h"
+#include "Common.h"
 
 bool EndsWith( const std::string &what, const std::string &suffix );
 void BloatFile( const std::string &filename, std::string &contents );

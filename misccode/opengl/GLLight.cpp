@@ -14,7 +14,7 @@ void GLDirectionLight::Pack( byte *buf, const std::vector<GLint> &offsets ) cons
 }
 
 void GLPointLight::Pack( byte *buf, const std::vector<GLint> &offsets ) const {
-    PackHelper( buf + offsets[0], m_dir );
+    PackHelper( buf + offsets[0], m_pos );
     PackHelper( buf + offsets[1], m_range );
     PackHelper( buf + offsets[2], m_atten );
 }
@@ -27,16 +27,17 @@ void GLSpotLight::Pack( byte *buf, const std::vector<GLint> &offsets ) const {
 }
 
 static void *PackHelper( byte *data, float v ) {
-    float *p = data; *p++ = v;
+    float *p = (float *)data; *p++ = v;
     return p;
 }
 
 static void *PackHelper( byte *data, const idVec3 &vec ) {
-    float *p = data; *p++ = vec[0]; *p++ = vec[1]; *p++ = vec[2];
+    float *p = (float *)data; *p++ = vec[0]; *p++ = vec[1]; *p++ = vec[2];
     return p;
 }
 
 static void *PackHelper( byte *data, const idVec4 &vec ) {
-    float *p = data; *p++ = vec[0]; *p++ = vec[1]; *p++ = vec[2]; *p++ = vec[3];
+    float *p = (float *)data; 
+    *p++ = vec[0]; *p++ = vec[1]; *p++ = vec[2]; *p++ = vec[3];
     return p;
 }

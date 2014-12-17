@@ -13,4 +13,4 @@ box: $(object_files)
 	$(compiler) $(flags) -c $<	
 
 clean:
-	rm -f $(object_files)
+	rm -f $(object_files); rm box

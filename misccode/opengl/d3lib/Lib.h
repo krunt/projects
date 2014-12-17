@@ -29,10 +29,15 @@ If you have questions concerning this license or the applicable additional terms
 #ifndef __LIB_H__
 #define __LIB_H__
 
+#include <stdio.h>
 #include <assert.h>
-#include <string.h>
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
+
+#include <map>
+#include <string>
+#include <vector>
 
 /*
 ===============================================================================
@@ -150,6 +155,5 @@ template<class T> ID_INLINE T	Min( T x, T y ) { return ( x < y ) ? x : y; }
 #include "Vector.h"
 #include "Matrix.h"
 #include "Rotation.h"
-#include "Angles.h"
 
 #endif	/* !__LIB_H__ */

@@ -2,6 +2,10 @@
 #ifndef MODEL_MD3_H__
 #define MODEL_MD3_H__
 
+#include "GLTexture.h"
+#include "MyEntity.h"
+#include "Common.h"
+
 #define MD3_IDENT			(('3'<<24)+('P'<<16)+('D'<<8)+'I')
 #define MD3_VERSION			15
 
