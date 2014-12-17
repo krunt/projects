@@ -10,6 +10,8 @@
 
 #include "Utils.h"
 
+#include "Model_md3.h"
+
 #include "GLSLProgram.h"
 #include "GLTexture.h"
 
@@ -31,6 +33,8 @@ struct material_t {
 };
 
 struct __attribute__((packed)) drawVert_t {
+    drawVert_t() {}
+
     drawVert_t( const idVec3 &p, const idVec2 &t )
     {
         VectorCopy( p, m_pos );
@@ -540,7 +544,8 @@ static void ProcessEvents( void )
 
     const float stepSize = 1.0f;
     const float angleStepSize = 0.2f; // degrees
-    const float angleKeyStepSize = DEG2RAD(22.5f); // degrees
+    const float angleDegrees = 22.5f;
+    const float angleKeyStepSize = DEG2RAD(angleDegrees); // degrees
 
     /* Grab all the events off the queue. */
     while( SDL_PollEvent( &event ) ) {
@@ -583,6 +588,18 @@ static void ProcessEvents( void )
             };
             break;
 
+        case SDL_MOUSEBUTTONDOWN:
+            switch ( event.button ) {
+            case SDL_BUTTON_WHEELUP:
+                v.m_pos += 0.25 * stepSize * v.m_axis[0];
+            break;
+
+            case SDL_BUTTON_WHEELDOWN:
+                v.m_pos -= 0.25 * stepSize * v.m_axis[0];
+            break;
+            };
+            break;
+
         case SDL_MOUSEMOTION: {
             if ( lastMousePos.m_x == lastMousePos.m_y && lastMousePos.m_y == 0 ) {
                 lastMousePos.m_x = event.motion.x;
@@ -596,16 +613,11 @@ static void ProcessEvents( void )
             float xFrac = (float)deltaX / (float)v.m_width;
             float yFrac = (float)deltaY / (float)v.m_height;
 
-            float alphaX = DEG2RAD( xFrac * angleStepSize );
-            float alphaY = DEG2RAD( yFrac * angleStepSize );
+            float alphaX = DEG2RAD( xFrac * angleDegrees );
+            float alphaY = DEG2RAD( yFrac * angleDegrees );
 
-            idAngles angles( v.m_axis[0] );
-
-            angles.yaw += -alphaX;
-            angles.pitch += alphaY;
-
-            v.m_axis = angles.ToMat3();
-
+            v.m_axis = GetRotationOY( alphaY ) 
+                * GetRotationOZ( alphaX ) * v.m_axis;
             break;
         }
 
@@ -780,9 +792,11 @@ int main() {
     lightPos = idVec4( -50, 50, 50, 1 );
     lightDir = idVec4( 0, 0, 0, 1 ) - lightPos;
 
+    /*
     GLDirectionLight light( 
             ToWorld( lightPos ), ToWorld( lightDir ) );
     gl_render.AddLight( &light );
+    */
 
     MyQuad quad;
     gl_game.AddEntity( quad );
