@@ -29,12 +29,16 @@ private:
     std::vector<glsurf_t> m_surfs;
     std::vector<GLLight *> m_lights;
 
+    std::map<std::string, GLTexture *> m_textureCache;
+
     idVec4 m_eye; /* eye-position */
 
     GLTexture m_whiteTexture;
     GLTexture m_logoTexture;
+    GLTextureCube m_skyTexture;
 
     GLSLProgram m_shaderProgram;
+    GLSLProgram m_skyProgram;
 
     GLuint m_modelViewProjLocation;
 

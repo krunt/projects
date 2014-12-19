@@ -112,8 +112,8 @@ typedef struct md3Header_s {
 
 class GLRenderModelMD3 : public MyEntity {
 public:
-    GLRenderModelMD3( const char *filename )
-        : m_fileName( filename )
+    GLRenderModelMD3( const char *filename, const char *textureName )
+        : m_fileName( filename ), m_textureName( textureName )
     {}
 
     void Spawn( void );
@@ -123,6 +123,7 @@ public:
 
 private:
     std::string m_fileName;
+    std::string m_textureName;
     cached_surf_t m_surf;
 };
 

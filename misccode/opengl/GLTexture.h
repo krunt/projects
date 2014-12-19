@@ -11,21 +11,31 @@
 class GLTexture {
 public:
     GLTexture() {}
-    ~GLTexture();
+    virtual ~GLTexture();
 
-    bool Init( const std::string &name, int textureUnit = 0 );
+    virtual bool Init( const std::string &name, int textureUnit = 0 );
     bool Init( byte *data, int width, int height, 
             int format, int textureUnit = 0 );
 
-    void Bind( void );
-    void Unbind( void );
+    virtual void Bind( void );
+    virtual void Unbind( void );
 
     bool IsOk() const { return m_loadOk; }
 
-private:
+protected:
     GLuint m_texture;
     int    m_loadOk;
     int    m_textureUnit;
+};
+
+class GLTextureCube: public GLTexture {
+public:
+    GLTextureCube() {}
+
+    virtual bool Init( const std::string &name, int textureUnit = 0 );
+
+    virtual void Bind( void );
+    virtual void Unbind( void );
 };
 
 #endif

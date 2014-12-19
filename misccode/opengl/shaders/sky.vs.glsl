@@ -15,9 +15,13 @@ uniform vec3 eye_pos;
  
 void main(void) 
 { 
+ vec4 worldPosition;
+
+ worldPosition = model_matrix * vec4( position, 1.0f );
+
  gl_Position = mvp_matrix * vec4( position, 1.0f ); 
 
  vs_out.texcoord = texcoord; 
  vs_out.normal = normal; 
- vs_out.position = position;
+ vs_out.position = normalize( worldPosition.xyz - eye_pos.xyz );
 } 

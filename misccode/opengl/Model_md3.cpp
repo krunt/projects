@@ -32,7 +32,7 @@ void GLRenderModelMD3::Precache( void )
         std::string buffer;
         surf_t gsurf;
 
-        gsurf.m_matName = "white";
+        gsurf.m_matName = m_textureName;
 
         BloatFile( m_fileName, buffer );
 
@@ -58,6 +58,8 @@ void GLRenderModelMD3::Precache( void )
         LL(md3->ofsTags);
         LL(md3->ofsSurfaces);
         LL(md3->ofsEnd);
+
+        fprintf( stderr, "frames=%d, surfaces=%d\n", md3->numFrames, md3->numSurfaces );
 
 	if ( md3->numFrames < 1 ) {
                 msg_warning( "InitFromFile: %s has no frames", 
@@ -131,15 +133,16 @@ void GLRenderModelMD3::Precache( void )
 		}
 
         // register the shaders
-        /*
         shader = (md3Shader_t *) ( (byte *)surf + surf->ofsShaders );
         for ( j = 0 ; j < surf->numShaders ; j++, shader++ ) {
+            /*
             if ( !shader->shader.Init( shader->name ) ) {
                 msg_failure( "shader with name `%s' failed to initialize\n",
                        shader->name );
             }
+            */
+            printf( "=`%s'\n", shader->name );
         }
-        */
 
 		// swap all the triangles
 		tri = (md3Triangle_t *) ( (byte *)surf + surf->ofsTriangles );
@@ -177,12 +180,19 @@ void GLRenderModelMD3::Precache( void )
         st = (md3St_t *) ( (byte *)surf + surf->ofsSt );
         xyz = (md3XyzNormal_t *) ( (byte *)surf + surf->ofsXyzNormals );
         for ( j = 0 ; j < surf->numVerts ; j++, xyz++, st++ )  {
-            gsurf.m_verts[j].m_pos[0] = xyz->xyz[0];
-            gsurf.m_verts[j].m_pos[1] = xyz->xyz[1];
-            gsurf.m_verts[j].m_pos[2] = xyz->xyz[2];
+            gsurf.m_verts[j].m_pos[0] = (float)xyz->xyz[0] / 64.f;
+            gsurf.m_verts[j].m_pos[1] = (float)xyz->xyz[1] / 64.f;
+            gsurf.m_verts[j].m_pos[2] = (float)xyz->xyz[2] / 64.f;
 
             gsurf.m_verts[j].m_tex[0] = st->st[0];
             gsurf.m_verts[j].m_tex[1] = st->st[1];
+
+            /*
+            fprintf(stderr, "=%f, %f, %f\n",
+                gsurf.m_verts[j].m_pos[0],
+                gsurf.m_verts[j].m_pos[1],
+                gsurf.m_verts[j].m_pos[2] );
+                */
 
             float lat, lon;
             lat = ( xyz->normal >> 8 )  * 2 * idMath::PI / 255.f;

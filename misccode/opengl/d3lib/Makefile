@@ -11,5 +11,8 @@ idlib: $(object_files)
 %.o: %.cpp
 	$(compiler) -c $<	
 
+install:
+	cp libidlib.so /usr/lib/
+
 clean:
 	rm -f $(object_files)

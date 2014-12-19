@@ -9,8 +9,10 @@
 #include <GL/glu.h>
 
 class GLTexture;
+class GLSLProgram;
 struct material_t {
     GLTexture *m_matPtr;
+    GLSLProgram *m_matProgram;
 };
 
 struct __attribute__((packed)) drawVert_t {
