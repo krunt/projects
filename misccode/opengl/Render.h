@@ -1,51 +1,46 @@
 #ifndef MYRENDER__H_
 #define MYRENDER__H_
 
-#include "Common.h"
-#include "GLLight.h"
-#include "GLSLProgram.h"
-#include "GLTexture.h"
-
-class MyRender {
+class MyRenderBase {
 public:
     void Init( void );
     void Render( const playerView_t &view );
-    void CacheSurface( const surf_t &s, cached_surf_t &cached );
+    virtual std::shared_ptr<gsurface_t> CacheSurface( const surf_t &s );
     void AddSurface( const glsurf_t &s ) {
         m_surfs.push_back( s );
-    }
-    void AddLight( const GLLight &lt ) {
-        //m_lights.push_back( &lt );
     }
     void Shutdown( void );
 
 private:
+    virtual void OnPreRender( const playerView_t &view );
+    virtual void RenderSurface( const std::shared_ptr<gsurface_t> &surf ) = 0;
+    virtual void OnPostRender( const playerView_t &view );
+
     void SetupViewMatrix( const playerView_t &view );
     void SetupProjectionMatrix( const playerView_t &view );
-    void CreateStandardShaders( void );
-    void CreateShaderProgram( void );
-    void RenderSurface( const glsurf_t &surf );
 
-    std::vector<glsurf_t> m_surfs;
-    std::vector<GLLight *> m_lights;
+    bool CreateStandardShaders( void );
 
-    std::map<std::string, GLTexture *> m_textureCache;
+    virtual bool CreateShaderPrograms( void ) = 0;
+
+
+protected:
+    std::shared_ptr<GTexture> m_whiteTexture;
+    std::shared_ptr<GTexture> m_skyTexture;
+
+    std::shared_ptr<GpuProgram> m_shaderProgram;
+    std::shared_ptr<GpuProgram> m_skyProgram;
+
+    material_t m_whiteMaterial;
+    material_t m_skyMaterial;
 
     idVec4 m_eye; /* eye-position */
-
-    GLTexture m_whiteTexture;
-    GLTexture m_logoTexture;
-    GLTextureCube m_skyTexture;
-
-    GLSLProgram m_shaderProgram;
-    GLSLProgram m_skyProgram;
-
-    GLuint m_modelViewProjLocation;
-
     idMat4 m_viewMatrix;
     idMat4 m_projectionMatrix;
-};
 
-extern MyRender gl_render;
+    std::vector<glsurf_t> m_surfs;
+
+    std::map<std::string, std::shared_ptr<material_t>> m_materialCache;
+};
 
 #endif /* MYRENDER__H_ */

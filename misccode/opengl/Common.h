@@ -3,17 +3,15 @@
 
 #include "d3lib/Lib.h"
 
-#include <GL/glew.h>
-#include <GL/glext.h>
-#include <GL/gl.h>
-#include <GL/glu.h>
+#ifdef WINDOWS
 
-class GLTexture;
-class GLSLProgram;
-struct material_t {
-    GLTexture *m_matPtr;
-    GLSLProgram *m_matProgram;
-};
+#error "windows-version is not yet implemented"
+
+#else
+
+#include "opengl/GLCommon.h"
+
+#endif
 
 struct __attribute__((packed)) drawVert_t {
     drawVert_t() {}
@@ -43,20 +41,13 @@ struct __attribute__((packed)) drawVert_t {
 
 struct surf_t {
     std::vector<drawVert_t> m_verts;
-    std::vector<GLushort> m_indices;
+    std::vector<int> m_indices;
     std::string m_matName;
-};
-
-struct cached_surf_t {
-    GLuint m_vao;
-    int m_numIndices;
-    int m_indexBuffer;
-    material_t m_material;
 };
 
 struct glsurf_t {
     idMat4 m_modelMatrix;
-    cached_surf_t m_surf;
+    gsurface_t m_surf;
 };
 
 struct playerView_t {
@@ -67,6 +58,11 @@ struct playerView_t {
 
     float m_znear, m_zfar;
     int m_width, m_height;
+};
+
+struct material_t {
+    std::shared_ptr<GTexture> m_texture;
+    std::shared_ptr<GpuProgram> m_program;
 };
 
 #endif /* COMMON__H_ */
