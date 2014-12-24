@@ -9,6 +9,7 @@ public:
     void AddSurface( const glsurf_t &s ) {
         m_surfs.push_back( s );
     }
+    virtual void FlushFrame() = 0;
     void Shutdown( void );
 
 private:

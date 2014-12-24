@@ -113,5 +113,7 @@ void MyRenderBase::Render( const playerView_t &view ) {
     OnPostRender();
 
     m_surfs.clear();
+
+    FlushFrame();
 }
 

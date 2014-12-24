@@ -134,7 +134,5 @@ void LinuxApplication::Tick(  int ms ) {
 
     gl_game.Render();
     gl_render.Render( gl_camera.GetPlayerView() );
-
-    SDL_GL_SwapBuffers( );
 }
 

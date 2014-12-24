@@ -99,6 +99,10 @@ void MyRenderGL::OnPreRender() {
 }
 
 
+void MyRenderGL::FlushFrame() {
+    SDL_GL_SwapBuffers();
+}
+
 void MyRenderGL::RenderSurface( const std::shared_ptr<gsurface_t> &surf ) {
     idmat4 mvpMatrix;
 

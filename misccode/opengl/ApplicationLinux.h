@@ -1,3 +1,5 @@
+#ifndef LINUX_APPLICATION__H_
+#define LINUX_APPLICATION__H_
 
 class LinuxApplication: public Application {
 public:
@@ -8,3 +10,5 @@ public:
 
     void PumpMessages();
 };
+
+#endif /* LINUX_APPLICATION__H_ */
