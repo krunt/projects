@@ -1,13 +1,14 @@
 #version 410 core 
 
-#define FUNCTABLE_SIZE 1024
+//#define FUNCTABLE_SIZE 1024
+#define FUNCTABLE_SIZE 2
 #define FUNCTABLE_MASK FUNCTABLE_SIZE-1
 
-float sinTable[FUNCTABLE_SIZE] = {};
-float triangleTable[FUNCTABLE_SIZE] = {};
-float squareTable[FUNCTABLE_SIZE] = {};
-float sawtoothTable[FUNCTABLE_SIZE] = {};
-float noiseTable[FUNCTABLE_SIZE] = {};
+float sinTable[FUNCTABLE_SIZE] = float[FUNCTABLE_SIZE]( 1, 2 );
+float triangleTable[FUNCTABLE_SIZE] = float[FUNCTABLE_SIZE]( 1, 2 );
+float squareTable[FUNCTABLE_SIZE] = float[FUNCTABLE_SIZE]( 1, 2 );
+float sawtoothTable[FUNCTABLE_SIZE] = float[FUNCTABLE_SIZE]( 1, 2 );
+float noiseTable[FUNCTABLE_SIZE] = float[FUNCTABLE_SIZE]( 1, 2 );
 
 #define GF_NONE 0
 #define GF_SIN  1
@@ -83,6 +84,7 @@ in VS_OUT
  vec2 texcoord; 
 } fs_in; 
 
+out vec4 shaderOutColor; 
 
 struct WaveForm_t {
     int m_type;
@@ -123,7 +125,7 @@ struct TexBundle_t {
 
     int m_tcGenMod;
     int m_numTexMods;
-    TexModInfo_t m_texMods[8];
+    TexModInfo_t m_texMods[4];
 };
 
 struct ShaderStage_t {
@@ -141,17 +143,23 @@ struct ShaderStage_t {
 };
 
 #define MAX_SHADER_STAGES 8
-#define MAX_SAMPLERS 8
+#define MAX_SAMPLERS 30
 
+// uniforms begin
+uniform mat4 mvp_matrix; 
+uniform mat4 model_matrix; 
+uniform vec3 eye_pos;
 uniform vec4 lightDir;
-
 uniform float time;
 
-uniform int numShaderStages;
-uniform ShaderStage_t stages[MAX_SHADER_STAGES];
+layout (std140) uniform StagesBlock {
+    int numShaderStages;
+    ShaderStage_t stages[MAX_SHADER_STAGES];
+};
+
 sampler2D samples[MAX_SAMPLERS];
 
-#define EvaluateWaveform(t, wave) ( wave.m_base + t[ ( ( wave.m_phase + time * wave.m_frequency ) * FUNCTABLE_SIZE ) & FUNCTABLE_MASK ] * wave.m_amplitude )
+#define EvaluateWaveform(t, wave) ( (wave).m_base + (t)[ int( ( (wave).m_phase + time * (wave).m_frequency ) * FUNCTABLE_SIZE ) & FUNCTABLE_MASK ] * (wave).m_amplitude )
 
 float GetWaveFormValue(WaveForm_t wave) {
     float res = 0;
@@ -207,7 +215,7 @@ vec4 BlendColor_Internal( vec4 dstColor, vec4 srcColor, int blendCoeff ) {
 
 vec4 BlendColor( vec4 dstColor, vec4 srcColor, int blendCoeff ) {
     int srcBlendCoeff = blendCoeff & 31;
-    int dstBlendCoeff = blendCoeff >> 5;
+    int dstBlendCoeff = ( blendCoeff >> 5 ) & 31;
 
     vec4 srcCoeff = BlendColor_Internal( dstColor, srcColor, srcBlendCoeff );
     vec4 dstCoeff = BlendColor_Internal( dstColor, srcColor, dstBlendCoeff );
@@ -230,21 +238,21 @@ vec2 TexGetScrollCoordinates(vec2 v, TexModInfo_t texMode) {
 vec2 TexCalcStretchTexCoords(vec2 res, TexModInfo_t texMode) {
     float p = 1.0f / GetWaveFormValue(texMode.m_waveForm);
 
-    mat2 transMat = mat2( vec2( p, 0 ), vec2( 0, p ) );
-    vec2 transVec = vec2( 0.5f - 0.5f * p, 0.5f - 0.5f * p );
+    mat2 transMat = mat2( p );
+    vec2 transVec = vec2( 0.5f - 0.5f * p );
 
     return res * transMat + transVec;
 }
 
 vec2 TexCalcRotateTexCoords(vec2 res, TexModInfo_t texMode) {
     float degs; 
-    int radians;
+    float radians;
 
     degs = -texMode.m_rotateSpeed * time;
     radians = degs / 360.0f;
     radians -= floor( radians );
 
-    float sinValue = sinTable[ radians * FUNCTABLE_SIZE ];
+    float sinValue = sinTable[ int(radians * FUNCTABLE_SIZE) ];
     float cosValue = sqrt( 1 - sinValue * sinValue );
 
     mat2 mrot = mat2( vec2( cosValue, -sinValue ),
@@ -259,7 +267,8 @@ vec2 GetTexCoordinates(ShaderStage_t stage) {
     vec2 res = fs_in.texcoord;
 
     if ( stage.m_texBundle.m_tcGenMod != TCGEN_TEXTURE ) {
-        return vec2( 0 );
+        //return vec2( 0 );
+        return res;
     }
 
     for ( int i = 0; i < stage.m_texBundle.m_numTexMods; ++i ) {
@@ -336,7 +345,6 @@ vec4 GetStageColor(ShaderStage_t stage) {
         * GetTextureColor( GetTexCoordinates(stage), stage.m_texBundle.m_texture );
 }
 
-out vec4 shaderOutColor; 
 void main(void) {
     vec4 outColor = vec4( 0 );
     for ( int i = 0; i < numShaderStages; ++i ) {
@@ -345,3 +353,4 @@ void main(void) {
     }
     shaderOutColor = outColor;
 }
+

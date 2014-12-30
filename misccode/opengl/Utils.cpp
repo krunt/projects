@@ -61,3 +61,9 @@ void printProjectedVector( const idVec4 &vec ) {
     v /= vec[3];
     printVector(v);
 }
+
+template <typename T>
+T AlignUp( T v, int alignment ) {
+    int m = v % alignment;
+    if ( m ) { v += alignment - m; }
+}

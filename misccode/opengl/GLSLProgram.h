@@ -18,7 +18,9 @@ public:
     void Bind( const std::string &name, const idMat2 &v );
     void Bind( const std::string &name, const idMat3 &v );
     void Bind( const std::string &name, const idMat4 &v );
-    void Bind( const std::string &name, const GLLight &light );
+
+    template <typename T>
+    void Bind( const std::string &name, const T &obj );
 
     void Use();
 

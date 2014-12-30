@@ -199,3 +199,27 @@ void GLSLProgram::Bind( const std::string &name, const GLLight &light ) {
 
     glBindBufferBase( GL_UNIFORM_BUFFER, bPair.first, bPair.second );
 }
+
+void GLSLProgram::Bind( const std::string &name, const T &obj ) {
+    BufIndexPair bPair;
+
+    if ( m_uniformMap.find( name ) == m_uniformMap.end() ) {
+        CreateUniformBuffer( name );
+    }
+    
+    bPair = m_uniformMap[name];
+
+    glBindBuffer( GL_UNIFORM_BUFFER, bPair.second );
+    byte *pBuffer = (byte *)glMapBufferRange( GL_UNIFORM_BUFFER, 0, 
+        GetUniformSize( name ), GL_MAP_READ_BIT | GL_MAP_WRITE_BIT );
+
+    checkError();
+
+    assert( pBuffer );
+
+    obj.Pack( pBuffer, GetUniformOffsets( name ) );
+
+    glUnmapBuffer( GL_UNIFORM_BUFFER );
+
+    glBindBufferBase( GL_UNIFORM_BUFFER, bPair.first, bPair.second );
+}

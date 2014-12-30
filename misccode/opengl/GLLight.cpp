@@ -26,6 +26,11 @@ void GLSpotLight::Pack( byte *buf, const std::vector<GLint> &offsets ) const {
     PackHelper( buf + offsets[3], m_atten );
 }
 
+static void *PackHelper( byte *data, GLint v ) {
+    GLint *p = (GLint *)data; *p++ = v;
+    return p;
+}
+
 static void *PackHelper( byte *data, float v ) {
     float *p = (float *)data; *p++ = v;
     return p;

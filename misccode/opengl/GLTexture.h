@@ -8,16 +8,15 @@
 #include <GL/gl.h>
 #include <GL/glu.h>
 
-class GLTexture {
+class GLTexture: public TextureBase {
 public:
-    GLTexture() {}
+    GLTexture() : m_loadOk( false ) {}
     virtual ~GLTexture();
 
-    virtual bool Init( const std::string &name, int textureUnit = 0 );
-    bool Init( byte *data, int width, int height, 
-            int format, int textureUnit = 0 );
+    virtual bool Init( const std::string &name );
+    virtual bool Init( byte *data, int width, int height, int format );
 
-    virtual void Bind( void );
+    virtual void Bind( int unit );
     virtual void Unbind( void );
 
     bool IsOk() const { return m_loadOk; }
@@ -25,17 +24,19 @@ public:
 protected:
     GLuint m_texture;
     int    m_loadOk;
-    int    m_textureUnit;
 };
 
 class GLTextureCube: public GLTexture {
 public:
     GLTextureCube() {}
 
-    virtual bool Init( const std::string &name, int textureUnit = 0 );
+    virtual bool Init( const std::string &name );
+    virtual bool Init( byte *data, int width, int height, int format );
 
-    virtual void Bind( void );
+    virtual void Bind( int unit );
     virtual void Unbind( void );
 };
+
+extern ObjectCache<GLTexture> glTextureCache;
 
 #endif

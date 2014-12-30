@@ -9,6 +9,7 @@ bool IsPowerOf2( int v );
 unsigned short LittleShort( int b );
 unsigned int LittleLong( int b );
 float LittleFloat( float b );
+int AlignUp( int v, int alignment );
 
 #define msg_failure0(format) \
     fprintf(stderr, format); \
