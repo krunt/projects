@@ -97,6 +97,7 @@ RenderView()
        -> build world-to-view, world-to-projection, view-matrix
     -> R_SceneBegin()
     -> occlusion->SetView()
+-> cskyboxview->Render()
 -> ViewDrawScene()
 -> render->DrawLights()
 -> RenderPlayerSprites()
@@ -109,3 +110,31 @@ ViewDrawScene()
 -> DrawWorldAndEntities()
 -> clienteffects->DrawEffects()
 
+cskyboxview->Draw()
+-> DrawInternal()
+    -> ViewSetupVis()
+    -> Push3DView()
+    -> SetupCurrentView()
+
+ComputeShadowTextures()
+-> SetupBonesOnBaseAnimating() for each bone
+-> for each shadow
+   -> DrawRenderToTextureShadow()
+      or DrawRenderToTextureShadowLOD()
+        
+DrawRenderToTextureShadow()
+-> DrawShadowHierarchy()
+   -> 
+     if model_shadow
+        p = DrawModelShadowSetup()
+        modelrender->DrawModelShadow()
+    if brush_shadow
+        DrawBrushShadow()
+
+DrawModelShadowSetup()
+-> ComputeLOD()
+-> SetupBones()
+
+DrawBrushShadow()
+
+DrawRenderToTextureShadowLOD()

@@ -158,13 +158,21 @@ CSkyboxView::DrawInternal()
 -> DrawWorld()
 -> DrawOpaqueRenderables()
 -> DrawTranslucentRenderables()
--> DoEnginePostProcessing()
+
+DrawTranslucentRenderables()
+-> DrawTranslucentWorldAndDetailPropsInLeaves()
+   -> render->DrawTranslucentSurfaces()
 
 BuildWorldRenderLists()
 -> R_BuildWorldLists()
    -> R_RecursiveWorldNode()
    -> draw leaf via R_DrawLeaf()
    -> else draw tree node via R_DrawSurface()
+
+BuildRenderableRenderLists()
+-> for leaf in leafcount
+   -> BuildRenderablesListInLeaf()
+      -> pack renderables in buckets with bucket-id = render group idx
 
 R_DrawSurface()
 -> AddSurfaceToTail(m_sortList, surf)
@@ -179,6 +187,9 @@ DrawOpaqueRenderables() ( game/client/viewrender.cpp:3748)
 -> DrawOpaqueRenderables_DrawStaticProps()
 -> RopeManager()->DrawRenderCache()
 -> ParticleSystem->DrawRenderCache()
+
+DrawOpaqueRenderables_DrawBrushModels
+-> for ent (ents) ent->DrawModel()
 
 DrawOpaqueRenderables_DrawStaticProps()
 -> DrawModelExStaticProp()

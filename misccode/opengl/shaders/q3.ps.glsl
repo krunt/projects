@@ -7,6 +7,7 @@ float sinTable[FUNCTABLE_SIZE] = {};
 float triangleTable[FUNCTABLE_SIZE] = {};
 float squareTable[FUNCTABLE_SIZE] = {};
 float sawtoothTable[FUNCTABLE_SIZE] = {};
+float noiseTable[FUNCTABLE_SIZE] = {};
 
 #define GF_NONE 0
 #define GF_SIN  1
@@ -113,7 +114,7 @@ struct TexModInfo_t {
     mat2 m_rotate;
     vec2 m_translate;
     vec2 m_scale;
-    float2 m_scroll;
+    vec2 m_scroll;
     float m_rotateSpeed;
 };
 
@@ -140,17 +141,17 @@ struct ShaderStage_t {
 };
 
 #define MAX_SHADER_STAGES 8
+#define MAX_SAMPLERS 8
+
+uniform vec4 lightDir;
 
 uniform float time;
 
 uniform int numShaderStages;
 uniform ShaderStage_t stages[MAX_SHADER_STAGES];
-sampler2DArray samples;
+sampler2D samples[MAX_SAMPLERS];
 
-#define EvaluateWaveform(t, wave) \
-    ( wave.m_base \
-        + t[ ( ( wave.m_phase + time * wave.m_frequency ) \
-            * FUNCTABLE_SIZE ) & FUNCTABLE_MASK ] * wave.m_amplitude )
+#define EvaluateWaveform(t, wave) ( wave.m_base + t[ ( ( wave.m_phase + time * wave.m_frequency ) * FUNCTABLE_SIZE ) & FUNCTABLE_MASK ] * wave.m_amplitude )
 
 float GetWaveFormValue(WaveForm_t wave) {
     float res = 0;
@@ -164,12 +165,14 @@ float GetWaveFormValue(WaveForm_t wave) {
         res = EvaluateWaveform( sawtoothTable, wave );
     } else if ( wave.type == GF_INVERSE_SAWTOOTH  ) {
         res = 1.0f - EvaluateWaveform( sawtoothTable, wave );
+    } else if ( wave.type == GF_NOISE  ) {
+        res = EvaluateWaveform( noiseTable, wave );
     }
     return res;
 }
 
 vec4 GetTextureColor( vec2 uv, int texNum ) {
-    return texture( samples, vec3( uv, texNum ) );
+    return texture( samples[texNum], uv );
 }
 
 vec4 BlendColor_Internal( vec4 dstColor, vec4 srcColor, int blendCoeff ) {
@@ -212,6 +215,46 @@ vec4 BlendColor( vec4 dstColor, vec4 srcColor, int blendCoeff ) {
     return srcCoeff * srcColor + dstCoeff * dstColor;
 }
 
+vec2 TexGetScrollCoordinates(vec2 v, TexModInfo_t texMode) {
+    float adjS = texMode.m_scroll[0] * time;
+    float adjT = texMode.m_scroll[1] * time;
+
+    adjS -= floor(adjS);
+    adjT -= floor(adjT);
+
+    v += vec2( adjS, adjT );
+
+    return v;
+}
+
+vec2 TexCalcStretchTexCoords(vec2 res, TexModInfo_t texMode) {
+    float p = 1.0f / GetWaveFormValue(texMode.m_waveForm);
+
+    mat2 transMat = mat2( vec2( p, 0 ), vec2( 0, p ) );
+    vec2 transVec = vec2( 0.5f - 0.5f * p, 0.5f - 0.5f * p );
+
+    return res * transMat + transVec;
+}
+
+vec2 TexCalcRotateTexCoords(vec2 res, TexModInfo_t texMode) {
+    float degs; 
+    int radians;
+
+    degs = -texMode.m_rotateSpeed * time;
+    radians = degs / 360.0f;
+    radians -= floor( radians );
+
+    float sinValue = sinTable[ radians * FUNCTABLE_SIZE ];
+    float cosValue = sqrt( 1 - sinValue * sinValue );
+
+    mat2 mrot = mat2( vec2( cosValue, -sinValue ),
+        vec2( sinValue, cosValue ) );
+    vec2 translateVec = vec2( 0.5f - 0.5f * cosValue + 0.5f * sinValue,
+            0.5f - 0.5f * cosValue - 0.5f * sinValue );
+
+    return res * mrot + translateVec;
+}
+
 vec2 GetTexCoordinates(ShaderStage_t stage) {
     vec2 res = fs_in.texcoord;
 
@@ -223,22 +266,64 @@ vec2 GetTexCoordinates(ShaderStage_t stage) {
         TexModInfo_t texMode = stage.m_texBundle.m_texMods[i];
         switch ( texMode.m_texModType ) {
         case TMOD_SCALE:
-
+            res[0] *= texMode.m_scale[0];
+            res[1] *= texMode.m_scale[1];
             break;
+
+        case TMOD_SCROLL:
+            res = TexGetScrollCoordinates(res, texMode);
+            break;
+
+        case TMOD_TRANSFORM:
+            res = res * texMode.m_rotate + texMode.m_translate;
+            break;
+
+        case TMOD_STRETCH:
+            res = TexCalcStretchTexCoords(res, texMode);
+            break;
+
+        case TMOD_ROTATE:
+            res = TexCalcRotateTexCoords(res, texMode);
+            break;
+
         };
     }
     return res;
 }
 
-vec2 GetRgbGenColor(ShaderStage_t stage) {
+vec3 GetRgbGenColor(ShaderStage_t stage) {
+    vec3 res = vec3(1);
     switch ( stage.m_rgbGen ) { 
-    case 
+    case CGEN_IDENTITY:
+        res = vec3( 1.0f );
+        break;
+    case CGEN_CONST:
+        res = stage.m_constantColor.xyz;
+        break;
+    case CGEN_WAVEFORM:
+        res = vec3( GetWaveFormValue(stage.m_rgbWave) );
+        break;
+    case CGEN_LIGHTING_DIFFUSE:
+        res = vec3( dot(fs_in.normal, lightDir) );
+        break;
     };
+    return res;
 }
 
-vec2 GetRgbGenColor(ShaderStage_t stage) {
-    switch ( stage.m_rgbGen ) { 
+vec2 GetRgbGenAlpha(ShaderStage_t stage) {
+    float res = 0;
+    switch ( stage.m_alphaGen ) { 
+    case AGEN_IDENTITY:
+        res = 1.0f;
+        break;
+    case AGEN_CONST:
+        res = stage.m_constantColor.w;
+        break;
+    case AGEN_WAVEFORM:
+        res = GetWaveFormValue(stage.m_alphaWave);
+        break;
     };
+    return res;
 }
 
 vec4 GetStageColor(ShaderStage_t stage) {
