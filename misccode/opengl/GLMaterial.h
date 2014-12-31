@@ -1,6 +1,9 @@
 #ifndef GL_MATERIAL__H_
 #define GL_MATERIAL__H_
 
+#include "Common.h"
+#include <boost/shared_ptr.hpp>
+
 class GLMaterial: public MaterialBase {
 public:
     GLMaterial() : m_loadOk( false ) {}
@@ -15,7 +18,7 @@ private:
 
     bool m_loadOk;
 
-    std::shared_ptr<GLTexture> m_texture;
+    boost::shared_ptr<TextureBase> m_texture;
 };
 
 #endif /* GL_MATERIAL__H_ */

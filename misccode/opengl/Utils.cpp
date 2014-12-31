@@ -62,8 +62,8 @@ void printProjectedVector( const idVec4 &vec ) {
     printVector(v);
 }
 
-template <typename T>
-T AlignUp( T v, int alignment ) {
-    int m = v % alignment;
+byte *AlignUp( byte *v, int alignment ) {
+    int m = reinterpret_cast<int>(v) % alignment;
     if ( m ) { v += alignment - m; }
+    return v;
 }

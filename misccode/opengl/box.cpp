@@ -764,8 +764,10 @@ int main() {
     //GLRenderModelMD3 ammo( "models/shotgun.md3", "images/shotgun.tga" );
     //gl_game.AddEntity( ammo );
 
+    /*
     MyShotgun shotgun;
     gl_game.AddEntity( shotgun );
+    */
 
     InitVideo();
 

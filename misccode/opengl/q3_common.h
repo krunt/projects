@@ -1,3 +1,7 @@
+#ifndef Q3_COMMON__H_
+#define Q3_COMMON__H_
+
+#include "d3lib/Lib.h"
 
 #define GLS_SRCBLEND_ZERO						0x00000001
 #define GLS_SRCBLEND_ONE						0x00000002
@@ -188,14 +192,19 @@ typedef struct {
     std::vector<shaderStage_t> m_stages;
 } shader_t;
 
-class StagesBlock {
+class Q3StagesBlock {
 public:
+    void Init( const std::vector<shaderStage_t> &stages ) { m_stages = stages; }
     void Pack( byte *pBuffer, const std::vector<int> &offsets ) const;
 
 private:
-    byte *PackInternal( byte *pBuffer, const waveForm_t &waveform );
-    byte *PackInternal( byte *pBuffer, const texModInfo_t &texMod );
-    byte *PackInternal( byte *pBuffer, const textureBundle_t &texBundle );
-    byte *PackInternal( byte *pBuffer, const shaderStage_t &shaderStage );
+    byte *PackInternal( byte *pBuffer, const waveForm_t &waveform ) const;
+    byte *PackInternal( byte *pBuffer, const texModInfo_t &texMod ) const;
+    byte *PackInternal( byte *pBuffer, const textureBundle_t &texBundle ) const;
+    byte *PackInternal( byte *pBuffer, const shaderStage_t &shaderStage ) const;
+
+    mutable int m_texIndex;
+    std::vector<shaderStage_t> m_stages;
 };
 
+#endif

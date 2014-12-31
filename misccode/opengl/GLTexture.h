@@ -8,6 +8,8 @@
 #include <GL/gl.h>
 #include <GL/glu.h>
 
+#include "Texture.h"
+
 class GLTexture: public TextureBase {
 public:
     GLTexture() : m_loadOk( false ) {}
@@ -37,6 +39,6 @@ public:
     virtual void Unbind( void );
 };
 
-extern ObjectCache<GLTexture> glTextureCache;
 
 #endif
+

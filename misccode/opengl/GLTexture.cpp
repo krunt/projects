@@ -382,12 +382,12 @@ bool GLTexture::Init( const std::string &name ) {
 }
 
 bool GLTexture::Init( byte *data, int width, int height, 
-            int format, int textureUnit ) 
+            int format ) 
 {
     GLuint texture;
     byte *pic, *picCopy;
 
-    _CH(glActiveTexture( GL_TEXTURE0 + textureUnit ));
+    _CH(glActiveTexture( GL_TEXTURE0 ));
     _CH(glGenTextures( 1, &texture ));
     _CH(glBindTexture( GL_TEXTURE_2D, texture ));
     _CH(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
@@ -438,7 +438,6 @@ bool GLTexture::Init( byte *data, int width, int height,
 
     m_texture = texture;
     m_loadOk = true;
-    m_textureUnit = textureUnit;
     return true;
 }
 
@@ -543,6 +542,10 @@ bool GLTextureCube::Init( const std::string &name ) {
     return true;
 }
 
+bool GLTextureCube::Init( byte *data, int width, int height, int format ) {
+    return true;
+}
+
 void GLTextureCube::Bind( int unit ) {
     assert( IsOk() );
     _CH(glActiveTexture( GL_TEXTURE0 + unit ));
@@ -556,4 +559,3 @@ void GLTextureCube::Unbind( void ) {
     */
 }
 
-TextureCache<GLTexture> glTextureCache;

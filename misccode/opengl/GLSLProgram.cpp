@@ -2,10 +2,29 @@
 
 #include "Utils.h"
 
+#include "q3_common.h"
+
 GLSLProgram::~GLSLProgram() {
     if ( IsOk() ) {
         glDeleteProgram( m_program );
     }
+}
+
+bool GLSLProgram::Init( const std::string &programName ) {
+    std::vector<std::string> shaderList;
+
+    if ( programName == "sky" ) {
+        shaderList.push_back( "shaders/sky.vs.glsl" );
+        shaderList.push_back( "shaders/sky.ps.glsl" );
+    } else if ( programName == "q3shader" ) {
+        shaderList.push_back( "shaders/q3.vs.glsl" );
+        shaderList.push_back( "shaders/q3.ps.glsl" );
+    } else {
+        shaderList.push_back( "shaders/simple.vs.glsl" );
+        shaderList.push_back( "shaders/simple.ps.glsl" );
+    }
+
+    return Init( shaderList );
 }
 
 bool GLSLProgram::Init( const std::vector<std::string> &progs ) {
@@ -176,31 +195,7 @@ void GLSLProgram::CreateUniformBuffer( const std::string &name ) {
     m_uniformMap[ name ] = std::make_pair( uboIndex, ubo );
 }
 
-void GLSLProgram::Bind( const std::string &name, const GLLight &light ) {
-    BufIndexPair bPair;
-
-    if ( m_uniformMap.find( name ) == m_uniformMap.end() ) {
-        CreateUniformBuffer( name );
-    }
-    
-    bPair = m_uniformMap[name];
-
-    glBindBuffer( GL_UNIFORM_BUFFER, bPair.second );
-    byte *pBuffer = (byte *)glMapBufferRange( GL_UNIFORM_BUFFER, 0, 
-        GetUniformSize( name ), GL_MAP_READ_BIT | GL_MAP_WRITE_BIT );
-
-    checkError();
-
-    assert( pBuffer );
-
-    light.Pack( pBuffer, GetUniformOffsets( name ) );
-
-    glUnmapBuffer( GL_UNIFORM_BUFFER );
-
-    glBindBufferBase( GL_UNIFORM_BUFFER, bPair.first, bPair.second );
-}
-
-void GLSLProgram::Bind( const std::string &name, const T &obj ) {
+void GLSLProgram::Bind( const std::string &name, const Q3StagesBlock &obj ) {
     BufIndexPair bPair;
 
     if ( m_uniformMap.find( name ) == m_uniformMap.end() ) {
@@ -223,3 +218,5 @@ void GLSLProgram::Bind( const std::string &name, const T &obj ) {
 
     glBindBufferBase( GL_UNIFORM_BUFFER, bPair.first, bPair.second );
 }
+
+ObjectCache<GLSLProgram> glProgramCache;
