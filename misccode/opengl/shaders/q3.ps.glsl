@@ -1,14 +1,17 @@
 #version 410 core 
 
 //#define FUNCTABLE_SIZE 1024
-#define FUNCTABLE_SIZE 2
+//#define FUNCTABLE_SIZE 2
+#define FUNCTABLE_SIZE 16
 #define FUNCTABLE_MASK FUNCTABLE_SIZE-1
 
-float sinTable[FUNCTABLE_SIZE] = float[FUNCTABLE_SIZE]( 1, 2 );
-float triangleTable[FUNCTABLE_SIZE] = float[FUNCTABLE_SIZE]( 1, 2 );
-float squareTable[FUNCTABLE_SIZE] = float[FUNCTABLE_SIZE]( 1, 2 );
-float sawtoothTable[FUNCTABLE_SIZE] = float[FUNCTABLE_SIZE]( 1, 2 );
-float noiseTable[FUNCTABLE_SIZE] = float[FUNCTABLE_SIZE]( 1, 2 );
+
+float sinTable[FUNCTABLE_SIZE] = float[FUNCTABLE_SIZE]( 0.00,0.41,0.74,0.95,0.99,0.86,0.59,0.20,-0.21,-0.59,-0.87,-1.00,-0.95,-0.74,-0.40,0.01 );
+float triangleTable[FUNCTABLE_SIZE] = float[FUNCTABLE_SIZE]( 0.00,0.27,0.53,0.80,0.93,0.67,0.40,0.13,-0.13,-0.40,-0.67,-0.93,-0.80,-0.53,-0.27,-0.00 );
+float squareTable[FUNCTABLE_SIZE] = float[FUNCTABLE_SIZE]( 1.00,1.00,1.00,1.00,1.00,1.00,1.00,1.00,-1.00,-1.00,-1.00,-1.00,-1.00,-1.00,-1.00,-1.00 );
+float sawtoothTable[FUNCTABLE_SIZE] = float[FUNCTABLE_SIZE]( 0.00,0.07,0.13,0.20,0.27,0.33,0.40,0.47,0.53,0.60,0.67,0.73,0.80,0.87,0.93,1.00 );
+float noiseTable[FUNCTABLE_SIZE] = float[FUNCTABLE_SIZE]( 0.72,0.38,-0.10,0.54,-0.44,-0.16,0.73,-0.67,0.19,0.54,-0.07,-0.45,-0.00,0.30,0.34,-0.17 );
+
 
 #define GF_NONE 0
 #define GF_SIN  1
@@ -35,6 +38,8 @@ float noiseTable[FUNCTABLE_SIZE] = float[FUNCTABLE_SIZE]( 1, 2 );
 #define GL_ONE_MINUS_SRC_ALPHA 5
 #define GL_SRC_COLOR 6
 #define GL_ONE_MINUS_SRC_COLOR 7
+#define GL_DST_ALPHA 8
+#define GL_ONE_MINUS_DST_ALPHA 9
 
 #define CGEN_BAD 0
 #define CGEN_IDENTITY_LIGHTING 1
@@ -149,7 +154,7 @@ struct ShaderStage_t {
 uniform mat4 mvp_matrix; 
 uniform mat4 model_matrix; 
 uniform vec3 eye_pos;
-uniform vec4 lightDir;
+uniform vec3 lightDir;
 uniform float time;
 
 layout (std140) uniform StagesBlock {
@@ -157,23 +162,23 @@ layout (std140) uniform StagesBlock {
     ShaderStage_t stages[MAX_SHADER_STAGES];
 };
 
-sampler2D samples[MAX_SAMPLERS];
+uniform sampler2D samples[MAX_SAMPLERS];
 
-#define EvaluateWaveform(t, wave) ( (wave).m_base + (t)[ int( ( (wave).m_phase + time * (wave).m_frequency ) * FUNCTABLE_SIZE ) & FUNCTABLE_MASK ] * (wave).m_amplitude )
+#define EvaluateWaveform(t, wave) ( (wave).m_base + (t)[ int( ( (wave).m_phase + ( time - floor(time) )* (wave).m_frequency ) * FUNCTABLE_SIZE ) & FUNCTABLE_MASK ] * (wave).m_amplitude )
 
 float GetWaveFormValue(WaveForm_t wave) {
     float res = 0;
-    if ( wave.type == GF_SIN ) {
+    if ( wave.m_type == GF_SIN ) {
         res = EvaluateWaveform( sinTable, wave );
-    } else if ( wave.type == GF_SQUARE ) {
+    } else if ( wave.m_type == GF_SQUARE ) {
         res = EvaluateWaveform( squareTable, wave );
-    } else if ( wave.type == GF_TRIANGLE ) {
+    } else if ( wave.m_type == GF_TRIANGLE ) {
         res = EvaluateWaveform( triangleTable, wave );
-    } else if ( wave.type == GF_SAWTOOTH ) {
+    } else if ( wave.m_type == GF_SAWTOOTH ) {
         res = EvaluateWaveform( sawtoothTable, wave );
-    } else if ( wave.type == GF_INVERSE_SAWTOOTH  ) {
+    } else if ( wave.m_type == GF_INVERSE_SAWTOOTH  ) {
         res = 1.0f - EvaluateWaveform( sawtoothTable, wave );
-    } else if ( wave.type == GF_NOISE  ) {
+    } else if ( wave.m_type == GF_NOISE  ) {
         res = EvaluateWaveform( noiseTable, wave );
     }
     return res;
@@ -195,7 +200,7 @@ vec4 BlendColor_Internal( vec4 dstColor, vec4 srcColor, int blendCoeff ) {
     case GL_DST_COLOR:
         outColor = dstColor;
         break;
-    case GL_ONE_MUNUS_DST_COLOR
+    case GL_ONE_MINUS_DST_COLOR:
         outColor = vec4( 1 ) - dstColor;
         break;
     case GL_SRC_ALPHA:
@@ -266,10 +271,12 @@ vec2 TexCalcRotateTexCoords(vec2 res, TexModInfo_t texMode) {
 vec2 GetTexCoordinates(ShaderStage_t stage) {
     vec2 res = fs_in.texcoord;
 
+    /*
     if ( stage.m_texBundle.m_tcGenMod != TCGEN_TEXTURE ) {
         //return vec2( 0 );
         return res;
     }
+    */
 
     for ( int i = 0; i < stage.m_texBundle.m_numTexMods; ++i ) {
         TexModInfo_t texMode = stage.m_texBundle.m_texMods[i];
@@ -319,8 +326,8 @@ vec3 GetRgbGenColor(ShaderStage_t stage) {
     return res;
 }
 
-vec2 GetRgbGenAlpha(ShaderStage_t stage) {
-    float res = 0;
+float GetRgbGenAlpha(ShaderStage_t stage) {
+    float res = 1;
     switch ( stage.m_alphaGen ) { 
     case AGEN_IDENTITY:
         res = 1.0f;

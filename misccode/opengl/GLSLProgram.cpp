@@ -57,7 +57,7 @@ bool GLSLProgram::Init( const std::vector<std::string> &progs ) {
         }
 
         if ( type == -1 ) {
-            fprintf( stderr, "unknown shader source `%s' found\n", 
+            msg_warning( "unknown shader source `%s' found\n", 
                     progs[i].c_str() );
             return false;
         }
@@ -75,8 +75,18 @@ bool GLSLProgram::Init( const std::vector<std::string> &progs ) {
         glGetShaderiv( shader, GL_COMPILE_STATUS, &compileStatus );
 
         if ( compileStatus != GL_TRUE ) {
-            fprintf( stderr, "compilation of `%s' is unsuccessful\n", 
-                    progs[i].c_str() );
+            int logLength;
+            std::string s;
+
+            glGetShaderiv( shader, GL_INFO_LOG_LENGTH, &logLength );
+
+            s.resize( logLength );
+
+            glGetShaderInfoLog( shader, logLength, NULL, &s[0] );
+
+            msg_warning( "compilation of `%s' is unsuccessful (error msg=`\n%s\n')\n", 
+                    progs[i].c_str(), s.c_str() );
+
             return false;
         }
 
@@ -93,7 +103,7 @@ bool GLSLProgram::Init( const std::vector<std::string> &progs ) {
     glGetProgramiv( program, GL_LINK_STATUS, &linkStatus );
 
     if ( linkStatus != GL_TRUE ) {
-        fprintf( stderr, "linking is unsuccessful\n" );
+        msg_warning0( "linking is unsuccessful\n" );
         return false;
     }
 

@@ -133,7 +133,7 @@ void MyRender::RenderSurface( const glsurf_t &surf ) {
     params.m_mvpMatrix = mvpMatrix.Transpose();
     params.m_modelMatrix = ( flipMatrix * surf.m_modelMatrix ).Transpose();
     params.m_eye = ToWorld( m_eye.ToVec3() );
-    params.m_lightDir = m_lightDir;
+    params.m_lightDir = ToWorld( m_lightDir.ToVec3() );
     params.m_time = m_time;
 
     _CH(glBindVertexArray( surf.m_surf.m_vao ));

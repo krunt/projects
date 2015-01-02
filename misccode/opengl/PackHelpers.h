@@ -13,21 +13,21 @@ public:
     typedef AlignmentHelper align_type;
 
     static byte *Pack( byte *p, GLint v, int alignment = 0 ) {
-        typedef typename AlignmentHelper::template GetAlignment<GLint> alType;
+        typedef typename AlignmentHelper::template GetSize<GLint> alType;
         if ( !alignment ) alignment = alType::value;
         GLint *pp = reinterpret_cast<GLint *>( p ); *pp = v;
         return p + alignment;
     }
 
     static byte *Pack( byte *p, float v, int alignment = 0 ) {
-        typedef typename AlignmentHelper::template GetAlignment<float> alType;
+        typedef typename AlignmentHelper::template GetSize<float> alType;
         if ( !alignment ) alignment = alType::value;
         float *pp = reinterpret_cast<float *>( p ); *pp = v;
         return p + alignment;
     }
 
     static byte *Pack( byte *p, const idVec2 &v, int alignment = 0 ) {
-        typedef typename AlignmentHelper::template GetAlignment<idVec2> alType;
+        typedef typename AlignmentHelper::template GetSize<idVec2> alType;
         if ( !alignment ) alignment = alType::value;
         float *pp = reinterpret_cast<float *>( p ); 
         *pp++ = v[0]; *pp++ = v[1];
@@ -35,7 +35,7 @@ public:
     }
 
     static byte *Pack( byte *p, const idVec3 &v, int alignment = 0 ) {
-        typedef typename AlignmentHelper::template GetAlignment<idVec3> alType;
+        typedef typename AlignmentHelper::template GetSize<idVec3> alType;
         if ( !alignment ) alignment = alType::value;
         float *pp = reinterpret_cast<float *>( p ); 
         *pp++ = v[0]; *pp++ = v[1]; *pp++ = v[2];
@@ -43,7 +43,7 @@ public:
     }
 
     static byte *Pack( byte *p, const idVec4 &v, int alignment = 0 ) {
-        typedef typename AlignmentHelper::template GetAlignment<idVec4> alType;
+        typedef typename AlignmentHelper::template GetSize<idVec4> alType;
         if ( !alignment ) alignment = alType::value;
         float *pp = reinterpret_cast<float *>( p ); 
         *pp++ = v[0]; *pp++ = v[1]; *pp++ = v[2]; *pp++ = v[3];
@@ -51,7 +51,7 @@ public:
     }
 
     static byte *Pack( byte *p, const idMat2 &m, int alignment = 0 ) {
-        typedef typename AlignmentHelper::template GetAlignment<idMat2> alType;
+        typedef typename AlignmentHelper::template GetSize<idMat2> alType;
         if ( !alignment ) alignment = alType::value;
         float *pp = reinterpret_cast<float *>( p ); 
         *pp++ = m[0][0]; *pp++ = m[0][1]; pp++; pp++;
@@ -65,8 +65,8 @@ struct Std140OpenglAlignmentHelper {
     template <typename T, int n = 0>
     struct AHelper {
         static const int size0 = Std140OpenglAlignmentHelper::AHelper<T>::size;
-        static const int alignment = GL_ROUNDUP(size0, 16);
-        static const int size = alignment * n;
+        static const int alignment = 16;
+        static const int size = GL_ROUNDUP(size0, 16) * n;
     };
 
     template <typename T, int arrSize = 0>

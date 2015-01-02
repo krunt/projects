@@ -63,7 +63,7 @@ void printProjectedVector( const idVec4 &vec ) {
 }
 
 byte *AlignUp( byte *v, int alignment ) {
-    int m = reinterpret_cast<int>(v) % alignment;
+    int m = reinterpret_cast<std::size_t>(v) % alignment;
     if ( m ) { v += alignment - m; }
     return v;
 }

@@ -36,10 +36,11 @@ public:
     void CreateUniformBuffer( const std::string &name );
     std::vector<GLint> GetUniformOffsets( const std::string &name ) const;
 
+    int m_program;
+
 private:
     int GetUniformSize( const std::string &name ) const;
 
-    int m_program;
     bool m_linkedOk;
 
     typedef std::pair<GLuint, GLuint> BufIndexPair;

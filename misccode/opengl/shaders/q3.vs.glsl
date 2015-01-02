@@ -13,12 +13,14 @@ out VS_OUT
 uniform mat4 mvp_matrix; 
 uniform mat4 model_matrix; 
 uniform vec3 eye_pos;
+uniform vec3 lightDir;
+uniform float time;
  
 void main(void) 
 { 
  gl_Position = mvp_matrix * vec4( position, 1.0f ); 
 
- vs_out.position = model_matrix * vec4( position, 1.f );
- vs_out.normal = model_matrix * vec4( normal, 1.f );
+ vs_out.position = ( model_matrix * vec4( position, 1.f ) ).xyz;
+ vs_out.normal = ( model_matrix * vec4( normal, 1.f ) ).xyz;
  vs_out.texcoord = texcoord;
 } 

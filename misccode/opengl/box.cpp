@@ -122,6 +122,7 @@ public:
         }
     
         surf.m_matName = "white";
+        //surf.m_matName = "q3shaders/base_floor.q3a";
 
         gl_render.CacheSurface( surf, m_surf );
     }
@@ -582,8 +583,6 @@ void RenderVideo( void ) {
     gl_game.Render();
     gl_render.Render( gl_camera.GetPlayerView() );
 
-    //draw_screen();
-
     SDL_GL_SwapBuffers( );
 }
 
@@ -742,32 +741,13 @@ int main() {
     MyFloor floor;
     gl_game.AddEntity( floor );
 
-    //lightPos = idVec4( -50, 50, 50, 1 );
-    //lightDir = idVec4( 0, 0, 0, 1 ) - lightPos;
-
-    /*
-    GLDirectionLight light( 
-            ToWorld( lightPos ), ToWorld( lightDir ) );
-    gl_render.AddLight( &light );
-    */
-
-    //MyQuad quad;
-    //gl_game.AddEntity( quad );
-
-    //GLRenderModelMD3 ammo( "models/shotgunam.md3" );
-
-    /*
-    GLRenderModelMD3 ammo( "models/machinegun.md3", "images/machinegun.tga" );
-    gl_game.AddEntity( ammo );
-    */
-
-    //GLRenderModelMD3 ammo( "models/shotgun.md3", "images/shotgun.tga" );
-    //gl_game.AddEntity( ammo );
-
     /*
     MyShotgun shotgun;
     gl_game.AddEntity( shotgun );
     */
+
+    MyQuad tquad;
+    gl_game.AddEntity( tquad );
 
     InitVideo();
 

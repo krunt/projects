@@ -12,7 +12,7 @@ struct CommonMaterialParams {
     idMat4 m_mvpMatrix;
     idMat4 m_modelMatrix;
     idVec3 m_eye;
-    idVec4 m_lightDir;
+    idVec3 m_lightDir;
     float  m_time;
 };
 
