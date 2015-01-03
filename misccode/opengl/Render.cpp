@@ -99,6 +99,10 @@ void MyRender::CreateStandardShaders() {
     if ( !m_screenTexture.Init( 1 ) ) {
         exit( 1 );
     }
+
+    if ( !m_crosshairTexture.Init( "images/crosshair.tga", 1 ) ) {
+        exit( 1 );
+    }
 }
 
 void MyRender::CreateShaderProgram( void ) {
@@ -125,6 +129,14 @@ void MyRender::CreateShaderProgram( void ) {
 
     assert( m_postProcessProgram.Init( shaderList ) );
     assert( m_postProcessProgram.IsOk() );
+
+    shaderList.clear();
+
+    shaderList.push_back( "shaders/crosshair.vs.glsl" );
+    shaderList.push_back( "shaders/crosshair.ps.glsl" );
+
+    assert( m_crosshairProgram.Init( shaderList ) );
+    assert( m_crosshairProgram.IsOk() );
 }
 
 void MyRender::CacheSurface( const surf_t &s, cached_surf_t &cached ) {
@@ -171,6 +183,9 @@ void MyRender::CacheSurface( const surf_t &s, cached_surf_t &cached ) {
     } else if ( s.m_matName == "postprocess" ) {
         cached.m_material.m_matPtr = &m_screenTexture;
         cached.m_material.m_matProgram = &m_postProcessProgram;
+    } else if ( s.m_matName == "crosshair" ) {
+        cached.m_material.m_matPtr = &m_crosshairTexture;
+        cached.m_material.m_matProgram = &m_crosshairProgram;
     } else {
         if ( m_textureCache.find( s.m_matName ) != m_textureCache.end() ) {
             cached.m_material.m_matPtr = m_textureCache[ s.m_matName ];

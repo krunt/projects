@@ -61,3 +61,12 @@ void printProjectedVector( const idVec4 &vec ) {
     v /= vec[3];
     printVector(v);
 }
+
+idVec3 GetForwardVector( const idMat3 &m ) {
+    idQuat q = m.ToQuat();
+    //q.w = -q.w;
+    idVec3 n = q * idVec3( 1, 0, 0 );
+    n.Normalize();
+    return n;
+}
+

@@ -3,7 +3,7 @@ all = $(wildcard *.cpp *.h)
 sources = $(wildcard *.cpp)
 headers = $(wildcard *.h)
 object_files = $(patsubst %.cpp,%.o,$(sources))
-libs = -lm -Ld3lib -lidlib -lglut -lGL -lSDL -lGLEW -lGLU
+libs = -lm -Ld3lib -lidlib -lglut -lGL -lSDL -lGLEW -lGLU -lode
 flags = -g -O0
 compiler = g++
 

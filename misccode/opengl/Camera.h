@@ -8,25 +8,28 @@ class Camera {
 public:
     void Init( const idVec3 &pos, const idMat3 &axis ) {
         m_pos = pos;
-        m_axis = axis;
+        m_quat = axis.ToQuat();
     }
 
     const playerView_t GetPlayerView( void ) const;
 
-    void MoveForward( void );
-    void MoveBackward( void );
-    void StrafeLeft( void );
-    void StrafeRight( void );
+    idVec3 MoveForward( float stepSize ) const;
+    idVec3 MoveBackward( float stepSize ) const;
+    idVec3 MoveLeft( float stepSize ) const;
+    idVec3 MoveRight( float stepSize ) const;
+    idVec3 MoveUp( float stepSize ) const;
+    idVec3 MoveDown( float stepSize ) const;
 
-    void TurnLeft( float degrees );
-    void TurnRight( float degrees );
+    void Move( const idVec3 &delta ) { m_pos += delta; }
 
-    void TurnUp( float degrees );
-    void TurnDown( float degrees );
+    void Yaw( float degrees );
+    void Pitch( float degrees );
+
+    void NormalizeView( void );
 
 private:
     idVec3 m_pos;
-    idMat3 m_axis;
+    idQuat m_quat;
 };
 
 #endif /* CAMERA__H_ */

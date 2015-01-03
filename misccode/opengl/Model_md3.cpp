@@ -9,11 +9,8 @@
 #define	LL(x) x=LittleLong(x)
 
 void GLRenderModelMD3::Spawn( void ) {
-    m_pos = vec3_origin;
-    m_axis = mat3_identity;
     m_isAnimPlaying = false;
-
-    Precache();
+    MyEntity::Spawn();
 }
 
 void GLRenderModelMD3::Precache( void ) 

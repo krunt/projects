@@ -39,6 +39,15 @@ idAngles idQuat::ToAngles( void ) const {
 }
 */
 
+idQuat::idQuat( const idVec3 &axis, float angleRadians ) {
+    float halfAngle = 0.5f * angleRadians;
+    float sinAngle = idMath::Sin( halfAngle );
+    x = sinAngle * axis.x;
+    y = sinAngle * axis.y;
+    z = sinAngle * axis.z;
+    w = idMath::Cos( halfAngle );
+}
+
 /*
 =====================
 idQuat::ToRotation

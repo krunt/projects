@@ -43,6 +43,7 @@ If you have questions concerning this license or the applicable additional terms
 #define MATRIX_EPSILON				1e-6
 
 class idMat4;
+class idQuat;
 
 //===============================================================
 //
@@ -389,6 +390,7 @@ public:
 
 	int				GetDimension( void ) const;
 
+	idQuat			ToQuat() const;
 	idMat4			ToMat4( void ) const;
 	const float *	ToFloatPtr( void ) const;
 	float *			ToFloatPtr( void );

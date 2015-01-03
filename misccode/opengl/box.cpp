@@ -14,20 +14,24 @@
 
 #include "Render.h"
 
+#include "OdePhysics.h"
+
+#include "PhysicalEntity.h"
 
 static int oldMs, curMs;
 
 static Camera gl_camera;
 
-class MyBox: public MyEntity  {
+class MyBox: public MyPhysicalEntity  {
 public:
     MyBox( const Map &m = Map() )
-        : MyEntity( m )
+        : MyPhysicalEntity( m )
     {}
 
     virtual void Spawn( void ) {
-        m_extents = idVec3( 5, 5, 5 );
-        MyEntity::Spawn();
+        m_extents = idVec3( 2, 2, 2 );
+        MyPhysicalEntity::Spawn();
+        m_body.SetAsBox( m_extents, 1.0f );
     }
 
     virtual void Precache( void ) {
@@ -77,11 +81,12 @@ public:
         }
     
         surf.m_matName = "images/checkerboard.tga";
+        //surf.m_matName = "images/2d/crosshaira.tga"; //checkerboard.tga";
+        //surf.m_matName = "images/crosshair.tga"; //checkerboard.tga";
 
         gl_render.CacheSurface( surf, m_surf );
     }
 
-    virtual void Think( int ms ) {}
     virtual void Render( void );
 
 private:
@@ -89,15 +94,17 @@ private:
     cached_surf_t m_surf;
 };
 
-class MyFloor: public MyEntity {
+class MyFloor: public MyPhysicalEntity {
 public:
     MyFloor( const Map &m = Map() )
-        : MyEntity( m )
+        : MyPhysicalEntity( m )
     {}
 
     virtual void Spawn( void ) {
-        m_extents = idVec3( 100, 100, 1 );
-        MyEntity::Spawn();
+        m_extents = idVec3( 100, 100, 10 );
+        MyPhysicalEntity::Spawn();
+        m_body.SetAsBox( m_extents, 1.0f );
+        m_body.SetStatic();
     }
 
     virtual void Precache( void ) {
@@ -151,7 +158,6 @@ public:
         gl_render.CacheSurface( surf, m_surf );
     }
 
-    virtual void Think( int ms ) {}
     virtual void Render( void );
 
 private:
@@ -314,7 +320,7 @@ struct KeyState {
     bool m_keys[256];
 };
 
-static void ProcessEvents( void )
+static void ProcessEvents( int ms )
 {
     /* Our SDL event placeholder. */
     SDL_Event event;
@@ -325,8 +331,10 @@ static void ProcessEvents( void )
 
     const float stepSize = 1.0f;
     const float angleStepSize = 0.2f; // degrees
+    /*
     const float angleDegrees = 5.0f;
     const float angleKeyStepSize = DEG2RAD(angleDegrees); // degrees
+    */
 
     static KeyState kState[2];
 
@@ -349,10 +357,37 @@ static void ProcessEvents( void )
 
         case SDL_KEYDOWN:
             switch ( event.key.keysym.sym ) {
-            case SDLK_y: {
+            case SDLK_q: {
+                Quit(0);
+                break;
+            }
+
+            case SDLK_h: {
+                gl_camera.NormalizeView();
+                break;
+            }};
+            break;
+
+        case SDL_MOUSEBUTTONDOWN:
+            switch ( event.button.button ) {
+            case SDL_BUTTON_WHEELUP:
+                //v.m_pos += 0.25 * stepSize * v.m_axis[0];
+                //kState[ 1 ].m_keys[ SDLK_w ] = 1;
+                //gl_camera.MoveForward();
+            break;
+
+            case SDL_BUTTON_WHEELDOWN:
+                //v.m_pos -= 0.25 * stepSize * v.m_axis[0];
+                //gl_camera.MoveBackward();
+            break;
+
+            case SDL_BUTTON_LEFT: {
 
                 Map m;
-                m[ "pos" ] = pView.m_pos.ToString();
+                m[ "pos" ] = ( pView.m_pos + GetForwardVector( pView.m_axis ) * 5 ).ToString();
+                m[ "linear_velocity" ] = ( 20 * GetForwardVector( pView.m_axis ) ).ToString();
+                m[ "angular_velocity" ] = ( 5 * ( (float)rand() / RAND_MAX ) 
+                        * pView.m_axis[1] ).ToString();
 
                 MyBox *b = new MyBox( m );
                 gl_game.AddEntity( *b );
@@ -360,94 +395,12 @@ static void ProcessEvents( void )
 
                 break;
             }
-        }
 
-        /*
-        case SDL_KEYDOWN:
-            switch ( event.key.keysym.sym ) {
-            case SDLK_w:
-                //v.m_pos += 10 * stepSize * v.m_axis[0];
-                gl_camera.MoveForward();
-            break;
-
-            case SDLK_s:
-                //v.m_pos -= 10 * stepSize * v.m_axis[0];
-                gl_camera.MoveBackward();
-            break;
-
-            case SDLK_a:
-                //v.m_axis = GetRotationOZ( angleKeyStepSize ) * v.m_axis;
-                //phi += angleKeyStepSize;
-                //v.m_axis[0] *= idRotation( idVec3( 0, 0, 0 ), idVec3( 0, 0, 1 ),
-                        //angleDegrees );
-                gl_camera.StrafeLeft();
-            break;
-
-            case SDLK_d:
-                //v.m_axis = GetRotationOZ( -angleKeyStepSize ) * v.m_axis;
-                //phi -= angleKeyStepSize;
-                //v.m_axis[0] *= idRotation( idVec3( 0, 0, 0 ), idVec3( 0, 0, 1 ),
-                        //-angleDegrees );
-                gl_camera.StrafeRight();
-            break;
-
-            case SDLK_r:
-                //v.m_axis = GetRotationOY( angleKeyStepSize ) * v.m_axis;
-                //mu -= angleKeyStepSize;
-                gl_camera.TurnLeft( angleDegrees );
-            break;
-
-            case SDLK_f:
-                //v.m_axis = GetRotationOY( -angleKeyStepSize ) * v.m_axis;
-                //mu += angleKeyStepSize;
-                gl_camera.TurnRight( angleDegrees );
-            break;
-
-            case SDLK_t:
-                //v.m_axis = GetRotationOX( angleKeyStepSize ) * v.m_axis;
-                gl_camera.TurnUp( angleDegrees );
-            break;
-
-            case SDLK_g:
-                //v.m_axis = GetRotationOX( -angleKeyStepSize ) * v.m_axis;
-                gl_camera.TurnDown( angleDegrees );
-            break;
-
+            case SDL_BUTTON_RIGHT:
+                gl_camera.NormalizeView();
+                break;
             };
             break;
-            */
-
-        case SDL_MOUSEBUTTONDOWN:
-            switch ( event.button.button ) {
-            case SDL_BUTTON_WHEELUP:
-                //v.m_pos += 0.25 * stepSize * v.m_axis[0];
-                //kState[ 1 ].m_keys[ SDLK_w ] = 1;
-                gl_camera.MoveForward();
-            break;
-
-            case SDL_BUTTON_WHEELDOWN:
-                //v.m_pos -= 0.25 * stepSize * v.m_axis[0];
-                gl_camera.MoveBackward();
-            break;
-            };
-            break;
-
-            /*
-        case SDL_MOUSEBUTTONUP:
-            switch ( event.button.button ) {
-            case SDL_BUTTON_WHEELUP:
-                //v.m_pos += 0.25 * stepSize * v.m_axis[0];
-                kState[ 1 ].m_keys[ SDLK_w ] = 0;
-            break;
-
-            case SDL_BUTTON_WHEELDOWN:
-                //v.m_pos -= 0.25 * stepSize * v.m_axis[0];
-                kState[ 1 ].m_keys[ SDLK_s ] = 0;
-            break;
-
-            };
-            break;
-            */
 
         case SDL_MOUSEMOTION: {
 
@@ -457,11 +410,13 @@ static void ProcessEvents( void )
             deltaX = event.motion.xrel;
             deltaY = event.motion.yrel;
 
+            /*
             float xFrac = (float)deltaX / (float)gl_camera.GetPlayerView().m_width;
             float yFrac = (float)deltaY / (float)gl_camera.GetPlayerView().m_height;
+            */
 
             //float alphaX = DEG2RAD( xFrac * 180.0f );
-            float alphaX = -50 * xFrac * 180.0f;
+            //float alphaX = -50 * xFrac * 180.0f;
             //float alphaY = DEG2RAD( yFrac * 180.0f );
 
             //v.m_axis = GetRotationOY( alphaY ) * GetRotationOZ( alphaX ) * v.m_axis;
@@ -472,9 +427,14 @@ static void ProcessEvents( void )
             //printf( "%f\n", alphaX );
             //printf( "%f/%f/%f\n", v.m_pos[0], v.m_pos[1], v.m_pos[2] );
 
+            /*
             if ( alphaX ) {
                 gl_camera.TurnLeft( alphaX );
             }
+            */
+
+            gl_camera.Yaw( deltaX * 0.15f );
+            gl_camera.Pitch( deltaY * 0.15f );
 
             break;
         }
@@ -507,24 +467,54 @@ static void ProcessEvents( void )
 
     }
 
+    idVec3 accel( 0, 0, 0 );
+    const float velocity = 80.0f;
+    const float angleDegrees = 0.1f;
+    float moveCoeff = velocity * ( (float)ms / 1000.0f );
+
         if ( kState[ 1 ].m_keys[ SDLK_w ] ) {
-            gl_camera.MoveForward();
+            accel += gl_camera.MoveForward( moveCoeff );
         }
 
         if ( kState[ 1 ].m_keys[ SDLK_s ] ) {
-            gl_camera.MoveBackward();
+            accel += gl_camera.MoveBackward( moveCoeff );
         }
 
         if ( kState[ 1 ].m_keys[ SDLK_a ] ) {
-            gl_camera.StrafeLeft();
+            accel += gl_camera.MoveLeft( moveCoeff );
         }
 
         if ( kState[ 1 ].m_keys[ SDLK_d ] ) {
-            gl_camera.StrafeRight();
+            accel += gl_camera.MoveRight( moveCoeff );
         }
 
         if ( kState[ 1 ].m_keys[ SDLK_r ] ) {
-            gl_camera.TurnLeft( angleDegrees );
+            accel += gl_camera.MoveUp( moveCoeff );
+        }
+
+        if ( kState[ 1 ].m_keys[ SDLK_f ] ) {
+            accel += gl_camera.MoveDown( moveCoeff );
+        }
+
+        if ( kState[ 1 ].m_keys[ SDLK_t ] ) {
+            gl_camera.Yaw( -angleDegrees );
+        }
+
+        if ( kState[ 1 ].m_keys[ SDLK_g ] ) {
+            gl_camera.Yaw( angleDegrees );
+        }
+
+        if ( kState[ 1 ].m_keys[ SDLK_u ] ) {
+            gl_camera.Pitch( -angleDegrees );
+        }
+
+        if ( kState[ 1 ].m_keys[ SDLK_j ] ) {
+            gl_camera.Pitch( angleDegrees );
+        }
+
+        /*
+        if ( kState[ 1 ].m_keys[ SDLK_r ] ) {
+            accel += gl_camera.TurnLeft( moveCoeff );
         }
 
         if ( kState[ 1 ].m_keys[ SDLK_f ] ) {
@@ -538,6 +528,9 @@ static void ProcessEvents( void )
         if ( kState[ 1 ].m_keys[ SDLK_g ] ) {
             gl_camera.TurnDown( angleDegrees );
         }
+        */
+
+        gl_camera.Move( accel );
 
         kState[0] = kState[1];
 }
@@ -670,6 +663,8 @@ void InitVideo() {
     }
 
     SDL_ShowCursor( 0 );
+
+    SDL_WM_GrabInput( SDL_GRAB_ON );
 
     /*
      * At this point, we should have a properly setup
@@ -884,6 +879,54 @@ private:
     cached_surf_t m_surf;
 };
 
+class MyCrosshair: public MyEntity {
+public:
+
+    virtual void Precache( void ) {
+        int i, j;
+
+        surf_t surf;
+        std::vector<drawVert_t> &v = surf.m_verts;
+        std::vector<GLushort> &ind = surf.m_indices;
+    
+        const float kScale = 0.01;
+        v.push_back( drawVert_t( idVec3( -kScale,  -kScale, 0 ),
+                    idVec2( 0, 0 ), idVec3( 0, 0, 0 ) ) );
+        v.push_back( drawVert_t( idVec3(  kScale,  -kScale, 0 ),
+                    idVec2( 1, 0 ), idVec3( 0, 0, 0 ) ) );
+        v.push_back( drawVert_t( idVec3( -kScale,   kScale, 0 ),
+                    idVec2( 0, 1 ), idVec3( 0, 0, 0 ) ) );
+        v.push_back( drawVert_t( idVec3(  kScale,   kScale, 0 ),
+                    idVec2( 1, 1 ), idVec3( 0, 0, 0 ) ) );
+
+        ind.push_back( 0 );
+        ind.push_back( 1 );
+        ind.push_back( 2 );
+
+        ind.push_back( 1 );
+        ind.push_back( 3 );
+        ind.push_back( 2 );
+    
+        surf.m_matName = "crosshair";
+
+        gl_render.CacheSurface( surf, m_surf );
+    }
+
+    void Think( int ) {}
+
+    virtual void Render( void ) {
+        glsurf_t surf;
+
+        surf.m_modelMatrix = idMat4( m_axis, m_pos );
+        surf.m_surf = m_surf;
+
+        gl_render.AddSurface( surf );
+    }
+
+private:
+    cached_surf_t m_surf;
+};
+
 class LegsAnim : public GLRenderModelMD3 {
 public:
     LegsAnim()
@@ -921,6 +964,8 @@ int main() {
 
     idLib::Init();
 
+    gl_physics.Init();
+
     MySky sky;
     gl_game.AddEntity( sky );
 
@@ -943,7 +988,10 @@ int main() {
 
     //GLRenderModelMD3 ammo( "models/shotgunam.md3" );
 
-    GLRenderModelMD3 ammo( "models/machinegun.md3", "images/machinegun.tga" );
+    Map dict;
+    dict["pos"] = idVec3( 0, 0, 20 ).ToString();
+
+    GLRenderModelMD3 ammo( "models/machinegun.md3", "images/machinegun.tga", dict );
     gl_game.AddEntity( ammo );
 
     /*
@@ -958,6 +1006,9 @@ int main() {
     GLRenderModelMD3 flag( "models/b_flag.md3", "images/b_flag2.tga" );
     gl_game.AddEntity( flag );
     */
+
+    MyCrosshair mCrosshair;
+    gl_game.AddEntity( mCrosshair );
 
     MyPostProcessingQuad quad;
     gl_game.AddEntity( quad );
@@ -983,8 +1034,9 @@ int main() {
     while( 1 ) {
         curMs = idLib::Milliseconds();
 
-        ProcessEvents();
+        ProcessEvents( curMs - oldMs );
         gl_game.RunFrame( curMs - oldMs );
+        gl_physics.RunFrame( curMs - oldMs );
 
         RenderVideo();
 
@@ -992,6 +1044,8 @@ int main() {
     }
 
     gl_render.Shutdown();
+
+    gl_physics.Shutdown();
 
     idLib::ShutDown();
     return 0;

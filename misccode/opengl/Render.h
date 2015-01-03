@@ -41,10 +41,12 @@ private:
     GLTexture m_logoTexture;
     GLTextureCube m_skyTexture;
     GLTexture m_screenTexture;
+    GLTexture m_crosshairTexture;
 
     GLSLProgram m_shaderProgram;
     GLSLProgram m_skyProgram;
     GLSLProgram m_postProcessProgram;
+    GLSLProgram m_crosshairProgram;
 
     GLTarget m_offScreenTarget;
 

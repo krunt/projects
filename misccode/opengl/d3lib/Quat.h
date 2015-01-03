@@ -27,6 +27,7 @@ public:
 
 					idQuat( void );
 					idQuat( float x, float y, float z, float w );
+                    idQuat( const idVec3 &axis, float angleRadians );
 
 	void 			Set( float x, float y, float z, float w );
 
@@ -138,10 +139,20 @@ ID_INLINE idQuat idQuat::operator*( const idQuat &a ) const {
 					w*a.w - x*a.x - y*a.y - z*a.z );
 }
 
-ID_INLINE idVec3 idQuat::operator*( const idVec3 &a ) const {
-#if 0
+ID_INLINE idVec3 idQuat::operator*( const idVec3 &v ) const {
+#if 1
 	// it's faster to do the conversion to a 3x3 matrix and multiply the vector by this 3x3 matrix
-	return ( ToMat3() * a );
+	//return ( ToMat3() * a );
+
+    idVec3 uv, uuv;
+    idVec3 qvec( x, y, z );
+    uv = qvec.Cross( v );
+    uuv = qvec.Cross( uv );
+    uv *= ( 2.0f * w );
+    uuv *= 2.0f;
+
+    return v + uv + uuv;
+
 #else
 	// result = this->Inverse() * idQuat( a.x, a.y, a.z, 0.0f ) * (*this)
 	float xxzz = x*x - z*z;

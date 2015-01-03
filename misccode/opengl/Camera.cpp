@@ -7,7 +7,7 @@ const playerView_t Camera::GetPlayerView( void ) const {
     playerView_t view;
 
     view.m_pos = m_pos;
-    view.m_axis = m_axis;
+    view.m_axis = m_quat.ToMat3();
 
     view.m_fovx = 74;
     view.m_fovy = 74;
@@ -21,63 +21,46 @@ const playerView_t Camera::GetPlayerView( void ) const {
     return view;
 }
 
-void Camera::MoveForward( void ) {
-    idVec3 forward = m_axis[0];
-    forward.y = -forward.y;
-    m_pos += forward * kStepSize;
+idVec3 Camera::MoveForward( float stepSize ) const {
+    return  m_quat * idVec3( 1, 0, 0 ) * stepSize;
 }
 
-void Camera::MoveBackward( void ) {
-    idVec3 forward = m_axis[0];
-    forward.y = -forward.y;
-    m_pos -= forward * kStepSize;
+idVec3 Camera::MoveBackward( float stepSize ) const {
+    return MoveForward( -stepSize );
 }
 
-void Camera::StrafeLeft( void ) {
-    /*
-    idVec3 forward, right, up;
-    m_angles.ToVectors( &forward, &right, &up );
-    right.y = -right.y;
-    */
-    m_pos -= m_axis[1] * kStepSize;
+idVec3 Camera::MoveLeft( float stepSize ) const {
+    return  m_quat * idVec3( 0, 1, 0 ) * -stepSize;
 }
 
-void Camera::StrafeRight( void ) {
-    /*
-    idVec3 forward, right, up;
-    m_angles.ToVectors( &forward, &right, &up );
-    right.y = -right.y;
-    */
-    m_pos += m_axis[1] * kStepSize;
+idVec3 Camera::MoveRight( float stepSize ) const {
+    return MoveLeft( -stepSize );
 }
 
-void Camera::TurnLeft( float degrees ) {
-    //m_angles.yaw += DEG2RAD( degrees );
-    idVec3 forward = m_axis[0];
-    forward *= idRotation( idVec3( 0, 0, 0 ), m_axis[2], DEG2RAD( degrees ) );
-    m_axis[0] = forward;
-    forward.OrthogonalBasis( m_axis[1], m_axis[2] );
+idVec3 Camera::MoveUp( float stepSize ) const {
+    return  m_quat * idVec3( 0, 0, 1 ) * stepSize;
 }
 
-void Camera::TurnRight( float degrees ) {
-    //m_angles.yaw -= DEG2RAD( degrees );
-    idVec3 forward = m_axis[0];
-    forward *= idRotation( idVec3( 0, 0, 0 ), m_axis[2], -DEG2RAD( degrees ) );
-    m_axis[0] = forward;
-    forward.OrthogonalBasis( m_axis[1], m_axis[2] );
+idVec3 Camera::MoveDown( float stepSize ) const {
+    return MoveUp( -stepSize );
 }
 
-void Camera::TurnUp( float degrees ) {
-    idVec3 forward = m_axis[0];
-    forward *= idRotation( idVec3( 0, 0, 0 ), m_axis[1], -DEG2RAD( degrees ) );
-    m_axis[0] = forward;
-    forward.OrthogonalBasis( m_axis[1], m_axis[2] );
+void Camera::Yaw( float degrees ) {
+    idVec3 axis =  m_quat * idVec3( 0, 0, 1 );
+    //idVec3 axis =  idVec3( 0, 0, 1 );
+    idQuat rotQuat( axis, DEG2RAD( degrees ) );
+    rotQuat.Normalize();
+    m_quat = rotQuat * m_quat;
 }
 
-void Camera::TurnDown( float degrees ) {
-    idVec3 forward = m_axis[0];
-    forward *= idRotation( idVec3( 0, 0, 0 ), m_axis[1], DEG2RAD( degrees ) );
-    m_axis[0] = forward;
-    forward.OrthogonalBasis( m_axis[1], m_axis[2] );
+void Camera::Pitch( float degrees ) {
+    idVec3 axis =  m_quat * idVec3( 0, 1, 0 );
+    //idVec3 axis =  idVec3( 0, 1, 0 );
+    idQuat rotQuat( axis, DEG2RAD( degrees ) );
+    rotQuat.Normalize();
+    m_quat = rotQuat * m_quat;
 }
 
+void Camera::NormalizeView( void ) {
+    m_quat = mat3_identity.ToQuat();
+}
