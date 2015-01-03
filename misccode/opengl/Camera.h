@@ -6,9 +6,9 @@
 
 class Camera {
 public:
-    void Init( const idVec3 &pos, const idAngles &angles ) {
+    void Init( const idVec3 &pos, const idMat3 &axis ) {
         m_pos = pos;
-        m_angles = angles;
+        m_axis = axis;
     }
 
     const playerView_t GetPlayerView( void ) const;
@@ -26,7 +26,7 @@ public:
 
 private:
     idVec3 m_pos;
-    idAngles m_angles;
+    idMat3 m_axis;
 };
 
 #endif /* CAMERA__H_ */

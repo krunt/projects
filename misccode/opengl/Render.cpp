@@ -68,6 +68,7 @@ void MyRender::SetupProjectionMatrix( const playerView_t &view ) {
     m[2][1] = 0;
     m[2][2] = - ( zfar + znear ) / depth;
     m[2][3] = -2 * zfar * znear / depth;
+    //m[2][3] = +2 * zfar * znear / depth;
 
     m[3][0] = 0;
     m[3][1] = 0;
@@ -75,7 +76,7 @@ void MyRender::SetupProjectionMatrix( const playerView_t &view ) {
     m[3][3] = 0;
 }
 
-void MyRender::CreateStandardShaders( void ) {
+void MyRender::CreateStandardShaders() {
     byte white[16] = 
         { 0xFF, 0x00, 0xFF, 0xFF,
           0xFF, 0x00, 0x00, 0xFF,
@@ -93,6 +94,10 @@ void MyRender::CreateStandardShaders( void ) {
 
     if ( !m_skyTexture.Init( "images/cloudy", 1 ) ) {
         exit(1);
+    }
+
+    if ( !m_screenTexture.Init( 1 ) ) {
+        exit( 1 );
     }
 }
 
@@ -112,6 +117,14 @@ void MyRender::CreateShaderProgram( void ) {
 
     assert( m_skyProgram.Init( shaderList ) );
     assert( m_skyProgram.IsOk() );
+
+    shaderList.clear();
+
+    shaderList.push_back( "shaders/post.vs.glsl" );
+    shaderList.push_back( "shaders/post.ps.glsl" );
+
+    assert( m_postProcessProgram.Init( shaderList ) );
+    assert( m_postProcessProgram.IsOk() );
 }
 
 void MyRender::CacheSurface( const surf_t &s, cached_surf_t &cached ) {
@@ -155,6 +168,9 @@ void MyRender::CacheSurface( const surf_t &s, cached_surf_t &cached ) {
     } else if ( s.m_matName == "sky" ) {
         cached.m_material.m_matPtr = &m_skyTexture;
         cached.m_material.m_matProgram = &m_skyProgram;
+    } else if ( s.m_matName == "postprocess" ) {
+        cached.m_material.m_matPtr = &m_screenTexture;
+        cached.m_material.m_matProgram = &m_postProcessProgram;
     } else {
         if ( m_textureCache.find( s.m_matName ) != m_textureCache.end() ) {
             cached.m_material.m_matPtr = m_textureCache[ s.m_matName ];
@@ -170,9 +186,15 @@ void MyRender::CacheSurface( const surf_t &s, cached_surf_t &cached ) {
     }
 }
 
-void MyRender::Init( void ) {
+void MyRender::UncacheSurface( const cached_surf_t &cached ) {
+    glDeleteVertexArrays( 1, &cached.m_vao );
+}
+
+void MyRender::Init( const playerView_t &view ) {
     CreateStandardShaders();
     CreateShaderProgram();
+
+    m_offScreenTarget.Init( view.m_width, view.m_height );
 }
 
 void MyRender::Shutdown( void ) {
@@ -194,7 +216,23 @@ void MyRender::RenderSurface( const glsurf_t &surf ) {
 
     //printProjectedVector( mvpMatrix * idVec4( 0, -10, -10, 1 ) );
     //printProjectedVector( mvpMatrix * idVec4( 0, 0, 10, 1 ) );
-    //printProjectedVector( mvpMatrix * idVec4( 0, 10, 10, 1 ) );
+
+    /*
+    printVector( flipMatrix *  m_viewMatrix * surf.m_modelMatrix * idVec4( 0, 0, 10, 1 ) );
+    printProjectedVector( mvpMatrix * idVec4( 0, 0, 10, 1 ) );
+    printProjectedVector( mvpMatrix * idVec4( 10, 0, 10, 1 ) );
+    printProjectedVector( mvpMatrix * idVec4( 20, 0, 10, 1 ) );
+    printProjectedVector( mvpMatrix * idVec4( 30, 0, 10, 1 ) );
+    printProjectedVector( mvpMatrix * idVec4( 40, 0, 10, 1 ) );
+    printProjectedVector( mvpMatrix * idVec4( 50, 0, 10, 1 ) );
+    printProjectedVector( mvpMatrix * idVec4( -10, 0, 10, 1 ) );
+    printProjectedVector( mvpMatrix * idVec4( -20, 0, 10, 1 ) );
+    printProjectedVector( mvpMatrix * idVec4( -30, 0, 10, 1 ) );
+    printProjectedVector( mvpMatrix * idVec4( -40, 0, 10, 1 ) );
+    */
+    //printProjectedVector( mvpMatrix * idVec4( 10, 10, 10, 1 ) );
+    //printProjectedVector( mvpMatrix * idVec4( 10, -10, 10, 1 ) );
+    //printVector( flipMatrix *  m_viewMatrix * surf.m_modelMatrix * idVec4( 0, 0, 10, 1 ) );
 
     GLSLProgram *program = surf.m_surf.m_material.m_matProgram;
 
@@ -211,6 +249,8 @@ void MyRender::RenderSurface( const glsurf_t &surf ) {
     */
 
     program->Bind( "eye_pos", ToWorld( m_eye.ToVec3() ) );
+    program->Bind( "light_pos", ToWorld( m_lightPos.ToVec3() ) );
+    program->Bind( "light_dir", ToWorld( m_lightDir.ToVec3() ) );
 
     _CH(glBindVertexArray( surf.m_surf.m_vao ));
 
@@ -228,6 +268,8 @@ void MyRender::Render( const playerView_t &view ) {
     int i;
 
     m_eye = idVec4( view.m_pos, 1.0f );
+    m_lightPos = idVec4( view.m_pos + idVec3( 0, 0, 50 ), 1.0f );
+    m_lightDir = idVec4( 0, 0, -1, 1 );
 
     SetupViewMatrix( view );
     SetupProjectionMatrix( view );
@@ -235,7 +277,31 @@ void MyRender::Render( const playerView_t &view ) {
     _CH(glViewport( 0, 0, view.m_width, view.m_height ));
     _CH(glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT ));
 
+    m_offScreenTarget.Bind();
+
+    glEnable( GL_DEPTH_TEST );
+    _CH(glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT ));
+    glDepthFunc( GL_LESS );
+    glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
+    glDepthMask( GL_TRUE );
+
     for ( i = 0; i < m_surfs.size(); ++i ) {
+        if ( m_surfs[i].m_surf.m_material.m_matPtr == &m_screenTexture ) {
+            continue;
+        }
+
+        RenderSurface( m_surfs[i] );
+    }
+
+    m_offScreenTarget.CopyToTexture( m_screenTexture );
+    glDefaultTarget.Bind();
+
+    //postprocessing
+    for ( i = 0; i < m_surfs.size(); ++i ) {
+        if ( m_surfs[i].m_surf.m_material.m_matPtr != &m_screenTexture ) {
+            continue;
+        }
+
         RenderSurface( m_surfs[i] );
     }
 

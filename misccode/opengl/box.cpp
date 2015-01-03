@@ -14,17 +14,90 @@
 
 #include "Render.h"
 
+
+static int oldMs, curMs;
+
 static Camera gl_camera;
+
+class MyBox: public MyEntity  {
+public:
+    MyBox( const Map &m = Map() )
+        : MyEntity( m )
+    {}
+
+    virtual void Spawn( void ) {
+        m_extents = idVec3( 5, 5, 5 );
+        MyEntity::Spawn();
+    }
+
+    virtual void Precache( void ) {
+        int i, j;
+        int cinds[6*2][3] = {
+        { 7, 6, 2 },
+        { 3, 7, 2 },
+        { 5, 7, 3 },
+        { 1, 5, 3 },
+        { 4, 5, 1 },
+        { 4, 1, 0 },
+        { 6, 4, 0 },
+        { 6, 0, 2 },
+        { 5, 4, 6 },
+        { 7, 5, 6 },
+        { 0, 1, 3 },
+        { 2, 0, 3 },
+        };
+
+        surf_t surf;
+        std::vector<drawVert_t> &v = surf.m_verts;
+        std::vector<GLushort> &ind = surf.m_indices;
+    
+    
+        v.push_back( drawVert_t( idVec3( -m_extents[0], -m_extents[1], -m_extents[2] ),
+                    idVec2( 0, 0 ) ) );
+        v.push_back( drawVert_t( idVec3(  m_extents[0], -m_extents[1], -m_extents[2] ),
+                    idVec2( 0, 1 ) ) );
+        v.push_back( drawVert_t( idVec3( -m_extents[0],  m_extents[1], -m_extents[2] ),
+                    idVec2( 1, 0 ) ) );
+        v.push_back( drawVert_t( idVec3(  m_extents[0],  m_extents[1], -m_extents[2] ),
+                    idVec2( 1, 1 ) ) );
+    
+        v.push_back( drawVert_t( idVec3( -m_extents[0], -m_extents[1], m_extents[2] ),
+                    idVec2( 0, 0 ) ) );
+        v.push_back( drawVert_t( idVec3(  m_extents[0], -m_extents[1], m_extents[2] ),
+                    idVec2( 0, 1 ) ) );
+        v.push_back( drawVert_t( idVec3( -m_extents[0],  m_extents[1], m_extents[2] ),
+                    idVec2( 1, 0 ) ) );
+        v.push_back( drawVert_t( idVec3(  m_extents[0],  m_extents[1], m_extents[2] ),
+                    idVec2( 1, 1 ) ) );
+    
+        for ( i = 0; i < 6*2; ++i ) {
+            for ( j = 0; j < 3; ++j ) {
+                ind.push_back( cinds[i][j] );
+            }
+        }
+    
+        surf.m_matName = "images/checkerboard.tga";
+
+        gl_render.CacheSurface( surf, m_surf );
+    }
+
+    virtual void Think( int ms ) {}
+    virtual void Render( void );
+
+private:
+    idVec3 m_extents;
+    cached_surf_t m_surf;
+};
 
 class MyFloor: public MyEntity {
 public:
+    MyFloor( const Map &m = Map() )
+        : MyEntity( m )
+    {}
 
     virtual void Spawn( void ) {
-        m_pos = vec3_origin;
-        m_axis = mat3_identity;
         m_extents = idVec3( 100, 100, 1 );
-
-        Precache();
+        MyEntity::Spawn();
     }
 
     virtual void Precache( void ) {
@@ -86,14 +159,17 @@ private:
     cached_surf_t m_surf;
 };
 
+void MyBox::Render( void ) {
+    glsurf_t surf;
+
+    surf.m_modelMatrix = idMat4( m_axis, m_pos );
+    surf.m_surf = m_surf;
+
+    gl_render.AddSurface( surf );
+}
+
 class MyQuad : public MyEntity {
 public:
-    virtual void Spawn( void ) {
-        m_pos = vec3_origin;
-        m_axis = mat3_identity;
-
-        Precache();
-    }
 
     virtual void Precache( void ) {
         int i, j;
@@ -209,7 +285,7 @@ idMat3 GetRotationOZ( float angle ) {
 }
 
 idMat3 GetRotationOX( float angle ) {
-    idMat3 rotationOX( 
+    idMat3 rotationOX(
         1, 0, 0,
         0, idMath::Cos( angle ), -idMath::Sin( angle ),
         0, idMath::Sin( angle ), idMath::Cos( angle ) );
@@ -245,6 +321,8 @@ static void ProcessEvents( void )
     static mousePosition_t lastMousePos;
     int deltaX, deltaY;
 
+    playerView_t pView( gl_camera.GetPlayerView() );
+
     const float stepSize = 1.0f;
     const float angleStepSize = 0.2f; // degrees
     const float angleDegrees = 5.0f;
@@ -268,6 +346,22 @@ static void ProcessEvents( void )
         };
 
         switch( event.type ) {
+
+        case SDL_KEYDOWN:
+            switch ( event.key.keysym.sym ) {
+            case SDLK_y: {
+
+                Map m;
+                m[ "pos" ] = pView.m_pos.ToString();
+
+                MyBox *b = new MyBox( m );
+                gl_game.AddEntity( *b );
+                b->Spawn();
+
+                break;
+            }
+        }
+
         /*
         case SDL_KEYDOWN:
             switch ( event.key.keysym.sym ) {
@@ -450,20 +544,35 @@ static void ProcessEvents( void )
 
 void SetupOpengl( int width, int height ) {
     /* Culling. */
-    //glCullFace( GL_BACK );
-    //glFrontFace( GL_CW );
+    /*
+    glCullFace( GL_BACK );
+    glFrontFace( GL_CW );
     glDisable( GL_CULL_FACE );
+    */
+    
+    /*
+    glCullFace( GL_BACK );
+    glFrontFace( GL_CW );
+    glEnable( GL_CULL_FACE );
+    */
 
     glClearColor( 0, 0, 0, 0 );
 
     glViewport( 0, 0, width, height );
 
     //glDisable( GL_CULL_FACE );
-    glDisable( GL_DEPTH_TEST );
+    //glDisable( GL_DEPTH_TEST );
+    //glEnable( GL_DEPTH_TEST );
+
+    glEnable( GL_DEPTH_TEST );
+    glDepthFunc(GL_LESS);
+
     glDisable( GL_STENCIL_TEST );
     glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT );
 
-    gl_camera.Init( idVec3( -50, 0, 10 ), idAngles() );
+    idMat3 m = mat3_identity;
+    //m[0] *= -1;
+    gl_camera.Init( idVec3( -50, 0, 10 ), m );
 
     if ( glewInit() != GLEW_OK ) {
         fprintf( stderr, "glewInit() != GLEW_OK\n" );
@@ -591,7 +700,7 @@ class MyShotgun: public GLRenderModelMD3 {
 public:
     MyShotgun() : GLRenderModelMD3( "models/shotgun.md3", "images/shotgun.tga" )
     {
-        m_jumpInterval = 2000;
+        m_jumpInterval = 1000;
         m_elapsedTime = 0;
         m_isUp = true;
     }
@@ -621,11 +730,9 @@ private:
 class MySky: public MyEntity {
 public:
     virtual void Spawn( void ) {
-        m_pos = vec3_origin;
-        m_axis = mat3_identity;
         m_extents = idVec3( 1000, 1000, 1000 );
 
-        Precache();
+        MyEntity::Spawn();
     }
 
     virtual void Precache( void ) {
@@ -730,8 +837,86 @@ private:
     cached_surf_t m_surf;
 };
 
+class MyPostProcessingQuad: public MyEntity {
+public:
+
+    virtual void Precache( void ) {
+        int i, j;
+
+        surf_t surf;
+        std::vector<drawVert_t> &v = surf.m_verts;
+        std::vector<GLushort> &ind = surf.m_indices;
+    
+        v.push_back( drawVert_t( idVec3( -1,  -1, 0 ),
+                    idVec2( 0, 0 ), idVec3( 0, 0, 0 ) ) );
+        v.push_back( drawVert_t( idVec3(  1,  -1, 0 ),
+                    idVec2( 1, 0 ), idVec3( 0, 0, 0 ) ) );
+        v.push_back( drawVert_t( idVec3( -1,   1, 0 ),
+                    idVec2( 0, 1 ), idVec3( 0, 0, 0 ) ) );
+        v.push_back( drawVert_t( idVec3(  1,   1, 0 ),
+                    idVec2( 1, 1 ), idVec3( 0, 0, 0 ) ) );
+
+        ind.push_back( 0 );
+        ind.push_back( 1 );
+        ind.push_back( 2 );
+
+        ind.push_back( 1 );
+        ind.push_back( 3 );
+        ind.push_back( 2 );
+    
+        surf.m_matName = "postprocess";
+
+        gl_render.CacheSurface( surf, m_surf );
+    }
+
+    void Think( int ) {}
+
+    virtual void Render( void ) {
+        glsurf_t surf;
+
+        surf.m_modelMatrix = idMat4( m_axis, m_pos );
+        surf.m_surf = m_surf;
+
+        gl_render.AddSurface( surf );
+    }
+
+private:
+    cached_surf_t m_surf;
+};
+
+class LegsAnim : public GLRenderModelMD3 {
+public:
+    LegsAnim()
+        : GLRenderModelMD3( "models/lower.md3", "images/crash.tga" ),
+        m_prevMs( 0 )
+    {
+        RegisterAnim( TORSO_ATTACK, 40, 46, 15 );
+    }
+
+    virtual void Spawn( void ) {
+        m_pos = vec3_origin;
+        m_axis = mat3_identity;
+
+        Precache();
+    }
+
+    void Think( int ms ) {
+        this->GLRenderModelMD3::Think( ms );
+
+        m_prevMs += ms;
+
+        if ( m_prevMs > 5000 ) {
+            PlayAnim( TORSO_ATTACK );
+
+            m_prevMs = 0;
+        }
+    }
+
+private:
+    int m_prevMs;
+};
+
 int main() {
-    int oldMs, curMs;
     //light_t light;
 
     idLib::Init();
@@ -751,25 +936,35 @@ int main() {
     gl_render.AddLight( &light );
     */
 
-    //MyQuad quad;
-    //gl_game.AddEntity( quad );
+    /*
+    MyQuad mq;
+    gl_game.AddEntity( mq );
+    */
 
     //GLRenderModelMD3 ammo( "models/shotgunam.md3" );
 
-    /*
     GLRenderModelMD3 ammo( "models/machinegun.md3", "images/machinegun.tga" );
     gl_game.AddEntity( ammo );
+
+    /*
+    LegsAnim legs;
+    gl_game.AddEntity( legs );
     */
 
-    //GLRenderModelMD3 ammo( "models/shotgun.md3", "images/shotgun.tga" );
-    //gl_game.AddEntity( ammo );
-
+    /*
     MyShotgun shotgun;
     gl_game.AddEntity( shotgun );
 
+    GLRenderModelMD3 flag( "models/b_flag.md3", "images/b_flag2.tga" );
+    gl_game.AddEntity( flag );
+    */
+
+    MyPostProcessingQuad quad;
+    gl_game.AddEntity( quad );
+
     InitVideo();
 
-    gl_render.Init();
+    gl_render.Init( gl_camera.GetPlayerView() );
 
 
     /*
@@ -778,6 +973,8 @@ int main() {
     */
 
     gl_game.Spawn();
+
+    //flag.SetPosition( idVec3( 50, 50, 10 ) );
 
     oldMs = idLib::Milliseconds();
 

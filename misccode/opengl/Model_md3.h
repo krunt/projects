@@ -110,6 +110,60 @@ typedef struct md3Header_s {
 	int			ofsEnd;				// end of file
 } md3Header_t;
 
+typedef enum {
+	BOTH_DEATH1,
+	BOTH_DEAD1,
+	BOTH_DEATH2,
+	BOTH_DEAD2,
+	BOTH_DEATH3,
+	BOTH_DEAD3,
+
+	TORSO_GESTURE,
+
+	TORSO_ATTACK,
+	TORSO_ATTACK2,
+
+	TORSO_DROP,
+	TORSO_RAISE,
+
+	TORSO_STAND,
+	TORSO_STAND2,
+
+	LEGS_WALKCR,
+	LEGS_WALK,
+	LEGS_RUN,
+	LEGS_BACK,
+	LEGS_SWIM,
+
+	LEGS_JUMP,
+	LEGS_LAND,
+
+	LEGS_JUMPB,
+	LEGS_LANDB,
+
+	LEGS_IDLE,
+	LEGS_IDLECR,
+
+	LEGS_TURN,
+
+	TORSO_GETFLAG,
+	TORSO_GUARDBASE,
+	TORSO_PATROL,
+	TORSO_FOLLOWME,
+	TORSO_AFFIRMATIVE,
+	TORSO_NEGATIVE,
+
+	MAX_ANIMATIONS,
+
+	LEGS_BACKCR,
+	LEGS_BACKWALK,
+	FLAG_RUN,
+	FLAG_STAND,
+	FLAG_STAND2RUN,
+
+	MAX_TOTALANIMATIONS
+} animNumber_t;
+
 class GLRenderModelMD3 : public MyEntity {
 public:
     GLRenderModelMD3( const char *filename, const char *textureName )
@@ -121,10 +175,35 @@ public:
     void Think( int ms );
     void Render( void );
 
+    void PlayAnim( animNumber_t anim );
+    void RegisterAnim( animNumber_t anim, int startFrame, int endFrame, int fps );
+
 private:
+    void LerpMesh();
+    void LerpTags( int startFrame, int endFrame, float backLerp );
+    void LerpMeshVertexes( int startFrame, int endFrame, float backLerp );
+
     std::string m_fileName;
     std::string m_textureName;
     cached_surf_t m_surf;
+
+    md3Header_t *m_md3pointer;
+    std::string m_md3Body;
+
+    typedef struct {
+        int m_startFrame;
+        int m_endFrame;
+        int m_fps;
+        animNumber_t m_anim;
+    } animStruct;
+
+    std::vector<animStruct> m_anims;
+    bool m_isAnimPlaying;
+    animStruct m_currAnim;
+
+    int m_startMs, m_curMs, m_endMs;
 };
+
+
 
 #endif /* !MODEL_MD3_H__ */

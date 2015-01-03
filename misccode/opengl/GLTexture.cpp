@@ -313,6 +313,20 @@ GLTexture::~GLTexture() {
     }
 }
 
+bool GLTexture::Init( int textureUnit ) {
+    GLuint texture;
+    _CH(glActiveTexture( GL_TEXTURE0 + textureUnit ));
+    _CH(glGenTextures( 1, &texture ));
+    _CH(glBindTexture( GL_TEXTURE_2D, texture ));
+    _CH(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+    _CH(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+
+    m_texture = texture;
+    m_loadOk = true;
+    m_textureUnit = textureUnit;
+    return true;
+}
+
 bool GLTexture::Init( const std::string &name, int textureUnit ) {
     byte *pic, *picCopy;
     GLuint texture;
@@ -454,6 +468,20 @@ void GLTexture::Unbind( void ) {
     _CH(glBindTexture( GL_TEXTURE_2D, 0 ));
 }
 
+bool GLTextureCube::Init( int textureUnit ) {
+    GLuint texture;
+    _CH(glActiveTexture( GL_TEXTURE0 + textureUnit ));
+    _CH(glGenTextures( 1, &texture ));
+    _CH(glBindTexture( GL_TEXTURE_CUBE_MAP, texture ));
+    _CH(glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+    _CH(glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+
+    m_texture = texture;
+    m_loadOk = true;
+    m_textureUnit = textureUnit;
+    return true;
+}
+
 bool GLTextureCube::Init( const std::string &name, int textureUnit ) {
     int i;
     byte *pic, *picCopy;
@@ -553,3 +581,4 @@ void GLTextureCube::Unbind( void ) {
     _CH(glActiveTexture( GL_TEXTURE0 + m_textureUnit ));
     _CH(glBindTexture( GL_TEXTURE_CUBE_MAP, 0 ));
 }
+

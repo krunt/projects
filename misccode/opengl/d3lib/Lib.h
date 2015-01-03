@@ -72,6 +72,8 @@ public:
 ===============================================================================
 */
 
+typedef std::map<std::string, std::string> Map;
+
 typedef unsigned char			byte;		// 8 bits
 typedef unsigned short			word;		// 16 bits
 typedef unsigned int			dword;		// 32 bits

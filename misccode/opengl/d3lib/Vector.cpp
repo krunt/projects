@@ -47,9 +47,19 @@ idVec6 vec6_infinity( idMath::INFINITY, idMath::INFINITY, idMath::INFINITY, idMa
 idVec2::ToString
 =============
 */
-const char *idVec2::ToString( int precision ) const {
+std::string idVec2::ToString( int precision ) const {
 	//return idStr::FloatArrayToString( ToFloatPtr(), GetDimension(), precision );
-    return 0;
+    //return 0;
+
+    char buf[4096];
+    snprintf( buf, sizeof( buf ), "[ %f %f ]", x, y );
+    return buf;
+}
+
+idVec2 idVec2::FromString( const std::string &msg ) {
+    float x, y;
+    sscanf( msg.c_str(), "[ %f %f ]", &x, &y );
+    return idVec2( x, y );
 }
 
 /*
@@ -165,9 +175,17 @@ idMat3 idVec3::ToMat3( void ) const {
 idVec3::ToString
 =============
 */
-const char *idVec3::ToString( int precision ) const {
+std::string idVec3::ToString( int precision ) const {
 	//return idStr::FloatArrayToString( ToFloatPtr(), GetDimension(), precision );
-    return 0;
+    char buf[4096];
+    snprintf( buf, sizeof( buf ), "[ %f %f %f ]", x, y, z );
+    return buf;
+}
+
+idVec3 idVec3::FromString( const std::string &msg ) {
+    float x, y, z;
+    sscanf( msg.c_str(), "[ %f %f %f ]", &x, &y, &z );
+    return idVec3( x, y, z );
 }
 
 /*
@@ -252,9 +270,17 @@ void idVec3::ProjectSelfOntoSphere( const float radius ) {
 idVec4::ToString
 =============
 */
-const char *idVec4::ToString( int precision ) const {
+std::string idVec4::ToString( int precision ) const {
 	//return idStr::FloatArrayToString( ToFloatPtr(), GetDimension(), precision );
-    return 0;
+    char buf[4096];
+    snprintf( buf, sizeof( buf ), "[ %f %f %f %f ]", x, y, z, w );
+    return buf;
+}
+
+idVec4 idVec4::FromString( const std::string &msg ) {
+    float x, y, z, w;
+    sscanf( msg.c_str(), "[ %f %f %f %f ]", &x, &y, &z, &w );
+    return idVec4( x, y, z, w );
 }
 
 /*

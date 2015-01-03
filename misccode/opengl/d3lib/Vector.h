@@ -97,7 +97,8 @@ public:
 
 	const float *	ToFloatPtr( void ) const;
 	float *			ToFloatPtr( void );
-	const char *	ToString( int precision = 2 ) const;
+    std::string	ToString( int precision = 2 ) const;
+	static  idVec2	FromString( const std::string &s );
 
 	void			Lerp( const idVec2 &v1, const idVec2 &v2, const float l );
 };
@@ -375,7 +376,7 @@ public:
 	idVec2 &		ToVec2( void );
 	const float *	ToFloatPtr( void ) const;
 	float *			ToFloatPtr( void );
-	const char *	ToString( int precision = 2 ) const;
+    std::string	ToString( int precision = 2 ) const;
 
 	void			NormalVectors( idVec3 &left, idVec3 &down ) const;	// vector should be normalized
 	void			OrthogonalBasis( idVec3 &left, idVec3 &up ) const;
@@ -386,6 +387,8 @@ public:
 
 	void			Lerp( const idVec3 &v1, const idVec3 &v2, const float l );
 	void			SLerp( const idVec3 &v1, const idVec3 &v2, const float l );
+
+	static  idVec3	FromString( const std::string &s );
 };
 
 extern idVec3 vec3_origin;
@@ -855,9 +858,11 @@ public:
 	idVec3 &		ToVec3( void );
 	const float *	ToFloatPtr( void ) const;
 	float *			ToFloatPtr( void );
-	const char *	ToString( int precision = 2 ) const;
+    std::string	ToString( int precision = 2 ) const;
 
 	void			Lerp( const idVec4 &v1, const idVec4 &v2, const float l );
+
+	static  idVec4	FromString( const std::string &s );
 };
 
 extern idVec4 vec4_origin;

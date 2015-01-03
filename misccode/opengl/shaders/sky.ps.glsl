@@ -8,7 +8,11 @@ in VS_OUT
 } fs_in; 
 out vec4 color; 
 
+uniform mat4 mvp_matrix; 
+uniform mat4 model_matrix; 
 uniform vec3 eye_pos;
+uniform vec3 light_pos;
+uniform vec3 light_dir;
 
 void main(void) {
  float light_coeff = 1.6;
