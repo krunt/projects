@@ -122,9 +122,14 @@ void GLSLProgram::Use() {
     glUseProgram( m_program );
 }
 
+void GLSLProgram::Bind( const std::string &name, int v ) {
+    GLint location = glGetUniformLocation( m_program, name.c_str() );
+    _CH(glUniform1i( location, (GLint)v ));
+}
+
 void GLSLProgram::Bind( const std::string &name, float v ) {
     GLint location = glGetUniformLocation( m_program, name.c_str() );
-    glUniform1f( location, (GLfloat)v );
+    _CH(glUniform1f( location, (GLfloat)v ));
 }
 
 void GLSLProgram::Bind( const std::string &name, const idVec2 &v ) {

@@ -133,7 +133,7 @@ struct TexBundle_t {
     TexModInfo_t m_texMods[4];
 };
 
-struct ShaderStage_t {
+layout (std140) struct ShaderStage_t {
     WaveForm_t m_rgbWave;
     int m_rgbGen;
 
@@ -157,10 +157,14 @@ uniform vec3 eye_pos;
 uniform vec3 lightDir;
 uniform float time;
 
+/*
 layout (std140) uniform StagesBlock {
-    int numShaderStages;
     ShaderStage_t stages[MAX_SHADER_STAGES];
 };
+*/
+
+uniform int numShaderStages;
+uniform ShaderStage_t stages[MAX_SHADER_STAGES];
 
 uniform sampler2D samples[MAX_SAMPLERS];
 
@@ -359,5 +363,14 @@ void main(void) {
         outColor = BlendColor( outColor, stageColor, stages[i].m_glBlend );
     }
     shaderOutColor = outColor;
+    //shaderOutColor = GetTextureColor( fs_in.texcoord * vec2(0.1,0.1) 
+            //+ vec2(time-floor(time),EvaluateWaveForm), 0 );
+    /*
+    vec4 x1 = GetTextureColor( fs_in.texcoord * vec2(0.1,0.1) 
+            + vec2(time-floor(time), 0), 0 );
+            */
+    //vec4 x2 = GetTextureColor( fs_in.texcoord, 0 );
+    //vec4 x2 = GetTextureColor( GetTexCoordinates( stages[0] ), 0 );
+    //shaderOutColor = BlendColor(  x1, x2, ( GL_ZERO << 5 ) | GL_ONE );
 }
 

@@ -121,8 +121,8 @@ public:
             }
         }
     
-        surf.m_matName = "white";
-        //surf.m_matName = "q3shaders/base_floor.q3a";
+        //surf.m_matName = "white";
+        surf.m_matName = "q3shaders/base_floor.q3a";
 
         gl_render.CacheSurface( surf, m_surf );
     }

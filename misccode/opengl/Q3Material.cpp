@@ -1281,6 +1281,8 @@ bool Q3Material::Init( const std::string &name ) {
 }
 
 bool Q3Material::InitUniformVariables( void ) {
+    return true;
+
     m_program->CreateUniformBuffer( "StagesBlock" );
     m_stagesBlock.Init( m_shader.m_stages );
 
@@ -1361,9 +1363,9 @@ void Q3StagesBlock::Pack( byte *pBuffer, const std::vector<GLint> &offsets ) con
 
     m_texIndex = 0;
 
-    Std140GLSLPacker::Pack( pBuffer + offsets.at( 0 ), static_cast<GLint>(m_stages.size()) );
+    //Std140GLSLPacker::Pack( pBuffer + offsets.at( 0 ), static_cast<GLint>(m_stages.size()) );
 
-    p = pBuffer + offsets.at( 1 );
+    //p = pBuffer + offsets.at( 1 );
     for ( int i = 0; i < m_stages.size(); ++i ) {
         p = PackInternal( p, m_stages[i] );
         p = AlignUp( p, Std140OpenglAlignmentHelper::GetAlignment<shaderStage_t, 8>::value );
@@ -1515,11 +1517,73 @@ byte *Q3StagesBlock::PackInternal( byte *pBuffer,
     return AlignUp( p, alignValue );
 }
 
+static std::string GetIndexed( const std::string &fmt, int index ) {
+    char b[1024];
+    snprintf( b, sizeof(b), fmt.c_str(), index );
+    return b;
+}
+
+void Q3Material::BindWaveform( const std::string &prefix, const waveForm_t &w ) {
+    m_program->Bind( prefix + ".m_type", (int)w.func );
+    m_program->Bind( prefix + ".m_base", w.base );
+    m_program->Bind( prefix + ".m_amplitude", w.amplitude );
+    m_program->Bind( prefix + ".m_phase", w.phase );
+    m_program->Bind( prefix + ".m_frequency", w.frequency );
+}
+
+void Q3Material::BindTexMod( const std::string &prefix, const texModInfo_t &t ) {
+    m_program->Bind( prefix + ".m_texModType", (int)t.type );
+    BindWaveform( prefix + ".m_waveForm", t.wave );
+    m_program->Bind( prefix + ".m_rotate", t.matrix );
+    m_program->Bind( prefix + ".m_translate", t.translate );
+    m_program->Bind( prefix + ".m_scale", t.scale );
+    m_program->Bind( prefix + ".m_scroll", t.scroll );
+    m_program->Bind( prefix + ".m_rotateSpeed", t.rotateSpeed );
+}
+
+void Q3Material::BindTexBundle( const std::string &prefix, const textureBundle_t &t ) {
+    m_program->Bind( prefix + ".m_texture", m_texIndex++ );
+    m_program->Bind( prefix + ".m_tcGenMod", (int)t.tcGen );
+    m_program->Bind( prefix + ".m_numTexMods", t.numTexMods );
+    for (int i = 0; i < 4; ++i) {
+        BindTexMod( GetIndexed( prefix + ".m_texMods[%d]", i ), t.texMods[i] );
+    }
+}
+
+void Q3Material::BindShaderStage( const std::string &prefix, const shaderStage_t &t ) {
+    BindWaveform( prefix + ".m_rgbWave", t.rgbWave );
+    m_program->Bind( prefix + ".m_rgbGen", (int)t.rgbGen );
+
+    BindWaveform( prefix + ".m_rgbWave", t.alphaWave );
+    m_program->Bind( prefix + ".m_rgbGen", (int)t.alphaGen );
+    m_program->Bind( prefix + ".m_constantColor", t.constantColor );
+
+    BindTexBundle( prefix + ".m_texBundle", t.bundle );
+    m_program->Bind( prefix + ".m_glBlend", t.blendBits );
+}
+
+void Q3Material::BindStages() {
+    m_texIndex = 0;
+    std::vector<shaderStage_t> &stages = m_shader.m_stages;
+    m_program->Bind( "numShaderStages", (int)stages.size() );
+    for (int i = 0; i < stages.size(); ++i) {
+        shaderStage_t &stage = stages[0];
+        BindShaderStage( GetIndexed( "stages[%d]", i ), stage );
+    }
+}
+
 void Q3Material::Bind( const CommonMaterialParams &params ) {
     assert( IsOk() );
     MaterialBase::Bind( params );
     BindTextures( params );
-    m_program->Bind( "StagesBlock", m_stagesBlock );
+    //m_program->Bind( "StagesBlock", m_stagesBlock );
+    m_program->Use();
+    /*
+    m_program->Bind( "stages[0].m_texBundle.m_texMods[0].m_texModType", 4 );
+    m_program->Bind( "stages[0].m_texBundle.m_texMods[0].m_scale", idVec2( 0.1f, 0.1f ) );
+    */
+    BindStages();
+    //m_program->Bind( "scale_vec.m_scale", idVec2( 0.1f, 0.1f ));
 }
 
 void Q3Material::Unbind( void ) {

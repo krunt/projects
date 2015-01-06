@@ -20,6 +20,7 @@ public:
     bool Init( const std::string &name );
     bool Init( const std::vector<std::string> &progs );
 
+    void Bind( const std::string &name, int v );
     void Bind( const std::string &name, float v );
     void Bind( const std::string &name, const idVec2 &v );
     void Bind( const std::string &name, const idVec3 &v );

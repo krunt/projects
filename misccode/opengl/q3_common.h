@@ -193,6 +193,12 @@ private:
     byte *PackInternal( byte *pBuffer, const textureBundle_t &texBundle ) const;
     byte *PackInternal( byte *pBuffer, const shaderStage_t &shaderStage ) const;
 
+    void BindStages();
+    void BindShaderStage( const std::string &prefix, const shaderStage_t &t );
+    void BindTexBundle( const std::string &prefix, const textureBundle_t &t );
+    void BindTexMod( const std::string &prefix, const texModInfo_t &t );
+    void BindWaveform( const std::string &prefix, const waveForm_t &w );
+
     mutable int m_texIndex;
     std::vector<shaderStage_t> m_stages;
 };

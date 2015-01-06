@@ -22,7 +22,16 @@ private:
     bool InitUniformVariables( void );
     void BindTextures( const CommonMaterialParams &params );
 
+    void BindStages();
+    void BindShaderStage( const std::string &prefix, const shaderStage_t &t );
+    void BindTexBundle( const std::string &prefix, const textureBundle_t &t );
+    void BindTexMod( const std::string &prefix, const texModInfo_t &t );
+    void BindWaveform( const std::string &prefix, const waveForm_t &w );
+
+
     int    m_loadOk;
+
+    int m_texIndex;
 
     shader_t m_shader;
     Q3StagesBlock m_stagesBlock;
