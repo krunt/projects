@@ -2,7 +2,7 @@
 #define Q3MAP__DEF_H
 
 #include "Common.h"
-#include "q3_common.h"
+#include "q3_map_common.h"
 #include "MyEntity.h"
 
 class Q3Map: public MyEntity {
