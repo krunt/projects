@@ -32,4 +32,6 @@ private:
     idQuat m_quat;
 };
 
+extern Camera gl_camera;
+
 #endif /* CAMERA__H_ */

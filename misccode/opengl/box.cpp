@@ -18,9 +18,9 @@
 
 #include "PhysicalEntity.h"
 
-static int oldMs, curMs;
+#include "Q3Map.h"
 
-static Camera gl_camera;
+static int oldMs, curMs;
 
 class MyBox: public MyPhysicalEntity  {
 public:
@@ -469,7 +469,7 @@ static void ProcessEvents( int ms )
 
     idVec3 accel( 0, 0, 0 );
     const float velocity = 80.0f;
-    const float angleDegrees = 0.1f;
+    const float angleDegrees = 1.f;
     float moveCoeff = velocity * ( (float)ms / 1000.0f );
 
         if ( kState[ 1 ].m_keys[ SDLK_w ] ) {
@@ -565,7 +565,7 @@ void SetupOpengl( int width, int height ) {
 
     idMat3 m = mat3_identity;
     //m[0] *= -1;
-    gl_camera.Init( idVec3( -50, 0, 10 ), m );
+    gl_camera.Init( idVec3( 19.6, 2.6, 2.38 ), m );
 
     if ( glewInit() != GLEW_OK ) {
         fprintf( stderr, "glewInit() != GLEW_OK\n" );
@@ -662,9 +662,11 @@ void InitVideo() {
         Quit( 1 );
     }
 
+    /*
     SDL_ShowCursor( 0 );
 
     SDL_WM_GrabInput( SDL_GRAB_ON );
+    */
 
     /*
      * At this point, we should have a properly setup
@@ -969,8 +971,10 @@ int main() {
     MySky sky;
     gl_game.AddEntity( sky );
 
+    /*
     MyFloor floor;
     gl_game.AddEntity( floor );
+    */
 
     //lightPos = idVec4( -50, 50, 50, 1 );
     //lightDir = idVec4( 0, 0, 0, 1 ) - lightPos;
@@ -989,10 +993,13 @@ int main() {
     //GLRenderModelMD3 ammo( "models/shotgunam.md3" );
 
     Map dict;
+
+    /*
     dict["pos"] = idVec3( 0, 0, 20 ).ToString();
 
     GLRenderModelMD3 ammo( "models/machinegun.md3", "images/machinegun.tga", dict );
     gl_game.AddEntity( ammo );
+    */
 
     /*
     LegsAnim legs;
@@ -1006,6 +1013,12 @@ int main() {
     GLRenderModelMD3 flag( "models/b_flag.md3", "images/b_flag2.tga" );
     gl_game.AddEntity( flag );
     */
+
+    dict.clear();
+    dict["map"] = "maps/q3dm0.bsp";
+
+    Q3Map q3map( dict );
+    gl_game.AddEntity( q3map );
 
     MyCrosshair mCrosshair;
     gl_game.AddEntity( mCrosshair );

@@ -64,3 +64,6 @@ void Camera::Pitch( float degrees ) {
 void Camera::NormalizeView( void ) {
     m_quat = mat3_identity.ToQuat();
 }
+
+Camera gl_camera;
+
