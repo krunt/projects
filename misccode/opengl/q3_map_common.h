@@ -100,12 +100,12 @@ typedef enum {
 	SF_MAX = 0x7fffffff
 } surfaceType_t;
 
-typedef struct shader_s {
-} shader_t;
+typedef struct qshader_s {
+} qshader_t;
 
 typedef struct msurface_s {
 	int					viewCount;		// if == tr.viewCount, already added
-	struct shader_s		*shader;
+	struct qshader_s		*shader;
 	//int					fogIndex;
 
 	surfaceType_t		*data;			// any of srf*_t

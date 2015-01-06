@@ -46,6 +46,10 @@ static byte *R_LoadTGA( const std::string &filename, int &width,
 
     fileSize = contents.size();
 
+    if ( !fileSize ) {
+		msg_failure( "R_LoadTGA( %s ): File not found\n", filename.c_str() );
+    }
+
     buffer = (byte *)contents.data();
 
 	buf_p = buffer;
@@ -313,9 +317,10 @@ GLTexture::~GLTexture() {
     }
 }
 
-bool GLTexture::Init( int textureUnit ) {
+bool GLTexture::Init( void ) {
     GLuint texture;
-    _CH(glActiveTexture( GL_TEXTURE0 + textureUnit ));
+
+    _CH(glActiveTexture( GL_TEXTURE0 ));
     _CH(glGenTextures( 1, &texture ));
     _CH(glBindTexture( GL_TEXTURE_2D, texture ));
     _CH(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
@@ -323,11 +328,11 @@ bool GLTexture::Init( int textureUnit ) {
 
     m_texture = texture;
     m_loadOk = true;
-    m_textureUnit = textureUnit;
+
     return true;
 }
 
-bool GLTexture::Init( const std::string &name, int textureUnit ) {
+bool GLTexture::Init( const std::string &name ) {
     byte *pic, *picCopy;
     GLuint texture;
     int width, height, format;
@@ -349,7 +354,7 @@ bool GLTexture::Init( const std::string &name, int textureUnit ) {
 
     picCopy = (byte *)malloc( width * height * 4 );
 
-    _CH(glActiveTexture( GL_TEXTURE0 + textureUnit ));
+    _CH(glActiveTexture( GL_TEXTURE0 ));
     _CH(glGenTextures( 1, &texture ));
     _CH(glBindTexture( GL_TEXTURE_2D, texture ));
     _CH(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
@@ -392,17 +397,16 @@ bool GLTexture::Init( const std::string &name, int textureUnit ) {
 
     m_texture = texture;
     m_loadOk = true;
-    m_textureUnit = textureUnit;
     return true;
 }
 
 bool GLTexture::Init( byte *data, int width, int height, 
-            int format, int textureUnit ) 
+            int format ) 
 {
     GLuint texture;
     byte *pic, *picCopy;
 
-    _CH(glActiveTexture( GL_TEXTURE0 + textureUnit ));
+    _CH(glActiveTexture( GL_TEXTURE0 ));
     _CH(glGenTextures( 1, &texture ));
     _CH(glBindTexture( GL_TEXTURE_2D, texture ));
     _CH(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
@@ -453,36 +457,23 @@ bool GLTexture::Init( byte *data, int width, int height,
 
     m_texture = texture;
     m_loadOk = true;
-    m_textureUnit = textureUnit;
     return true;
 }
 
-void GLTexture::Bind( void ) {
+void GLTexture::Bind( int unit ) {
     assert( IsOk() );
-    _CH(glActiveTexture( GL_TEXTURE0 + m_textureUnit ));
+    _CH(glActiveTexture( GL_TEXTURE0 + unit ));
     _CH(glBindTexture( GL_TEXTURE_2D, m_texture ));
 }
 
 void GLTexture::Unbind( void ) {
+    /*
     _CH(glActiveTexture( GL_TEXTURE0 + m_textureUnit ));
     _CH(glBindTexture( GL_TEXTURE_2D, 0 ));
+    */
 }
 
-bool GLTextureCube::Init( int textureUnit ) {
-    GLuint texture;
-    _CH(glActiveTexture( GL_TEXTURE0 + textureUnit ));
-    _CH(glGenTextures( 1, &texture ));
-    _CH(glBindTexture( GL_TEXTURE_CUBE_MAP, texture ));
-    _CH(glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
-    _CH(glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
-
-    m_texture = texture;
-    m_loadOk = true;
-    m_textureUnit = textureUnit;
-    return true;
-}
-
-bool GLTextureCube::Init( const std::string &name, int textureUnit ) {
+bool GLTextureCube::Init( const std::string &name ) {
     int i;
     byte *pic, *picCopy;
     GLuint texture;
@@ -490,7 +481,7 @@ bool GLTextureCube::Init( const std::string &name, int textureUnit ) {
 
     format = GL_RGBA;
 
-    _CH(glActiveTexture( GL_TEXTURE0 + textureUnit ));
+    _CH(glActiveTexture( GL_TEXTURE0 ));
     _CH(glGenTextures( 1, &texture ));
     _CH(glBindTexture( GL_TEXTURE_CUBE_MAP, texture ));
     _CH(glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
@@ -567,18 +558,23 @@ bool GLTextureCube::Init( const std::string &name, int textureUnit ) {
 
     m_texture = texture;
     m_loadOk = true;
-    m_textureUnit = textureUnit;
     return true;
 }
 
-void GLTextureCube::Bind( void ) {
+bool GLTextureCube::Init( byte *data, int width, int height, int format ) {
+    return true;
+}
+
+void GLTextureCube::Bind( int unit ) {
     assert( IsOk() );
-    _CH(glActiveTexture( GL_TEXTURE0 + m_textureUnit ));
+    _CH(glActiveTexture( GL_TEXTURE0 + unit ));
     _CH(glBindTexture( GL_TEXTURE_CUBE_MAP, m_texture ));
 }
 
 void GLTextureCube::Unbind( void ) {
-    _CH(glActiveTexture( GL_TEXTURE0 + m_textureUnit ));
+    /*
+    _CH(glActiveTexture( GL_TEXTURE0 + 0 ));
     _CH(glBindTexture( GL_TEXTURE_CUBE_MAP, 0 ));
+    */
 }
 

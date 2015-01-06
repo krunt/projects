@@ -1,7 +1,5 @@
 #version 410 core 
-layout (binding = 0) uniform sampler2D sq_tex; 
-layout (binding = 1) uniform sampler2D tex; 
-layout (binding = 2) uniform samplerCube texCube; 
+layout (binding = 0) uniform sampler2D tex; 
 in VS_OUT 
 { 
  vec2 texcoord; 
@@ -13,8 +11,8 @@ out vec4 color;
 uniform mat4 mvp_matrix; 
 uniform mat4 model_matrix; 
 uniform vec3 eye_pos;
-uniform vec3 light_pos;
-uniform vec3 light_dir;
+uniform vec3 lightDir;
+uniform float time;
 
 void main(void) {
  //float light_coeff = 1.6;
@@ -25,7 +23,7 @@ void main(void) {
 
  float specularPower = 10.0f;
  float ambientCoeff = 0.6;
- float diffuseCoeff = dot( fs_in.normal, -light_dir );
+ float diffuseCoeff = dot( fs_in.normal, -lightDir );
  float specularCoeff = pow( dot( fs_in.normal, toEye ), specularPower );
  float colorCoeff = ambientCoeff + diffuseCoeff + specularCoeff;
 

@@ -426,7 +426,7 @@ void Q3Map::CacheBatches() {
 
     m_surfs.clear();
 
-    for ( std::map<shader_t *, BatchElement>::iterator
+    for ( std::map<qshader_t *, BatchElement>::iterator
             it = m_batch.begin(); it != m_batch.end(); ++it )
     {
         /* for now continue */
@@ -435,6 +435,7 @@ void Q3Map::CacheBatches() {
         }
 
         surf.m_matName = "images/checkerboard.tga";
+        //surf.m_matName = "q3shaders/base_wall.q3a";
         surf.m_indices.swap( it->second.m_indices );
         surf.m_verts.swap( it->second.m_verts );
 

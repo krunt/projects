@@ -55,7 +55,7 @@ private:
         std::vector<drawVert_t> m_verts;
     };
 
-    std::map<shader_t *, BatchElement> m_batch;
+    std::map<qshader_t *, BatchElement> m_batch;
 
     std::vector<cached_surf_t> m_surfs;
 };

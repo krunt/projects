@@ -1,5 +1,5 @@
 #version 410 core 
-layout (binding = 1) uniform sampler2D screenTex; 
+layout (binding = 0) uniform sampler2D screenTex; 
 in VS_OUT 
 { 
  vec2 texcoord; 

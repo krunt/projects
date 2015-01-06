@@ -1,5 +1,5 @@
 #version 410 core 
-layout (binding = 1) uniform samplerCube skyBox; 
+layout (binding = 0) uniform samplerCube skyBox; 
 in VS_OUT 
 { 
  vec2 texcoord; 
@@ -11,8 +11,8 @@ out vec4 color;
 uniform mat4 mvp_matrix; 
 uniform mat4 model_matrix; 
 uniform vec3 eye_pos;
-uniform vec3 light_pos;
-uniform vec3 light_dir;
+uniform vec3 lightDir;
+uniform float time;
 
 void main(void) {
  float light_coeff = 1.6;

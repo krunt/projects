@@ -70,3 +70,8 @@ idVec3 GetForwardVector( const idMat3 &m ) {
     return n;
 }
 
+byte *AlignUp( byte *v, int alignment ) {
+    int m = reinterpret_cast<std::size_t>(v) % alignment;
+    if ( m ) { v += alignment - m; }
+    return v;
+}

@@ -18,6 +18,8 @@
 
 #include "PhysicalEntity.h"
 
+#include "Q3Material.h"
+
 #include "Q3Map.h"
 
 static int oldMs, curMs;
@@ -204,6 +206,7 @@ public:
         }
     
         surf.m_matName = "white";
+        //surf.m_matName = "q3shaders/base_floor.q3a";
 
         gl_render.CacheSurface( surf, m_surf );
     }
@@ -688,8 +691,6 @@ void RenderVideo( void ) {
     gl_game.Render();
     gl_render.Render( gl_camera.GetPlayerView() );
 
-    //draw_screen();
-
     SDL_GL_SwapBuffers( );
 }
 
@@ -968,6 +969,8 @@ int main() {
 
     gl_physics.Init();
 
+    Q3Material::ScanShaders();
+
     MySky sky;
     gl_game.AddEntity( sky );
 
@@ -1009,6 +1012,11 @@ int main() {
     /*
     MyShotgun shotgun;
     gl_game.AddEntity( shotgun );
+    */
+
+    /*
+    MyQuad tquad;
+    gl_game.AddEntity( tquad );
 
     GLRenderModelMD3 flag( "models/b_flag.md3", "images/b_flag2.tga" );
     gl_game.AddEntity( flag );
@@ -1020,8 +1028,10 @@ int main() {
     Q3Map q3map( dict );
     gl_game.AddEntity( q3map );
 
+    /*
     MyCrosshair mCrosshair;
     gl_game.AddEntity( mCrosshair );
+    */
 
     MyPostProcessingQuad quad;
     gl_game.AddEntity( quad );

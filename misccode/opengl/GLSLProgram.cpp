@@ -2,10 +2,32 @@
 
 #include "Utils.h"
 
+#include "q3_common.h"
+
 GLSLProgram::~GLSLProgram() {
     if ( IsOk() ) {
         glDeleteProgram( m_program );
     }
+}
+
+bool GLSLProgram::Init( const std::string &programName ) {
+    std::vector<std::string> shaderList;
+
+    if ( programName == "sky" ) {
+        shaderList.push_back( "shaders/sky.vs.glsl" );
+        shaderList.push_back( "shaders/sky.ps.glsl" );
+    } else if ( programName == "postprocess" ) {
+        shaderList.push_back( "shaders/post.vs.glsl" );
+        shaderList.push_back( "shaders/post.ps.glsl" );
+    } else if ( programName == "q3shader" ) {
+        shaderList.push_back( "shaders/q3.vs.glsl" );
+        shaderList.push_back( "shaders/q3.ps.glsl" );
+    } else {
+        shaderList.push_back( "shaders/simple.vs.glsl" );
+        shaderList.push_back( "shaders/simple.ps.glsl" );
+    }
+
+    return Init( shaderList );
 }
 
 bool GLSLProgram::Init( const std::vector<std::string> &progs ) {
@@ -38,7 +60,7 @@ bool GLSLProgram::Init( const std::vector<std::string> &progs ) {
         }
 
         if ( type == -1 ) {
-            fprintf( stderr, "unknown shader source `%s' found\n", 
+            msg_warning( "unknown shader source `%s' found\n", 
                     progs[i].c_str() );
             return false;
         }
@@ -56,8 +78,18 @@ bool GLSLProgram::Init( const std::vector<std::string> &progs ) {
         glGetShaderiv( shader, GL_COMPILE_STATUS, &compileStatus );
 
         if ( compileStatus != GL_TRUE ) {
-            fprintf( stderr, "compilation of `%s' is unsuccessful\n", 
-                    progs[i].c_str() );
+            int logLength;
+            std::string s;
+
+            glGetShaderiv( shader, GL_INFO_LOG_LENGTH, &logLength );
+
+            s.resize( logLength );
+
+            glGetShaderInfoLog( shader, logLength, NULL, &s[0] );
+
+            msg_warning( "compilation of `%s' is unsuccessful (error msg=`\n%s\n')\n", 
+                    progs[i].c_str(), s.c_str() );
+
             return false;
         }
 
@@ -74,7 +106,7 @@ bool GLSLProgram::Init( const std::vector<std::string> &progs ) {
     glGetProgramiv( program, GL_LINK_STATUS, &linkStatus );
 
     if ( linkStatus != GL_TRUE ) {
-        fprintf( stderr, "linking is unsuccessful\n" );
+        msg_warning0( "linking is unsuccessful\n" );
         return false;
     }
 
@@ -176,7 +208,7 @@ void GLSLProgram::CreateUniformBuffer( const std::string &name ) {
     m_uniformMap[ name ] = std::make_pair( uboIndex, ubo );
 }
 
-void GLSLProgram::Bind( const std::string &name, const GLLight &light ) {
+void GLSLProgram::Bind( const std::string &name, const Q3StagesBlock &obj ) {
     BufIndexPair bPair;
 
     if ( m_uniformMap.find( name ) == m_uniformMap.end() ) {
@@ -193,9 +225,11 @@ void GLSLProgram::Bind( const std::string &name, const GLLight &light ) {
 
     assert( pBuffer );
 
-    light.Pack( pBuffer, GetUniformOffsets( name ) );
+    obj.Pack( pBuffer, GetUniformOffsets( name ) );
 
     glUnmapBuffer( GL_UNIFORM_BUFFER );
 
     glBindBufferBase( GL_UNIFORM_BUFFER, bPair.first, bPair.second );
 }
+
+ObjectCache<GLSLProgram> glProgramCache;

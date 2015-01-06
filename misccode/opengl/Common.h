@@ -8,12 +8,12 @@
 #include <GL/gl.h>
 #include <GL/glu.h>
 
-class GLTexture;
-class GLSLProgram;
-struct material_t {
-    GLTexture *m_matPtr;
-    GLSLProgram *m_matProgram;
-};
+#include "ObjectCache.h"
+#include "Texture.h"
+#include "GLSLProgram.h"
+#include "Material.h"
+
+#include <boost/shared_ptr.hpp>
 
 struct __attribute__((packed)) drawVert_t {
     drawVert_t() {}
@@ -51,7 +51,7 @@ struct cached_surf_t {
     GLuint m_vao;
     int m_numIndices;
     int m_indexBuffer;
-    material_t m_material;
+    boost::shared_ptr<MaterialBase> m_material;
 };
 
 struct glsurf_t {

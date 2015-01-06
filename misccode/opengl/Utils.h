@@ -10,6 +10,7 @@ unsigned short LittleShort( int b );
 unsigned int LittleLong( int b );
 float LittleFloat( float b );
 idVec3 GetForwardVector( const idMat3 &m );
+byte *AlignUp( byte *v, int alignment );
 
 #define msg_failure0(format) \
     fprintf(stderr, format); \

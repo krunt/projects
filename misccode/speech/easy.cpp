@@ -5,7 +5,7 @@
 
 #include <curl/curl.h>
 
-#include <jsoncpp/json.hpp>
+#include <jsoncpp/json/json.h>
 
 const char *OATH_REQUEST = "client_id=5p8eyqkvfynsw9mlngcvrs6t1d1saxmp&client_secret=0q4z4cgxonq50imw0ohinehpduj8updb&scope=TTS&grant_type=client_credentials";
 
@@ -13,6 +13,7 @@ size_t WriteResponseData(char *ptr, size_t size, size_t nmemb, void *userdata)
 {
   std::stringstream* s = (std::stringstream*)userdata;
   size_t n = size * nmemb;  s->write(ptr, n);
+  //fprintf( stderr, "WriteResponseData(): %d\n", n );
   return n;
 } 
 
@@ -27,6 +28,8 @@ size_t ReadRequestData(char *ptr, size_t size, size_t nmemb, void *userdata)
     toRead = std::min( size * nmemb, strlen( OATH_REQUEST ) - bytesRead );
     memcpy( ptr, OATH_REQUEST + bytesRead, toRead );
     bytesRead += toRead;
+
+    //fprintf( stderr, "ReadRequestData(): %d\n", toRead );
 
     return bytesRead;
 }
