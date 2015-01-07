@@ -650,13 +650,15 @@ static bool ParseStage( shaderStage_t *stage, const char **text )
 
 			if ( !Q_stricmp( token, "$whiteimage" ) )
 			{
+                stage->bundle.image[0] = token;
                 /* don't support $whiteimage at a time */
-                return false;
+                //return false;
 			}
 			else if ( !Q_stricmp( token, "$lightmap" ) )
 			{
+                stage->bundle.image[0] = token;
                 /* don't support $lightmap at a time */
-                return false;
+                //return false;
 			}
 			else
 			{
@@ -1296,7 +1298,7 @@ static void ParseShaderFile( const std::string &filename, std::map<std::string, 
 
         if ( !sbody.empty() ) {
             fprintf( stderr, "Registered `%s' %d bytes\n", sname.c_str(), sbody.size() );
-            mp[ token ] = sbody;
+            mp[ sname ] = sbody;
         }
 	}
 }
@@ -1347,6 +1349,59 @@ bool Q3Material::Init( const std::string &name ) {
     }
 
     if ( !InitUniformVariables() ) {
+        return false;
+    }
+
+    m_loadOk = true;
+    return true;
+}
+
+/* Choose first nonempty stage */
+void Q3LightMaterial::InitMaterialStage() {
+    m_stage = NULL;
+    for ( int i = 0; i < m_shader.m_stages.size(); ++i ) {
+        textureBundle_t &bundle = m_shader.m_stages[i].bundle;
+        if ( bundle.image[0].empty() )
+            continue;
+        if ( bundle.image[0] == "$lightmap" ) {
+            continue;
+        }
+        if ( bundle.image[0] == "$whitemap" ) {
+            continue;
+        }
+        /* skip heavy animation stages */
+        if ( bundle.numImageAnimations > 0 ) { 
+            continue;
+        }
+        m_stage = &m_shader.m_stages[i];
+        break;
+    }
+}
+
+bool Q3LightMaterial::Init( const std::string &name ) {
+    if ( m_shadersTextMap.find( name ) == m_shadersTextMap.end() ) {
+        //msg_warning( "q3 shader `%s' not found in cached text map\n", name.c_str() );
+        return false;
+    }
+
+    if ( !ParseShader( name, m_shadersTextMap[ name ] ) ) {
+        msg_warning( "q3 shader `%s' parse failed\n", name.c_str() );
+        return false;
+    }
+
+    InitMaterialStage();
+
+    /* precache texture */
+    if ( m_stage ) {
+        if ( !glTextureCache.Get( m_stage->bundle.image[0] ) ) {
+            return false;
+        }
+    }
+
+    m_program = glProgramCache.Get( "simple" );
+
+    if ( !m_program  ) {
+        msg_warning0( "q3 shader program Init() failed\n" );
         return false;
     }
 
@@ -1589,14 +1644,81 @@ byte *Q3StagesBlock::PackInternal( byte *pBuffer,
     return AlignUp( p, alignValue );
 }
 
+static std::string GetIndexed( const std::string &fmt, int index ) {
+    char b[1024];
+    snprintf( b, sizeof(b), fmt.c_str(), index );
+    return b;
+}
+
+void Q3Material::BindWaveform( const std::string &prefix, const waveForm_t &w ) {
+    m_program->Bind( prefix + ".m_type", (int)w.func );
+    m_program->Bind( prefix + ".m_base", w.base );
+    m_program->Bind( prefix + ".m_amplitude", w.amplitude );
+    m_program->Bind( prefix + ".m_phase", w.phase );
+    m_program->Bind( prefix + ".m_frequency", w.frequency );
+}
+
+void Q3Material::BindTexMod( const std::string &prefix, const texModInfo_t &t ) {
+    m_program->Bind( prefix + ".m_texModType", (int)t.type );
+    BindWaveform( prefix + ".m_waveForm", t.wave );
+    m_program->Bind( prefix + ".m_rotate", t.matrix );
+    m_program->Bind( prefix + ".m_translate", t.translate );
+    m_program->Bind( prefix + ".m_scale", t.scale );
+    m_program->Bind( prefix + ".m_scroll", t.scroll );
+    m_program->Bind( prefix + ".m_rotateSpeed", t.rotateSpeed );
+}
+
+void Q3Material::BindTexBundle( const std::string &prefix, const textureBundle_t &t ) {
+    m_program->Bind( prefix + ".m_texture", m_texIndex++ );
+    m_program->Bind( prefix + ".m_tcGenMod", (int)t.tcGen );
+    m_program->Bind( prefix + ".m_numTexMods", t.numTexMods );
+    for (int i = 0; i < 4; ++i) {
+        BindTexMod( GetIndexed( prefix + ".m_texMods[%d]", i ), t.texMods[i] );
+    }
+}
+
+void Q3Material::BindShaderStage( const std::string &prefix, const shaderStage_t &t ) {
+    BindWaveform( prefix + ".m_rgbWave", t.rgbWave );
+    m_program->Bind( prefix + ".m_rgbGen", (int)t.rgbGen );
+
+    BindWaveform( prefix + ".m_rgbWave", t.alphaWave );
+    m_program->Bind( prefix + ".m_rgbGen", (int)t.alphaGen );
+    m_program->Bind( prefix + ".m_constantColor", t.constantColor );
+
+    BindTexBundle( prefix + ".m_texBundle", t.bundle );
+    m_program->Bind( prefix + ".m_glBlend", t.blendBits );
+}
+
+void Q3Material::BindStages() {
+    m_texIndex = 0;
+    std::vector<shaderStage_t> &stages = m_shader.m_stages;
+    m_program->Bind( "numShaderStages", (int)stages.size() );
+    for (int i = 0; i < stages.size(); ++i) {
+        shaderStage_t &stage = stages[0];
+        BindShaderStage( GetIndexed( "stages[%d]", i ), stage );
+    }
+}
+
 void Q3Material::Bind( const CommonMaterialParams &params ) {
     assert( IsOk() );
     MaterialBase::Bind( params );
     BindTextures( params );
-    m_program->Bind( "StagesBlock", m_stagesBlock );
+    m_program->Use();
+    BindStages();
 }
 
 void Q3Material::Unbind( void ) {
+}
+
+void Q3LightMaterial::Bind( const CommonMaterialParams &params ) {
+    assert( IsOk() );
+    std::string matName = m_stage ? m_stage->bundle.image[0] : "white";
+    boost::shared_ptr<TextureBase> texPtr = glTextureCache.Get( matName );
+    MaterialBase::Bind( params );
+    texPtr->Bind( 0 );
+}
+
+void Q3LightMaterial::Unbind( void ) {
 }
 
 std::map<std::string, std::string> Q3Material::m_shadersTextMap;

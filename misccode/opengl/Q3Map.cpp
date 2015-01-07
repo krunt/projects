@@ -4,6 +4,10 @@
 #include "Camera.h"
 #include "Render.h"
 
+#define qtrue true
+#define qfalse false
+#define qboolean bool
+
 void Q3Map::Spawn( void ) {
     MyEntity::Spawn();
 
@@ -110,8 +114,7 @@ void Q3Map::ParseTriSurf( dsurface_t *ds, q3drawVert_t *verts, msurface_t *surf,
 	}
     */
 
-    /* for now, stub it */
-    surf->shader = NULL;
+    surf->shader = LittleLong( ds->shaderNum );
 
 	numVerts = LittleLong( ds->numVerts );
 	numIndexes = LittleLong( ds->numIndexes );
@@ -179,8 +182,7 @@ void Q3Map::ParseFace( dsurface_t *ds, q3drawVert_t *verts, msurface_t *surf, in
 	}
     */
 
-    /* stub it */
-    surf->shader = NULL;
+    surf->shader = LittleLong( ds->shaderNum );
 
 	numPoints = LittleLong( ds->numVerts );
 	if (numPoints > MAX_FACE_POINTS) {
@@ -235,6 +237,444 @@ void Q3Map::ParseFace( dsurface_t *ds, q3drawVert_t *verts, msurface_t *surf, in
 	SetPlaneSignbits( &cv->plane );
 	cv->plane.type = PlaneTypeForNormal( cv->plane.normal );
     */
+}
+
+static void Transpose( int width, int height, q3drawVert_t ctrl[MAX_GRID_SIZE][MAX_GRID_SIZE] ) {
+	int		i, j;
+	q3drawVert_t	temp;
+
+	if ( width > height ) {
+		for ( i = 0 ; i < height ; i++ ) {
+			for ( j = i + 1 ; j < width ; j++ ) {
+				if ( j < height ) {
+					// swap the value
+					temp = ctrl[j][i];
+					ctrl[j][i] = ctrl[i][j];
+					ctrl[i][j] = temp;
+				} else {
+					// just copy
+					ctrl[j][i] = ctrl[i][j];
+				}
+			}
+		}
+	} else {
+		for ( i = 0 ; i < width ; i++ ) {
+			for ( j = i + 1 ; j < height ; j++ ) {
+				if ( j < width ) {
+					// swap the value
+					temp = ctrl[i][j];
+					ctrl[i][j] = ctrl[j][i];
+					ctrl[j][i] = temp;
+				} else {
+					// just copy
+					ctrl[i][j] = ctrl[j][i];
+				}
+			}
+		}
+	}
+
+}
+
+static void LerpDrawVert( q3drawVert_t *a, q3drawVert_t *b, q3drawVert_t *out ) {
+	out->xyz[0] = 0.5f * (a->xyz[0] + b->xyz[0]);
+	out->xyz[1] = 0.5f * (a->xyz[1] + b->xyz[1]);
+	out->xyz[2] = 0.5f * (a->xyz[2] + b->xyz[2]);
+
+	out->st[0] = 0.5f * (a->st[0] + b->st[0]);
+	out->st[1] = 0.5f * (a->st[1] + b->st[1]);
+
+	out->lightmap[0] = 0.5f * (a->lightmap[0] + b->lightmap[0]);
+	out->lightmap[1] = 0.5f * (a->lightmap[1] + b->lightmap[1]);
+
+	out->color[0] = (a->color[0] + b->color[0]) >> 1;
+	out->color[1] = (a->color[1] + b->color[1]) >> 1;
+	out->color[2] = (a->color[2] + b->color[2]) >> 1;
+	out->color[3] = (a->color[3] + b->color[3]) >> 1;
+}
+
+static void PutPointsOnCurve( q3drawVert_t	ctrl[MAX_GRID_SIZE][MAX_GRID_SIZE], 
+							 int width, int height ) {
+	int			i, j;
+	q3drawVert_t	prev, next;
+
+	for ( i = 0 ; i < width ; i++ ) {
+		for ( j = 1 ; j < height ; j += 2 ) {
+			LerpDrawVert( &ctrl[j][i], &ctrl[j+1][i], &prev );
+			LerpDrawVert( &ctrl[j][i], &ctrl[j-1][i], &next );
+			LerpDrawVert( &prev, &next, &ctrl[j][i] );
+		}
+	}
+
+
+	for ( j = 0 ; j < height ; j++ ) {
+		for ( i = 1 ; i < width ; i += 2 ) {
+			LerpDrawVert( &ctrl[j][i], &ctrl[j][i+1], &prev );
+			LerpDrawVert( &ctrl[j][i], &ctrl[j][i-1], &next );
+			LerpDrawVert( &prev, &next, &ctrl[j][i] );
+		}
+	}
+}
+
+static void MakeMeshNormals( int width, int height, 
+        q3drawVert_t ctrl[MAX_GRID_SIZE][MAX_GRID_SIZE] ) 
+{
+	int		i, j, k, dist;
+	vec3_t	normal;
+	vec3_t	sum;
+	int		count;
+	vec3_t	base;
+	vec3_t	delta;
+	int		x, y;
+	q3drawVert_t	*dv;
+	vec3_t		around[8], temp;
+	qboolean	good[8];
+	qboolean	wrapWidth, wrapHeight;
+	float		len;
+    static	int	neighbors[8][2] = {
+	{0,1}, {1,1}, {1,0}, {1,-1}, {0,-1}, {-1,-1}, {-1,0}, {-1,1}
+	};
+
+	wrapWidth = qfalse;
+	for ( i = 0 ; i < height ; i++ ) {
+		VectorSubtract( ctrl[i][0].xyz, ctrl[i][width-1].xyz, delta );
+		len = VectorLengthSquared( delta );
+		if ( len > 1.0 ) {
+			break;
+		}
+	}
+	if ( i == height ) {
+		wrapWidth = qtrue;
+	}
+
+	wrapHeight = qfalse;
+	for ( i = 0 ; i < width ; i++ ) {
+		VectorSubtract( ctrl[0][i].xyz, ctrl[height-1][i].xyz, delta );
+		len = VectorLengthSquared( delta );
+		if ( len > 1.0 ) {
+			break;
+		}
+	}
+	if ( i == width) {
+		wrapHeight = qtrue;
+	}
+
+
+	for ( i = 0 ; i < width ; i++ ) {
+		for ( j = 0 ; j < height ; j++ ) {
+			count = 0;
+			dv = &ctrl[j][i];
+			VectorCopy( dv->xyz, base );
+			for ( k = 0 ; k < 8 ; k++ ) {
+				VectorClear( around[k] );
+				good[k] = qfalse;
+
+				for ( dist = 1 ; dist <= 3 ; dist++ ) {
+					x = i + neighbors[k][0] * dist;
+					y = j + neighbors[k][1] * dist;
+					if ( wrapWidth ) {
+						if ( x < 0 ) {
+							x = width - 1 + x;
+						} else if ( x >= width ) {
+							x = 1 + x - width;
+						}
+					}
+					if ( wrapHeight ) {
+						if ( y < 0 ) {
+							y = height - 1 + y;
+						} else if ( y >= height ) {
+							y = 1 + y - height;
+						}
+					}
+
+					if ( x < 0 || x >= width || y < 0 || y >= height ) {
+						break;					// edge of patch
+					}
+					VectorSubtract( ctrl[y][x].xyz, base, temp );
+					if ( VectorNormalize2( temp, temp ) == 0 ) {
+						continue;				// degenerate edge, get more dist
+					} else {
+						good[k] = qtrue;
+						VectorCopy( temp, around[k] );
+						break;					// good edge
+					}
+				}
+			}
+
+			VectorClear( sum );
+			for ( k = 0 ; k < 8 ; k++ ) {
+				if ( !good[k] || !good[(k+1)&7] ) {
+					continue;	// didn't get two points
+				}
+				CrossProduct( around[(k+1)&7], around[k], normal );
+				if ( VectorNormalize2( normal, normal ) == 0 ) {
+					continue;
+				}
+				VectorAdd( normal, sum, sum );
+				count++;
+			}
+			if ( count == 0 ) {
+				count = 1;
+			}
+			VectorNormalize2( sum, dv->normal );
+		}
+	}
+}
+
+srfGridMesh_t *Q3Map::R_CreateSurfaceGridMesh(int width, int height,
+		q3drawVert_t ctrl[MAX_GRID_SIZE][MAX_GRID_SIZE], float errorTable[2][MAX_GRID_SIZE] ) 
+{
+	int i, j, size;
+	q3drawVert_t	*vert;
+	idVec3		tmpVec;
+	srfGridMesh_t *grid;
+
+	// copy the results out to a grid
+	size = (width * height - 1) * sizeof( q3drawVert_t ) + sizeof( *grid );
+
+	grid = (srfGridMesh_t *)malloc( size );
+	memset(grid, 0, size);
+
+	grid->widthLodError = (float*)malloc( width * 4 );
+	memcpy( grid->widthLodError, errorTable[0], width * 4 );
+
+	grid->heightLodError = (float*)malloc( height * 4 );
+	memcpy( grid->heightLodError, errorTable[1], height * 4 );
+
+	grid->width = width;
+	grid->height = height;
+	grid->surfaceType = SF_GRID;
+	ClearBounds( grid->meshBounds[0], grid->meshBounds[1] );
+	for ( i = 0 ; i < width ; i++ ) {
+		for ( j = 0 ; j < height ; j++ ) {
+			vert = &grid->verts[j*width+i];
+			*vert = ctrl[j][i];
+			AddPointToBounds( vert->xyz, grid->meshBounds[0], grid->meshBounds[1] );
+		}
+	}
+
+	// compute local origin and bounds
+    grid->localOrigin = grid->meshBounds[0] + grid->meshBounds[1];
+	grid->localOrigin *= 0.5f;
+    tmpVec = grid->meshBounds[0] - grid->localOrigin;
+	grid->meshRadius = tmpVec.Length();
+
+    grid->lodOrigin = grid->localOrigin;
+	grid->lodRadius = grid->meshRadius;
+
+	return grid;
+}
+
+srfGridMesh_t *Q3Map::R_SubdividePatchToGrid( int width, int height, q3drawVert_t *points ) {
+	int			i, j, k, l;
+	q3drawVert_t	prev, next, mid;
+	float		len, maxLen;
+	int			dir;
+	int			t;
+	q3drawVert_t	ctrl[MAX_GRID_SIZE][MAX_GRID_SIZE];
+	float		errorTable[2][MAX_GRID_SIZE];
+
+	for ( i = 0 ; i < width ; i++ ) {
+		for ( j = 0 ; j < height ; j++ ) {
+			ctrl[j][i] = points[j*width+i];
+		}
+	}
+
+	for ( dir = 0 ; dir < 2 ; dir++ ) {
+
+		for ( j = 0 ; j < MAX_GRID_SIZE ; j++ ) {
+			errorTable[dir][j] = 0;
+		}
+
+		// horizontal subdivisions
+		for ( j = 0 ; j + 2 < width ; j += 2 ) {
+			// check subdivided midpoints against control points
+
+			// FIXME: also check midpoints of adjacent patches against the control points
+			// this would basically stitch all patches in the same LOD group together.
+
+			maxLen = 0;
+			for ( i = 0 ; i < height ; i++ ) {
+				vec3_t		midxyz;
+				vec3_t		midxyz2;
+				vec3_t		dir;
+				vec3_t		projected;
+				float		d;
+
+				// calculate the point on the curve
+				for ( l = 0 ; l < 3 ; l++ ) {
+					midxyz[l] = (ctrl[i][j].xyz[l] + ctrl[i][j+1].xyz[l] * 2
+							+ ctrl[i][j+2].xyz[l] ) * 0.25f;
+				}
+
+				// see how far off the line it is
+				// using dist-from-line will not account for internal
+				// texture warping, but it gives a lot less polygons than
+				// dist-from-midpoint
+				VectorSubtract( midxyz, ctrl[i][j].xyz, midxyz );
+				VectorSubtract( ctrl[i][j+2].xyz, ctrl[i][j].xyz, dir );
+				VectorNormalize( dir );
+
+				d = DotProduct( midxyz, dir );
+				VectorScale( dir, d, projected );
+				VectorSubtract( midxyz, projected, midxyz2);
+				len = VectorLengthSquared( midxyz2 );			// we will do the sqrt later
+				if ( len > maxLen ) {
+					maxLen = len;
+				}
+			}
+
+			maxLen = sqrt(maxLen);
+
+			// if all the points are on the lines, remove the entire columns
+			if ( maxLen < 0.1f ) {
+				errorTable[dir][j+1] = 999;
+				continue;
+			}
+
+			// see if we want to insert subdivided columns
+			if ( width + 2 > MAX_GRID_SIZE ) {
+				errorTable[dir][j+1] = 1.0f/maxLen;
+				continue;	// can't subdivide any more
+			}
+
+			if ( maxLen <= 4 ) {
+				errorTable[dir][j+1] = 1.0f/maxLen;
+				continue;	// didn't need subdivision
+			}
+
+			errorTable[dir][j+2] = 1.0f/maxLen;
+
+			// insert two columns and replace the peak
+			width += 2;
+			for ( i = 0 ; i < height ; i++ ) {
+				LerpDrawVert( &ctrl[i][j], &ctrl[i][j+1], &prev );
+				LerpDrawVert( &ctrl[i][j+1], &ctrl[i][j+2], &next );
+				LerpDrawVert( &prev, &next, &mid );
+
+				for ( k = width - 1 ; k > j + 3 ; k-- ) {
+					ctrl[i][k] = ctrl[i][k-2];
+				}
+				ctrl[i][j + 1] = prev;
+				ctrl[i][j + 2] = mid;
+				ctrl[i][j + 3] = next;
+			}
+
+			// back up and recheck this set again, it may need more subdivision
+			j -= 2;
+
+		}
+
+		Transpose( width, height, ctrl );
+		t = width;
+		width = height;
+		height = t;
+	}
+
+
+	// put all the aproximating points on the curve
+	PutPointsOnCurve( ctrl, width, height );
+
+	// cull out any rows or columns that are colinear
+	for ( i = 1 ; i < width-1 ; i++ ) {
+		if ( errorTable[0][i] != 999 ) {
+			continue;
+		}
+		for ( j = i+1 ; j < width ; j++ ) {
+			for ( k = 0 ; k < height ; k++ ) {
+				ctrl[k][j-1] = ctrl[k][j];
+			}
+			errorTable[0][j-1] = errorTable[0][j];
+		}
+		width--;
+	}
+
+	for ( i = 1 ; i < height-1 ; i++ ) {
+		if ( errorTable[1][i] != 999 ) {
+			continue;
+		}
+		for ( j = i+1 ; j < height ; j++ ) {
+			for ( k = 0 ; k < width ; k++ ) {
+				ctrl[j-1][k] = ctrl[j][k];
+			}
+			errorTable[1][j-1] = errorTable[1][j];
+		}
+		height--;
+	}
+
+	// calculate normals
+	MakeMeshNormals( width, height, ctrl );
+
+	return R_CreateSurfaceGridMesh( width, height, ctrl, errorTable );
+}
+
+
+void Q3Map::ParseGrid( dsurface_t *ds, q3drawVert_t *verts, msurface_t *surf ) {
+	srfGridMesh_t	*grid;
+	int				i, j;
+	int				width, height, numPoints;
+	q3drawVert_t points[MAX_PATCH_SIZE*MAX_PATCH_SIZE];
+	int				lightmapNum;
+	idVec3			bounds[2];
+	idVec3			tmpVec;
+	static surfaceType_t	skipData = SF_SKIP;
+
+	//lightmapNum = LittleLong( ds->lightmapNum );
+
+	// get fog volume
+	//surf->fogIndex = LittleLong( ds->fogNum ) + 1;
+
+    surf->shader = ds->shaderNum;
+
+	// get shader value
+	//surf->shader = ShaderForShaderNum( ds->shaderNum, lightmapNum );
+	//if ( r_singleShader->integer && !surf->shader->isSky ) {
+		//surf->shader = tr.defaultShader;
+	//}
+
+	// we may have a nodraw surface, because they might still need to
+	// be around for movement clipping
+	if ( m_world.shaders[ LittleLong( ds->shaderNum ) ].surfaceFlags & 0x80 ) {
+		surf->data = &skipData;
+		return;
+	}
+
+	width = LittleLong( ds->patchWidth );
+	height = LittleLong( ds->patchHeight );
+
+	verts += LittleLong( ds->firstVert );
+	numPoints = width * height;
+	for ( i = 0 ; i < numPoints ; i++ ) {
+		for ( j = 0 ; j < 3 ; j++ ) {
+			points[i].xyz[j] = LittleFloat( verts[i].xyz[j] );
+			points[i].normal[j] = LittleFloat( verts[i].normal[j] );
+		}
+		for ( j = 0 ; j < 2 ; j++ ) {
+			points[i].st[j] = LittleFloat( verts[i].st[j] );
+			points[i].lightmap[j] = LittleFloat( verts[i].lightmap[j] );
+		}
+		//R_ColorShiftLightingBytes( verts[i].color, points[i].color );
+	}
+
+    FromQ3( points[i].xyz, points[i].xyz );
+    FromQ3( points[i].normal, points[i].normal );
+
+	// pre-tesseleate
+	grid = R_SubdividePatchToGrid( width, height, points );
+	surf->data = (surfaceType_t *)grid;
+
+	// copy the level of detail origin, which is the center
+	// of the group of all curves that must subdivide the same
+	// to avoid cracking
+	for ( i = 0 ; i < 3 ; i++ ) {
+		bounds[0][i] = LittleFloat( ds->lightmapVecs[0][i] );
+		bounds[1][i] = LittleFloat( ds->lightmapVecs[1][i] );
+	}
+    bounds[1] += bounds[0];
+    grid->lodOrigin = bounds[1] * 0.5f;
+    tmpVec = bounds[0] - grid->lodOrigin;
+	grid->lodRadius = tmpVec.Length();
+
+    FromQ3( grid->lodOrigin.ToFloatPtr(), grid->lodOrigin.ToFloatPtr() );
 }
 
 mnode_t *Q3Map::FindLeaf( const idVec3 &pos ) {
@@ -342,11 +782,15 @@ void Q3Map::RenderTriangleSoup( msurface_t *s ) {
 
     //fprintf( stderr, "RenderTriangleSoup(%d,%d)\n", tri->numIndexes, tri->numVerts );
 
-    surf.m_matName = "white";
+    //surf.m_matName = "white";
     //surf.m_indices.resize( tri->numIndexes );
     //memcpy( surf.m_indices.data(), tri->indexes, tri->numIndexes * sizeof(int) );
+
+    BatchElement &b = m_batch[ s->shader ];
+    int bob = b.m_verts.size();
+
     for ( int i = 0; i < tri->numIndexes; ++i ) {
-        surf.m_indices.push_back( tri->indexes[i] );
+        surf.m_indices.push_back( bob + tri->indexes[i] );
     }
 
     for ( int i = 0; i < tri->numVerts; ++i ) {
@@ -371,7 +815,6 @@ void Q3Map::RenderTriangleSoup( msurface_t *s ) {
     //gl_render.CacheSurface( surf, cached_surf );
     //m_surfs.push_back( cached_surf );
 
-    BatchElement &b = m_batch[ s->shader ];
     b.m_indices.insert( b.m_indices.end(), surf.m_indices.begin(), surf.m_indices.end() );
     b.m_verts.insert( b.m_verts.end(), surf.m_verts.begin(), surf.m_verts.end() );
 }
@@ -384,16 +827,18 @@ void Q3Map::RenderFace( msurface_t *s ) {
     srfSurfaceFace_t *face = (srfSurfaceFace_t *)s->data;
 
     //fprintf( stderr, "RenderTriangleSoup(%d,%d)\n", tri->numIndexes, tri->numVerts );
+    //surf.m_matName = "white";
 
-    surf.m_matName = "white";
+    indices = (unsigned *)( ( ( char * ) face ) + face->ofsIndices );
 
-    point = face->points[0];
-
-    indices = (unsigned *)( ( ( char * ) point ) + face->ofsIndices );
+    BatchElement &b = m_batch[ s->shader ];
+    int bob = b.m_verts.size();
 
     for ( int i = 0; i < face->numIndices; ++i ) {
-        surf.m_indices.push_back( indices[i] );
+        surf.m_indices.push_back( bob + indices[i] );
     }
+
+    point = face->points[0];
 
     for ( int i = 0; i < face->numPoints; ++i, point += 8 ) {
 
@@ -412,7 +857,6 @@ void Q3Map::RenderFace( msurface_t *s ) {
         surf.m_verts.push_back( v );
     }
 
-    BatchElement &b = m_batch[ s->shader ];
     b.m_indices.insert( b.m_indices.end(), surf.m_indices.begin(), surf.m_indices.end() );
     b.m_verts.insert( b.m_verts.end(), surf.m_verts.begin(), surf.m_verts.end() );
 
@@ -420,28 +864,198 @@ void Q3Map::RenderFace( msurface_t *s ) {
     //m_surfs.push_back( cached_surf );
 }
 
-void Q3Map::CacheBatches() {
+void Q3Map::RB_SubmitBatch( int shader ) {
     surf_t surf;
     cached_surf_t cached_surf;
+    BatchElement &b = m_batch[ shader ];
 
-    m_surfs.clear();
+    const char *p = (const char *)m_world.shaders[ shader ].shader;
 
-    for ( std::map<qshader_t *, BatchElement>::iterator
-            it = m_batch.begin(); it != m_batch.end(); ++it )
-    {
-        /* for now continue */
-        if ( it->first ) {
-            continue;
-        }
+    /*
+    if ( m_world.shaders[ shader ].surfaceFlags & ( 0x80 | 0x200 | 0x4 ) ) {
+        b.m_indices.clear();
+        b.m_verts.clear();
+        return;
+    }
+    */
 
+    if ( b.m_indices.empty() ) {
+        return;
+    }
+
+    std::string pp = std::string( p );
+
+    if ( glMaterialCache.Get( pp + ".l3a" ) != NULL ) {
+        //fprintf( stderr, "checkerboard=%s\n", surf.m_matName.c_str() );
+        surf.m_matName = pp + ".l3a";
+
+    } else if ( glMaterialCache.Get( pp + ".tga" ) != NULL ) {
+        surf.m_matName = pp + ".tga";
+
+    } else {
         surf.m_matName = "images/checkerboard.tga";
-        //surf.m_matName = "q3shaders/base_wall.q3a";
-        surf.m_indices.swap( it->second.m_indices );
-        surf.m_verts.swap( it->second.m_verts );
+    }
+
+    if ( glMaterialCache.Get( surf.m_matName ) != NULL ) {
+        surf.m_indices.swap( b.m_indices );
+        surf.m_verts.swap( b.m_verts );
 
         gl_render.CacheSurface( surf, cached_surf );
         m_surfs.push_back( cached_surf );
     }
+
+    b.m_indices.clear();
+    b.m_verts.clear();
+}
+
+void Q3Map::CacheBatches() {
+    surf_t surf;
+    cached_surf_t cached_surf;
+
+    for ( std::map<int, BatchElement>::iterator
+            it = m_batch.begin(); it != m_batch.end(); ++it )
+    {
+        RB_SubmitBatch( it->first );
+    }
+
+    m_batch.clear();
+}
+
+static float	LodErrorForVolume( vec3_t local, float radius ) {
+    return 0;
+}
+
+void Q3Map::RenderGrid( msurface_t *surf ) {
+	int		i, j;
+	float	*xyz;
+	float	*texCoords;
+	float	*normal;
+	unsigned char *color;
+	q3drawVert_t	*dv;
+	int		rows, irows, vrows;
+	int		used;
+	int		widthTable[MAX_GRID_SIZE];
+	int		heightTable[MAX_GRID_SIZE];
+	float	lodError;
+	int		lodWidth, lodHeight;
+	int		numVertexes = 0;
+	int		dlightBits;
+	int		*vDlightBits;
+	qboolean	needsNormal;
+    srfGridMesh_t *cv = (srfGridMesh_t *)surf->data;
+    const int SHADER_MAX_VERTEXES = 1000;
+    const int SHADER_MAX_INDEXES = 6*1000;
+
+    BatchElement &batch = m_batch[ surf->shader ];
+
+	// determine the allowable discrepance
+	//lodError = LodErrorForVolume( cv->lodOrigin, cv->lodRadius );
+    ////LodErrorForVolume( cv->lodOrigin, cv->lodRadius );
+	lodError = 20; 
+
+	// determine which rows and columns of the subdivision
+	// we are actually going to use
+	widthTable[0] = 0;
+	lodWidth = 1;
+	for ( i = 1 ; i < cv->width-1 ; i++ ) {
+		if ( cv->widthLodError[i] <= lodError ) {
+			widthTable[lodWidth] = i;
+			lodWidth++;
+		}
+	}
+	widthTable[lodWidth] = cv->width-1;
+	lodWidth++;
+
+	heightTable[0] = 0;
+	lodHeight = 1;
+	for ( i = 1 ; i < cv->height-1 ; i++ ) {
+		if ( cv->heightLodError[i] <= lodError ) {
+			heightTable[lodHeight] = i;
+			lodHeight++;
+		}
+	}
+	heightTable[lodHeight] = cv->height-1;
+	lodHeight++;
+
+
+	// very large grids may have more points or indexes than can be fit
+	// in the tess structure, so we may have to issue it in multiple passes
+
+	used = 0;
+	rows = 0;
+	while ( used < lodHeight - 1 ) {
+		// see how many rows of both verts and indexes we can add without overflowing
+		do {
+			vrows = ( SHADER_MAX_VERTEXES - (int)batch.m_verts.size() ) / lodWidth;
+			irows = ( SHADER_MAX_INDEXES - (int)batch.m_indices.size() ) / ( lodWidth * 6 );
+
+			// if we don't have enough space for at least one strip, flush the buffer
+			if ( vrows < 2 || irows < 1 ) {
+				RB_SubmitBatch( surf->shader );
+			} else {
+				break;
+			}
+		} while ( 1 );
+		
+		rows = irows;
+		if ( vrows < irows + 1 ) {
+			rows = vrows - 1;
+		}
+		if ( used + rows > lodHeight ) {
+			rows = lodHeight - used;
+		}
+
+        numVertexes = batch.m_verts.size();
+
+        drawVert_t vert;
+		for ( i = 0 ; i < rows ; i++ ) {
+			for ( j = 0 ; j < lodWidth ; j++ ) {
+				dv = cv->verts + heightTable[ used + i ] * cv->width
+					+ widthTable[ j ];
+
+				vert.m_pos[0] = dv->xyz[0];
+				vert.m_pos[1] = dv->xyz[1];
+				vert.m_pos[2] = dv->xyz[2];
+                vert.m_tex[0] = dv->st[0];
+                vert.m_tex[1] = dv->st[1];
+                vert.m_normal[0] = dv->normal[0];
+                vert.m_normal[1] = dv->normal[1];
+                vert.m_normal[2] = dv->normal[2];
+
+                batch.m_verts.push_back( vert );
+			}
+		}
+
+
+		// add the indexes
+		{
+			int		w, h;
+
+			h = rows - 1;
+			w = lodWidth - 1;
+			for (i = 0 ; i < h ; i++) {
+				for (j = 0 ; j < w ; j++) {
+					int		v1, v2, v3, v4;
+			
+					// vertex order to be reckognized as tristrips
+					v1 = numVertexes + i*lodWidth + j + 1;
+					v2 = v1 - 1;
+					v3 = v2 + lodWidth;
+					v4 = v3 + 1;
+
+                    batch.m_indices.push_back( v2 );
+                    batch.m_indices.push_back( v3 );
+                    batch.m_indices.push_back( v1 );
+
+                    batch.m_indices.push_back( v1 );
+                    batch.m_indices.push_back( v3 );
+                    batch.m_indices.push_back( v4 );
+				}
+			}
+		}
+
+		used += rows - 1;
+	}
 }
 
 void Q3Map::RenderSurface( msurface_t *surf ) {
@@ -465,6 +1079,7 @@ void Q3Map::RenderSurface( msurface_t *surf ) {
         break;
 
     case SF_GRID:
+        RenderGrid( surf );
         m_numMeshes++;
         break;
 
@@ -523,7 +1138,7 @@ void Q3Map::R_LoadSurfaces( lump_t *surfs, lump_t *verts, lump_t *indexLump ) {
 			break;
 
 		case MST_PATCH:
-            out->data = new surfaceType_t( SF_GRID );
+            ParseGrid( in, dv, out );
 			numMeshes++;
             break;
 
@@ -807,3 +1422,7 @@ void Q3Map::Render( void ) {
         gl_render.AddSurface( gl );
     }
 }
+
+#undef qtrue
+#undef qfalse
+#undef qboolean

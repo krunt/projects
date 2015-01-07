@@ -4,7 +4,7 @@ sources = $(wildcard *.cpp)
 headers = $(wildcard *.h)
 object_files = $(patsubst %.cpp,%.o,$(sources))
 libs = -lm -Ld3lib -lidlib -lglut -lGL -lSDL -lGLEW -lGLU -lode -lboost_system -lboost_filesystem
-flags = -g -O0
+flags = -g -O2
 compiler = g++
 
 box: $(object_files)

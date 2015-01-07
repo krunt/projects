@@ -5,6 +5,10 @@
 #include "q3_map_common.h"
 #include "MyEntity.h"
 
+#define MAX_FACE_POINTS 64
+#define MAX_PATCH_SIZE 32
+#define MAX_GRID_SIZE 65
+
 class Q3Map: public MyEntity {
 public:
     Q3Map( const Map &m = Map() )
@@ -42,6 +46,12 @@ private:
     void UncacheSurfaces( void );
     void R_LoadShaders( lump_t *l );
     void CacheBatches();
+    void RenderGrid( msurface_t *surf );
+    void ParseGrid( dsurface_t *ds, q3drawVert_t *verts, msurface_t *surf );
+    srfGridMesh_t *R_SubdividePatchToGrid( int width, int height, q3drawVert_t *points );
+    srfGridMesh_t *R_CreateSurfaceGridMesh(int width, int height,
+		q3drawVert_t ctrl[MAX_GRID_SIZE][MAX_GRID_SIZE], float errorTable[2][MAX_GRID_SIZE] );
+    void RB_SubmitBatch( int shader );
 
     q3world_t m_world;
     byte *m_fileBase;
@@ -55,7 +65,8 @@ private:
         std::vector<drawVert_t> m_verts;
     };
 
-    std::map<qshader_t *, BatchElement> m_batch;
+    /* keyed by shader-keyindex */
+    std::map<int, BatchElement> m_batch;
 
     std::vector<cached_surf_t> m_surfs;
 };

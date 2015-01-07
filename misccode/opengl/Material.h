@@ -34,7 +34,9 @@ public:
             boost::shared_ptr<MaterialBase> v = Setup( name );
             if ( v ) {
                 m_cache.insert( std::make_pair( name, v ) );
+                return v;
             }
+            return boost::shared_ptr<MaterialBase>();
         }
         return m_cache[ name ];
     }

@@ -28,6 +28,9 @@ boost::shared_ptr<MaterialBase> MaterialCache::Setup( const std::string &name )
     if ( EndsWith( nameCopy, ".q3a" ) ) {
         nameCopy = name.substr( 0, nameCopy.size() - 4 );
         res = boost::shared_ptr<MaterialBase>( new Q3Material() );
+    } else if ( EndsWith( nameCopy, ".l3a" ) ) {
+        nameCopy = name.substr( 0, nameCopy.size() - 4 );
+        res = boost::shared_ptr<MaterialBase>( new Q3LightMaterial() );
     } else {
         res = boost::shared_ptr<MaterialBase>( new GLMaterial() );
     }

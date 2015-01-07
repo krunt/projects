@@ -1023,7 +1023,7 @@ int main() {
     */
 
     dict.clear();
-    dict["map"] = "maps/q3dm0.bsp";
+    dict["map"] = "maps/q3dm6.bsp";
 
     Q3Map q3map( dict );
     gl_game.AddEntity( q3map );

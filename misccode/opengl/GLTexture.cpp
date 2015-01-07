@@ -47,7 +47,8 @@ static byte *R_LoadTGA( const std::string &filename, int &width,
     fileSize = contents.size();
 
     if ( !fileSize ) {
-		msg_failure( "R_LoadTGA( %s ): File not found\n", filename.c_str() );
+		msg_warning( "R_LoadTGA( %s ): File not found\n", filename.c_str() );
+        return NULL;
     }
 
     buffer = (byte *)contents.data();
@@ -75,23 +76,27 @@ static byte *R_LoadTGA( const std::string &filename, int &width,
 	targa_header.attributes = *buf_p++;
 
 	if ( targa_header.image_type != 2 && targa_header.image_type != 10 && targa_header.image_type != 3 ) {
-		msg_failure( "R_LoadTGA( %s ): Only type 2 (RGB), 3 (gray), and 10 (RGB) TGA images supported\n", filename.c_str() );
+		msg_warning( "R_LoadTGA( %s ): Only type 2 (RGB), 3 (gray), and 10 (RGB) TGA images supported\n", filename.c_str() );
+        return NULL;
 	}
 
 	if ( targa_header.colormap_type != 0 ) {
-		msg_failure( "R_LoadTGA( %s ): colormaps not supported\n", 
+		msg_warning( "R_LoadTGA( %s ): colormaps not supported\n", 
                 filename.c_str() );
+        return NULL;
 	}
 
 	if ( ( targa_header.pixel_size != 32 && targa_header.pixel_size != 24 ) && targa_header.image_type != 3 ) {
-		msg_failure( "R_LoadTGA( %s ): Only 32 or 24 bit images supported (no colormaps)\n", 
+		msg_warning( "R_LoadTGA( %s ): Only 32 or 24 bit images supported (no colormaps)\n", 
                 filename.c_str() );
+        return NULL;
 	}
 
 	if ( targa_header.image_type == 2 || targa_header.image_type == 3 ) {
 		numBytes = targa_header.width * targa_header.height * ( targa_header.pixel_size >> 3 );
 		if ( numBytes > fileSize - 18 - targa_header.id_length ) {
-			msg_failure( "R_LoadTGA( %s ): incomplete file\n", filename.c_str() );
+			msg_warning( "R_LoadTGA( %s ): incomplete file\n", filename.c_str() );
+            return NULL;
 		}
 	}
 
@@ -152,9 +157,9 @@ static byte *R_LoadTGA( const std::string &filename, int &width,
 					*pixbuf++ = alphabyte;
 					break;
 				default:
-					msg_failure( "LoadTGA( %s ): illegal pixel_size '%d'\n", 
+					msg_warning( "LoadTGA( %s ): illegal pixel_size '%d'\n", 
                             filename.c_str(), targa_header.pixel_size );
-					break;
+                    return NULL;
 				}
 			}
 		}
@@ -187,9 +192,9 @@ static byte *R_LoadTGA( const std::string &filename, int &width,
 								alphabyte = *buf_p++;
 								break;
 						default:
-							msg_failure( "LoadTGA( %s ): illegal pixel_size '%d'\n", 
+							msg_warning( "LoadTGA( %s ): illegal pixel_size '%d'\n", 
                                     filename.c_str(), targa_header.pixel_size );
-							break;
+                            return NULL;
 					}
 	
 					for( j = 0; j < packetSize; j++ ) {
@@ -233,9 +238,9 @@ static byte *R_LoadTGA( const std::string &filename, int &width,
 									*pixbuf++ = alphabyte;
 									break;
 							default:
-								msg_failure( "LoadTGA( %s ): illegal pixel_size '%d'\n", 
+								msg_warning( "LoadTGA( %s ): illegal pixel_size '%d'\n", 
                                         filename.c_str(), targa_header.pixel_size );
-								break;
+                                return NULL;
 						}
 						column++;
 						if ( column == columns ) { // pixel packet run spans across rows
@@ -341,6 +346,9 @@ bool GLTexture::Init( const std::string &name ) {
 
     if ( EndsWith( name, ".tga" ) ) {
         pic = R_LoadTGA( name, width, height, format );
+        if ( !pic ) {
+            return false;
+        }
     } else {
         fprintf( stderr, "no image file with name `%s' found\n",
             name.c_str() );
@@ -349,6 +357,7 @@ bool GLTexture::Init( const std::string &name ) {
 
     if ( !IsPowerOf2( width ) || !IsPowerOf2( height ) ) {
         fprintf( stderr, "texture must have size in power of two\n" );
+        free( pic );
         return false;
     }
 
@@ -506,6 +515,9 @@ bool GLTextureCube::Init( const std::string &name ) {
 
         if ( EndsWith( imgName, ".tga" ) ) {
             pic = R_LoadTGA( imgName, width, height, format );
+            if ( !pic ) {
+                return false;
+            }
         } else {
             fprintf( stderr, "no image file with name `%s' found\n",
                 name.c_str() );

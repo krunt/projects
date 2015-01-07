@@ -26,7 +26,7 @@ typedef struct {
 #define	LUMP_VISIBILITY		16
 #define	HEADER_LUMPS		17
 
-#define MAX_QPATH 128
+#define MAX_QPATH 64
 
 typedef struct {
 	int			ident;
@@ -105,7 +105,7 @@ typedef struct qshader_s {
 
 typedef struct msurface_s {
 	int					viewCount;		// if == tr.viewCount, already added
-	struct qshader_s		*shader;
+    int             shader;
 	//int					fogIndex;
 
 	surfaceType_t		*data;			// any of srf*_t
@@ -205,6 +205,33 @@ typedef struct {
 	int				numVerts;
 	q3drawVert_t		*verts;
 } srfTriangles_t;
+
+typedef struct srfGridMesh_s {
+	surfaceType_t	surfaceType;
+
+	// dynamic lighting information
+	//int				dlightBits[SMP_FRAMES];
+
+	// culling information
+	idVec3			meshBounds[2];
+	idVec3			localOrigin;
+	float			meshRadius;
+
+	// lod information, which may be different
+	// than the culling information to allow for
+	// groups of curves that LOD as a unit
+	idVec3			lodOrigin;
+	float			lodRadius;
+	int				lodFixed;
+	int				lodStitched;
+
+	// vertexes
+	int				width, height;
+	float			*widthLodError;
+	float			*heightLodError;
+	q3drawVert_t		verts[1];		// variable sized
+} srfGridMesh_t;
+
 
 typedef struct {
 	surfaceType_t	surfaceType;

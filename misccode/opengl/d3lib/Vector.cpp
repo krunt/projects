@@ -373,3 +373,53 @@ const char *idVecX::ToString( int precision ) const {
 	//return idStr::FloatArrayToString( ToFloatPtr(), GetDimension(), precision );
     return 0;
 }
+
+float VectorLengthSquared(vec3_t v) {
+	return DotProduct(v, v);
+}
+
+float VectorNormalize(vec3_t inout)
+{
+	float	length, ilength;
+
+	length = sqrt (inout[0]*inout[0] + inout[1]*inout[1] + inout[2]*inout[2]);
+	if (length == 0)
+	{
+		VectorClear (inout);
+		return 0;
+	}
+
+	ilength = 1.0/length;
+	inout[0] = inout[0]*ilength;
+	inout[1] = inout[1]*ilength;
+	inout[2] = inout[2]*ilength;
+
+	return length;
+}
+
+float VectorNormalize2(const vec3_t in, vec3_t out)
+{
+	float	length, ilength;
+
+	length = sqrt (in[0]*in[0] + in[1]*in[1] + in[2]*in[2]);
+	if (length == 0)
+	{
+		VectorClear (out);
+		return 0;
+	}
+
+	ilength = 1.0/length;
+	out[0] = in[0]*ilength;
+	out[1] = in[1]*ilength;
+	out[2] = in[2]*ilength;
+
+	return length;
+}
+
+void CrossProduct (const vec3_t v1, const vec3_t v2, vec3_t cross)
+{
+	cross[0] = v1[1]*v2[2] - v1[2]*v2[1];
+	cross[1] = v1[2]*v2[0] - v1[0]*v2[2];
+	cross[2] = v1[0]*v2[1] - v1[1]*v2[0];
+}
+

@@ -4,12 +4,13 @@ sources = $(wildcard *.cpp)
 object_files = $(patsubst %.cpp,%.o,$(sources))
 libs = -lm
 compiler = g++
+flags = -O2
 
 idlib: $(object_files)
-	$(compiler) -shared -o libidlib.so $(object_files) $(libs)
+	$(compiler) $(flags) -shared -o libidlib.so $(object_files) $(libs)
 
 %.o: %.cpp
-	$(compiler) -c $<	
+	$(compiler) $(flags) -c $<	
 
 install:
 	cp libidlib.so /usr/lib/
