@@ -793,6 +793,7 @@ void Q3Map::RenderTriangleSoup( msurface_t *s ) {
         surf.m_indices.push_back( bob + tri->indexes[i] );
     }
 
+    idBounds bounds;
     for ( int i = 0; i < tri->numVerts; ++i ) {
         q3drawVert_t *qv = &tri->verts[ i ];
 
@@ -801,6 +802,8 @@ void Q3Map::RenderTriangleSoup( msurface_t *s ) {
         v.m_pos[0] = qv->xyz[0];
         v.m_pos[1] = qv->xyz[1];
         v.m_pos[2] = qv->xyz[2];
+
+        bounds.AddPoint( idVec3( v.m_pos[0], v.m_pos[1], v.m_pos[2] ) );
 
         v.m_tex[0] = qv->st[0];
         v.m_tex[1] = qv->st[1];
@@ -815,8 +818,10 @@ void Q3Map::RenderTriangleSoup( msurface_t *s ) {
     //gl_render.CacheSurface( surf, cached_surf );
     //m_surfs.push_back( cached_surf );
 
-    b.m_indices.insert( b.m_indices.end(), surf.m_indices.begin(), surf.m_indices.end() );
-    b.m_verts.insert( b.m_verts.end(), surf.m_verts.begin(), surf.m_verts.end() );
+    if ( !CullSurfaceAgainstFrustum( bounds ) ) {
+        b.m_indices.insert( b.m_indices.end(), surf.m_indices.begin(), surf.m_indices.end() );
+        b.m_verts.insert( b.m_verts.end(), surf.m_verts.begin(), surf.m_verts.end() );
+    }
 }
 
 void Q3Map::RenderFace( msurface_t *s ) {
@@ -840,12 +845,15 @@ void Q3Map::RenderFace( msurface_t *s ) {
 
     point = face->points[0];
 
+    idBounds bounds;
     for ( int i = 0; i < face->numPoints; ++i, point += 8 ) {
 
         drawVert_t v;
         v.m_pos[0] = point[0];
         v.m_pos[1] = point[1];
         v.m_pos[2] = point[2];
+
+        bounds.AddPoint( idVec3( v.m_pos[0], v.m_pos[1], v.m_pos[2] ) );
 
         v.m_tex[0] = point[3];
         v.m_tex[1] = point[4];
@@ -857,8 +865,10 @@ void Q3Map::RenderFace( msurface_t *s ) {
         surf.m_verts.push_back( v );
     }
 
-    b.m_indices.insert( b.m_indices.end(), surf.m_indices.begin(), surf.m_indices.end() );
-    b.m_verts.insert( b.m_verts.end(), surf.m_verts.begin(), surf.m_verts.end() );
+    if ( !CullSurfaceAgainstFrustum( bounds ) ) {
+        b.m_indices.insert( b.m_indices.end(), surf.m_indices.begin(), surf.m_indices.end() );
+        b.m_verts.insert( b.m_verts.end(), surf.m_verts.begin(), surf.m_verts.end() );
+    }
 
     //gl_render.CacheSurface( surf, cached_surf );
     //m_surfs.push_back( cached_surf );
@@ -1402,7 +1412,10 @@ void Q3Map::Think( int ms ) {
 
 void Q3Map::Render( void ) {
     m_numFaces = m_numMeshes = m_numTrisurfs = m_numFlares = m_numUndefined = 0;
-    idVec3 pos( gl_camera.GetPlayerView().m_pos );
+    const playerView_t &view = gl_camera.GetPlayerView();
+    idVec3 pos( view.m_pos );
+
+    ConstructFrustum( view );
 
     UncacheSurfaces();
     MarkSurfaces( pos );
@@ -1421,6 +1434,50 @@ void Q3Map::Render( void ) {
 
         gl_render.AddSurface( gl );
     }
+}
+
+void Q3Map::ConstructFrustum( const playerView_t &view ) {
+    m_frustumPlanes[0].SetNormal( view.m_axis[0] );
+    m_frustumPlanes[0].FitThroughPoint( view.m_pos );
+    m_frustumPlanes[0].SetDist( m_frustumPlanes[0].Dist() + view.m_znear );
+
+    m_frustumPlanes[1].SetNormal( view.m_axis[0] );
+    m_frustumPlanes[1].FitThroughPoint( view.m_pos );
+    m_frustumPlanes[1].SetDist( m_frustumPlanes[1].Dist() + view.m_zfar );
+    m_frustumPlanes[1].SetNormal( -view.m_axis[0] );
+
+    m_frustumPlanes[2].SetNormal( view.m_axis[0] 
+            * idQuat( view.m_axis[2], DEG2RAD( 90 - view.m_fovx / 2 ) ) );
+    m_frustumPlanes[2].FitThroughPoint( view.m_pos );
+
+    m_frustumPlanes[3].SetNormal( view.m_axis[0] 
+            * idQuat( view.m_axis[2], -DEG2RAD( 90 - view.m_fovx / 2 ) ) );
+    m_frustumPlanes[3].FitThroughPoint( view.m_pos );
+
+    m_frustumPlanes[4].SetNormal( view.m_axis[0] 
+            * idQuat( view.m_axis[1], DEG2RAD( 90 - view.m_fovy / 2 ) ) );
+    m_frustumPlanes[4].FitThroughPoint( view.m_pos );
+
+    m_frustumPlanes[5].SetNormal( view.m_axis[0] 
+            * idQuat( view.m_axis[1], -DEG2RAD( 90 - view.m_fovy / 2 ) ) );
+    m_frustumPlanes[5].FitThroughPoint( view.m_pos );
+}
+
+bool Q3Map::CullSurfaceAgainstFrustum( const idBounds &bounds ) const {
+    idVec3 p[8];
+    bounds.ToPoints( p );
+
+    for ( int i = 0; i < 6; ++i ) {
+        const idPlane &plane = m_frustumPlanes[i];
+
+        for ( int j = 0; j < 8; ++j ) {
+            if ( plane.Side( p[j] ) != PLANESIDE_BACK ) {
+                return false;
+            }
+        }
+    }
+
+    return true;
 }
 
 #undef qtrue
