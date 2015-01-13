@@ -25,6 +25,8 @@ public:
 private:
     void FromQ3( float in[3], float out[3] ) const;
     void FromQ3Plane( cplane_t &p ) const;
+    void ToQ3( float in[3], float out[3] ) const;
+    void ToQ3Plane( cplane_t &p ) const;
 
     bool RE_LoadWorldMap( const char *name );
     void R_LoadNodesAndLeafs(lump_t *nodeLump, lump_t *leafLump);
@@ -55,6 +57,9 @@ private:
     void ConstructFrustum( const playerView_t &view );
     bool CullSurfaceAgainstFrustum( const idBounds &bounds ) const;
 
+    typedef std::vector<std::string> LumpsType;
+    void ConvertToQ2( const std::string &q2file );
+
     q3world_t m_world;
     byte *m_fileBase;
 
@@ -73,6 +78,8 @@ private:
     std::vector<cached_surf_t> m_surfs;
 
     idPlane m_frustumPlanes[6];
+
+    std::map<msurface_t*, int> surfaceMap; // value is offset
 };
 
 #endif 

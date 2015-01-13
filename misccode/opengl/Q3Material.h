@@ -48,6 +48,9 @@ public:
     virtual void Bind( const CommonMaterialParams &params );
     virtual void Unbind( void );
 
+    /* get image from first stage */
+    std::string GetImageName() const;
+
 private:
     void InitMaterialStage();
 

@@ -1409,6 +1409,13 @@ bool Q3LightMaterial::Init( const std::string &name ) {
     return true;
 }
 
+std::string Q3Lightmaterial::GetImageName() const {
+    if ( !m_stage ) {
+        return "";
+    }
+    return m_stage->bundle.image[0];
+}
+
 bool Q3Material::InitUniformVariables( void ) {
     m_program->CreateUniformBuffer( "StagesBlock" );
     m_stagesBlock.Init( m_shader.m_stages );

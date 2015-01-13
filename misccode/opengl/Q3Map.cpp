@@ -1480,6 +1480,364 @@ bool Q3Map::CullSurfaceAgainstFrustum( const idBounds &bounds ) const {
     return true;
 }
 
+void Q3Map::Q2StoreVisibility( LumpsType &lumps ) {
+    std::string &s = lumps[Q2_LUMP_VISIBILITY];
+
+    s.resize(m_world.numClusters * m_world.clusterBytes
+        + 2 * sizeof(int) * numClusters);
+
+    q2_dvis_t *vis = (dvis_t *)s.data();
+    vis->numclusters = m_world.numClusters;
+
+    byte *origout, *out = (byte *)&s[ 2 * sizeof(int) * numClusters ];
+    for ( int i = 0; i < numClusters; ++i ) {
+        byte *in = (byte*)m_world.vis + i * m_world.clusterBytes;
+
+        vis->bitofs[i][Q2_DVIS_PVS] = out - origout;
+        vis->bitofs[i][Q2_DVIS_PHS] = 0;
+
+        byte *in_end = in + m_world.clusterBytes;
+
+        /* compression */
+        while ( in < in_end ) {
+            if ( *in ) {
+                *out++ = *in++;
+            } else {
+                byte *tin = in;
+                while ( !*tin && ( tin - in ) < 255 ) {
+                    ++tin;
+                }
+
+                *out++ = 0;
+                *out++ = tin - in;
+
+                in = tin;
+            }
+        }
+    }
+
+    s.resize( ( out - origout ) + 2 * sizeof(int) * numClusters );
+}
+
+void Q3Map::Q3ToQ2Texture( int shader, q2_texinfo_t &tex ) {
+    const char *p = (const char *)m_world.shaders[ shader ].shader;
+
+    std::string pp = std::string( p );
+    std::string imgName;
+
+    if ( glMaterialCache.Get( pp + ".l3a" ) != NULL ) {
+        Q3LightMaterial *m = static_cast<Q3LightMaterial*>( 
+                 glMaterialCache.Get( pp + ".l3a" ) );
+        imgName = m->GetImageName();
+
+    } else if ( glMaterialCache.Get( pp + ".tga" ) != NULL ) {
+        imgName = pp + ".tga";
+
+    } else {
+        imgname = "images/checkerboard.tga";
+    }
+
+    if ( imgName.length() > 32 ) {
+        assert( 0 );
+        msg_failure( "`%s' is longer than 32 symbols\n", imgName.c_str() );
+    }
+
+    memcpy( tex.texture, imgName.c_str(), imgName.size() );
+}
+
+/* return offset in bytes */
+template <typename T>
+static int PushItem(std::string &m, T *v) { 
+    int sz = m.size();
+    m.resize(sz + sizeof(T));
+    T *vt = (T*)&m[sz];
+    *vt = v;
+    return sz;
+}
+
+/* == 0 - not found, offset in bytes in edges array */
+int FindEdgeInMap( std::map<unsigned int, int> &m, 
+        unsigned int v1, unsigned int v2 ) 
+{
+    unsigned long long ind = v1 << 16 + v2;
+    if ( m.find( ind ) != m.end() ) {
+        assert( m[ind] > 0 );
+        return m[ind];
+    }
+
+    ind = v2 << 15 + v1;
+    if ( m.find( ind ) != m.end() ) {
+        assert( m[ind] > 0 );
+        return -m[ind];
+    }
+
+    return 0;
+}
+
+void Q3Map::PushEdge( LumpsTypes &lumps,
+        std::map<unsigned int, int> &m, unsigned int v1, unsigned int v2 )
+{
+    int offset = FindEdgeInMap( m, v1, v2 );
+
+    if ( !offset ) {
+        q2_dedge_t edge;
+        edge.v[0] = v1;
+        edge.v[1] = v2;
+        offset = PushItem( lumps[Q2_LUMP_EDGES], &edge );
+        m.insert( std::make_pair( v1 << 16 + v2, offset / sizeof(edge) ) );
+    }
+
+    assert( offset != 0 );
+    PushItem( lumps[Q2_LUMP_SURFEDGES], offset / sizeof(q2_dedge_t) );
+}
+
+void Q3Map::Q2StoreSurfaces( LumpsType &lumps ) {
+    surfaceMap.clear();
+    for ( int i = 0; i < m_world.numsurfaces; ++i ) {
+        msurface_t *m = m_world.surfaces + i;
+        surfaceType_t *type = (surfaceType_t *)m->data;
+
+        if ( *type != SF_FACE ) {
+            continue;
+        }
+
+        // key (idx1<<16 + idx2, value - edge-offset-int)
+        std::map<unsigned int, int> edgesMap; 
+
+        srfSurfaceFace_t *face = (srfSurfaceFace_t *)s->data;
+
+        dvertex_t q2vertex;
+
+        int voffset = lumps[Q2_LUMP_VERTEXES].size() / sizeof(dvertex_t);
+        int eoffset = lumps[Q2_LUMP_EDGES].size() / sizeof(dedge_t);
+
+        float *point = face->points[0];
+        for ( int j = 0; j < face->numPoints; ++j, point += 8 ) {
+            VectorCopy( point, q2vertex.point );
+            PushItem( lumps[Q2_LUMP_VERTEXES], &q2vertex );
+        }
+
+        /* generating edges */
+        unsigned *indices 
+            = (unsigned *)( ( ( char * ) face ) + face->ofsIndices );
+
+        for ( int j = 0; j < face->numIndices; j += 3 ) {
+            assert( voffset+indices[j+0] < 65536 );
+            assert( voffset+indices[j+1] < 65536 );
+            assert( voffset+indices[j+2] < 65536 );
+
+            PushEdge( lumps, edgesMap, voffset+indices[j+0], 
+                    voffset+indices[j+1] );
+            PushEdge( lumps, edgesMap, voffset+indices[j+1], 
+                    voffset+indices[j+2] );
+            PushEdge( lumps, edgesMap, voffset+indices[j+2], 
+                    voffset+indices[j+0] );
+        }
+
+        int neweoffset = lumps[Q2_LUMP_EDGES].size() / sizeof(dedge_t);
+
+        q2_dface_t q2face = {0};
+
+        q2_dplane_t plane;
+        VectorCopy( &face->plane->normal, plane.normal );
+        plane.dist = face->plane.dist;
+        plane.type = 3;
+        
+        q2face.planenum = PushItem( lumps[Q2_LUMP_PLANES], &plane ) 
+            / sizeof(dplane_t);
+        q2face.side = 0;
+        q2face.firstedge = eoffset;
+        q2face.numedges = neweoffset - eoffset;
+
+        {
+            /* texinfo */
+            assert( face->numIndices >= 3 );
+
+            point = face->points[0];
+            vec3_t d1, d2, sdir, tdir, ndir;
+            vec3_t s0, s1, s2, ds, dt;
+
+            VectorSubtract( &point[8*indices[1]], &point[8*indices[0]], d1 );
+            VectorSubtract( &point[8*indices[2]], &point[8*indices[0]], d2 );
+            VectorCopy( point[8*indices[0]]+5, ndir );
+            VectorCopy( point[8*indices[0]]+3, s0 );
+            VectorCopy( point[8*indices[1]]+3, s1 );
+            VectorCopy( point[8*indices[2]]+3, s2 );
+            VectorSubtract( s1, s0, ds );
+            VectorSubtract( s2, s0, dt );
+
+            float detSt = ( dt[1] * ds[0] - ds[1] * dt[0] );
+            assert( detSt != 0 );
+
+            sdir[0] = ( dt[1] * d1[0] - ds[1] * d2[0] ) / detSt;
+            sdir[1] = ( dt[1] * d1[1] - ds[1] * d2[1] ) / detSt;
+            sdir[2] = ( dt[1] * d1[2] - ds[1] * d2[2] ) / detSt;
+
+            tdir[0] = ( -dt[0] * d1[0] + ds[0] * d2[0] ) / detSt;
+            tdir[1] = ( -dt[0] * d1[1] + ds[0] * d2[2] ) / detSt;
+            tdir[2] = ( -dt[0] * d1[2] + ds[0] * d2[2] ) / detSt;
+
+            VectorNormalize( sdir );
+            VectorNormalize( tdir );
+
+            /* orthonormalize ndir and sdir */
+            float pd = DotProduct( sdir, ndir );
+            VectorMA( sdir, -pd, ndir, sdir );
+            pd = DotProduct( tdir, ndir );
+            VectorMA( tdir, -pd, ndir, tdir );
+            pd = DotProduct( tdir, sdir );
+            VectorMA( tdir, -pd, sdir, tdir );
+
+            texinfo_t tex;
+            VectorCopy( sdir, tex.vecs[0] );
+            VectorCopy( tdir, tex.vecs[1] );
+            tex.flags = 0;
+            tex.value = 0;
+            Q3ToQ2Texture( m->shader, tex );
+            tex.nexttexinfo = -1;
+
+            q2face.texinfo = PushItem( 
+                    lumps[Q2_LUMP_TEXINFO], &tex ) / sizeof(tex);
+        }
+
+        surfaceMap.insert( std::make_pair( m,
+            PushItem( lumps[Q2_LUMP_FACES], &q2face ) / sizeof(q2_dface_t) ) );
+    }
+}
+
+void Q3Map::Q2StoreNodesAndLeafs( LumpsType &lumps ) {
+    std::map<mnode_t*,int> nodeMap; // value is offset
+
+    std::string &nodesLump = lumps[ Q2_LUMP_NODES ];
+    std::string &leafsLump = lumps[ Q2_LUMP_LEAFS ];
+    std::string &markLump = lumps[ Q2_LUMP_LEAFFACES ];
+
+    /* leaves first */
+    for ( int i = 0; i < m_world.numnodes; ++i ) {
+        mnode_t *n = m_world.nodes[i];
+
+        if ( n->contents == -1 ) { 
+            continue;
+        }
+
+        q2_dleaf_t leaf;
+        leaf.contents = 0;
+        leaf.cluster = n->cluster;
+        leaf.area = n->area;
+
+        leaf.mins[0] = n->mins[0];
+        leaf.mins[1] = n->mins[1];
+        leaf.mins[2] = n->mins[2];
+
+        leaf.maxs[0] = n->maxs[0];
+        leaf.maxs[1] = n->maxs[1];
+        leaf.maxs[2] = n->maxs[2];
+
+        leaf.firstleafface = markLump.size() / sizeof(short);
+        leaf.numleaffaces = 0;
+
+        int c;
+        msurface_t *surf, **mark;
+
+        mark = node->firstmarksurface;
+        c = node->nummarksurfaces;
+
+
+        while (c--) {
+            surf = *mark;
+
+            if ( surfaceMap.find( surf ) == surfaceMap.end() ) {
+                continue;
+            }
+
+            PushItem( lumps[ Q2_LUMP_LEAFFACES ], (short)surfaceMap[surf] );
+
+            leaf.numleaffaces++;
+            mark++;
+        }
+
+        nodeMap.insert( std::make_pair( n, 
+            PushItem( lumps[ Q2_LUMP_LEAFS ], &leaf ) ) / sizeof( dleaf_t ) );
+    }
+
+    /* nodes are next */
+    for ( int i = 0; i < m_world.numnodes; ++i ) {
+        mnode_t *n = m_world.nodes[i];
+
+        if ( n->contents != -1 ) { 
+            continue;
+        }
+
+
+        q2_dnode_t dnode;
+
+        q2_dplane_t plane;
+        VectorCopy( &n->plane->normal, plane.normal );
+        plane.dist = n->plane.dist;
+        plane.type = 3;
+
+        dnode.planenum = PushItem( lumps[Q2_LUMP_PLANES], &plane ) 
+            / sizeof(q2_dplane_t);
+
+        if ( n->children[0] >= &m_world.nodes[m_world.numDecisionNodes]) {
+            dnode.children[0] = -(nodeMap[n->children[0]]+1);
+        } else {
+            dnode.children[0] = n->children[0] - m_world.nodes;
+        }
+
+        if ( n->children[1] >= &m_world.nodes[m_world.numDecisionNodes]) {
+            dnode.children[1] = -(nodeMap[n->children[1]]+1);
+        } else {
+            dnode.children[1] = n->children[1] - m_world.nodes;
+        }
+
+        dnode.mins[0] = n->mins[0];
+        dnode.mins[1] = n->mins[1];
+        dnode.mins[2] = n->mins[2];
+
+        dnode.maxs[0] = n->maxs[0];
+        dnode.maxs[1] = n->maxs[1];
+        dnode.maxs[2] = n->maxs[2];
+
+        dnode.firstface = 0; /* ??? is correct */
+        dnode.numfaces = 0;
+
+        PushItem( lumps[ Q2_LUMP_NODES ], &dnode );
+    }
+}
+
+void Q3Map::ConvertToQ2( const std::string &q2file ) {
+    LumpsType lumps;
+    q2_dheader_t header = {0};
+    header.ident = Q2_IDBSPHEADER;
+    header.version = Q2_BSPVERSION;
+
+    lumps.resize(Q2_HEADER_LUMPS);
+
+    Q2StoreVisibility(lumps);
+    Q2StoreSurfaces(lumps);
+    Q2StoreNodesAndLeafs(lumps);
+
+    std::fstream ofs( q2file.c_str(), 
+            std::ios_base::out | std::ios_base::binary );
+
+    for ( int i = 0, offs = sizeof(header); i < Q2_HEADER_LUMPS; 
+            offs += lumps[i].size(), ++i ) 
+    {
+        header.lumps[i].fileofs = offs;
+        header.lumps[i].filelen = lumps[i].size();
+    }
+
+    ofs.write( &header, sizeof( header ));
+
+    for ( int i = 0; i < Q2_HEADER_LUMPS; ++i ) {
+        if ( !lumps[i].empty() ) {
+            ofs.write( lumps[i].data(), lumps[i].size() );
+        }
+    }
+}
+
+
 #undef qtrue
 #undef qfalse
 #undef qboolean
