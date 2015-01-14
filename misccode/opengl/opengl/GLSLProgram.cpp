@@ -1,13 +1,3 @@
-#include <stdio.h>
-#include <string>
-#include <assert.h>
-
-#include <GL/glew.h>
-#include <GL/gl.h>
-#include <GL/glu.h>
-
-#include "Utils.h"
-
 #include "GLSLProgram.h"
 
 GLSLProgram::~GLSLProgram() {
@@ -46,7 +36,7 @@ bool GLSLProgram::Init( const std::vector<std::string> &progs ) {
         }
 
         if ( type == -1 ) {
-            fprintf( stderr, "unknown shader source `%s' found\n", 
+            msg_warning( stderr, "unknown shader source `%s' found\n", 
                     progs[i].c_str() );
             return false;
         }
@@ -64,7 +54,7 @@ bool GLSLProgram::Init( const std::vector<std::string> &progs ) {
         glGetShaderiv( shader, GL_COMPILE_STATUS, &compileStatus );
 
         if ( compileStatus != GL_TRUE ) {
-            fprintf( stderr, "compilation of `%s' is unsuccessful\n", 
+            msg_warning( "compilation of `%s' is unsuccessful\n", 
                     progs[i].c_str() );
             return false;
         }
@@ -82,7 +72,7 @@ bool GLSLProgram::Init( const std::vector<std::string> &progs ) {
     glGetProgramiv( program, GL_LINK_STATUS, &linkStatus );
 
     if ( linkStatus != GL_TRUE ) {
-        fprintf( stderr, "linking is unsuccessful\n" );
+        msg_warning0( "linking is unsuccessful\n" );
         return false;
     }
 
@@ -139,7 +129,7 @@ void GLSLProgram::Bind( const std::string &name, const idMat4 &v ) {
     glUniformMatrix4fv( location, 1, false, v.ToFloatPtr() );
 }
 
-int GLSLProgram::GetUniformSize( const std::string &name ) 
+int GLSLProgram::GetUniformSize( const std::string &name ) const
 {
     GLuint uboIndex; GLint uboSize;
     uboIndex = glGetUniformBlockIndex( m_program, name.c_str() );
@@ -151,7 +141,7 @@ int GLSLProgram::GetUniformSize( const std::string &name )
 std::vector<GLint> GLSLProgram::GetUniformOffsets( 
         const std::string &name ) const 
 {
-    int i;
+    int i, uniformCount;
     GLuint uboIndex;
     std::vector<GLint> indices, offsets;
 
@@ -165,7 +155,7 @@ std::vector<GLint> GLSLProgram::GetUniformOffsets(
 
     offsets.resize( uniformCount );
     glGetActiveUniformsiv( m_program, uniformCount, 
-            indices.data(), GL_UNIFORM_OFFSET, offsets.data() );
+            (const GLuint *)indices.data(), GL_UNIFORM_OFFSET, offsets.data() );
 
     return offsets;
 }
@@ -178,32 +168,8 @@ void GLSLProgram::CreateUniformBuffer( const std::string &name ) {
     _CH(glGenBuffers( 1, &ubo ));
     _CH(glBindBuffer( GL_UNIFORM_BUFFER, ubo ));
     _CH(glBufferData( GL_UNIFORM_BUFFER, 
-        GetUniformSize( name ), NULL, GL_DYNAMIC_DRAW );
+        GetUniformSize( name ), NULL, GL_DYNAMIC_DRAW ));
     glBindBufferBase( GL_UNIFORM_BUFFER, uboIndex, ubo );
 
     m_uniformMap[ name ] = std::make_pair( uboIndex, ubo );
-}
-
-void GLSLProgram::Bind( const std::string &name, const GLLight &light ) {
-    BufIndexPair bPair;
-
-    if ( m_uniformMap.find( name ) == m_uniformMap.end() ) {
-        CreateUniformBuffer( name );
-    }
-    
-    bPair = m_uniformMap[name];
-
-    glBindBuffer( GL_UNIFORM_BUFFER, bPair.second );
-    byte *pBuffer = glMapBufferRange( GL_UNIFORM_BUFFER, 0, 
-        GetUniformSize( name ), GL_MAP_READ_BIT | GL_MAP_WRITE_BIT );
-
-    checkError();
-
-    assert( pBuffer );
-
-    light.Pack( pBuffer, GetUniformOffsets( name ) );
-
-    glUnmapBuffer( GL_UNIFORM_BUFFER );
-
-    glBindBufferBase( GL_UNIFORM_BUFFER, bPair.first, bPair.second );
 }

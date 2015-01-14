@@ -1,14 +1,12 @@
-#ifndef GLSLPROGRAM__H_
-#define GLSLPROGRAM__H_
+#ifndef HLSLPROGRAM__H_
+#define HLSLPROGRAM__H_
 
-#include <string>
-#include <vector>
 #include "d3lib/Lib.h"
 
-class GLSLProgram {
+class HLSLProgram {
 public:
-    GLSLProgram() : m_linkedOk( false ) {}
-    ~GLSLProgram();
+    HLSLProgram();
+    ~HLSLProgram();
 
     bool Init( const std::vector<std::string> &progs );
 
@@ -19,22 +17,24 @@ public:
     void Bind( const std::string &name, const idMat2 &v );
     void Bind( const std::string &name, const idMat3 &v );
     void Bind( const std::string &name, const idMat4 &v );
-    void Bind( const std::string &name, const GLLight &light );
 
     void Use();
 
     bool IsOk() const { return m_linkedOk; }
 
 private:
-    void CreateUniformBuffer( const std::string &name );
-    int GetUniformSize( const std::string &name ) const;
-    std::vector<GLint> GetUniformOffsets( const std::string &name ) const;
-
-    int m_program;
     bool m_linkedOk;
 
-    typedef std::pair<GLuint, GLuint> BufIndexPair;
-    std::map<std::string, BufIndexPair> m_uniformMap;
+    std::map<std::string, std::array<float, 16>> m_uniformMap;
+    std::vector<std::string> m_constantBufferVars;
+
+    std::string m_vertexShaderBytecode;
+    ID3D11VertexShader *m_vertexShader;
+    ID3D11PixelShader *m_pixelShader;
+    ID3D11InputLayout *m_inputLayout;
+    ID3D11Buffer      *m_constantBuffer;
 };
 
-#endif
+typedef HLSLProgram GpuProgram;
+
+#endif /* HLSLPROGRAM__H_ */

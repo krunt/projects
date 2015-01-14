@@ -1,14 +1,14 @@
 #ifndef UTILS__H_
 #define UTILS__H_
 
-#include <stdio.h>
-#include <string>
-#include "d3lib/Lib.h"
+#include "Common.h"
 
 bool EndsWith( const std::string &what, const std::string &suffix );
 void BloatFile( const std::string &filename, std::string &contents );
 bool IsPowerOf2( int v );
-unsigned short LittleShort ( int b );
+unsigned short LittleShort( int b );
+unsigned int LittleLong( int b );
+float LittleFloat( float b );
 
 #define msg_failure0(format) \
     fprintf(stderr, format); \
