@@ -3,6 +3,10 @@
 #include "Utils.h"
 #include "Camera.h"
 #include "Render.h"
+#include "Q3Material.h"
+#include <fstream>
+
+#include "q2_map_common.h"
 
 #define qtrue true
 #define qfalse false
@@ -1379,9 +1383,15 @@ void Q3Map::R_LoadNodesAndLeafs(lump_t *nodeLump, lump_t *leafLump) {
 	R_SetParent (m_world.nodes, NULL);
 }
 
+
+/* made next procedures dumb for now */
+
 #define SCALE_FACTOR 1.0f
 
 void Q3Map::FromQ3( float in[3], float out[3] ) const {
+    out[0] = in[0]; out[1] = in[1]; out[2] = in[2];
+
+    /*
     float tmp[3];
 
     tmp[0] = in[0]; tmp[1] = in[1]; tmp[2] = in[2];
@@ -1389,9 +1399,11 @@ void Q3Map::FromQ3( float in[3], float out[3] ) const {
     out[0] = tmp[0] * SCALE_FACTOR;
     out[1] = -tmp[1] * SCALE_FACTOR;
     out[2] = tmp[2] * SCALE_FACTOR;
+    */
 }
 
 void Q3Map::FromQ3Plane( cplane_t &p ) const {
+    /*
     cplane_t res;
 
     res.normal = p.normal;
@@ -1405,6 +1417,14 @@ void Q3Map::FromQ3Plane( cplane_t &p ) const {
     res.dist = orig * res.normal;
 
     p = res;
+    */
+}
+
+void Q3Map::ToQ3( float in[3], float out[3] ) const {
+    out[0] = in[0]; out[1] = in[1]; out[2] = in[2];
+}
+
+void Q3Map::ToQ3Plane( cplane_t &p ) const {
 }
 
 void Q3Map::Think( int ms ) {
@@ -1484,13 +1504,14 @@ void Q3Map::Q2StoreVisibility( LumpsType &lumps ) {
     std::string &s = lumps[Q2_LUMP_VISIBILITY];
 
     s.resize(m_world.numClusters * m_world.clusterBytes
-        + 2 * sizeof(int) * numClusters);
+        + sizeof(int) + 2 * sizeof(int) * m_world.numClusters);
 
-    q2_dvis_t *vis = (dvis_t *)s.data();
+    q2_dvis_t *vis = (q2_dvis_t *)s.data();
     vis->numclusters = m_world.numClusters;
 
-    byte *origout, *out = (byte *)&s[ 2 * sizeof(int) * numClusters ];
-    for ( int i = 0; i < numClusters; ++i ) {
+    byte *origout, *out;
+    origout = out = (byte *)&s[ sizeof(int) + 2 * sizeof(int) * m_world.numClusters ];
+    for ( int i = 0; i < m_world.numClusters; ++i ) {
         byte *in = (byte*)m_world.vis + i * m_world.clusterBytes;
 
         vis->bitofs[i][Q2_DVIS_PVS] = out - origout;
@@ -1516,10 +1537,10 @@ void Q3Map::Q2StoreVisibility( LumpsType &lumps ) {
         }
     }
 
-    s.resize( ( out - origout ) + 2 * sizeof(int) * numClusters );
+    s.resize( ( out - origout ) + sizeof(int) + 2 * sizeof(int) * m_world.numClusters );
 }
 
-void Q3Map::Q3ToQ2Texture( int shader, q2_texinfo_t &tex ) {
+void Q3Map::Q3ToQ2Texture( int shader, char *texname ) {
     const char *p = (const char *)m_world.shaders[ shader ].shader;
 
     std::string pp = std::string( p );
@@ -1527,27 +1548,35 @@ void Q3Map::Q3ToQ2Texture( int shader, q2_texinfo_t &tex ) {
 
     if ( glMaterialCache.Get( pp + ".l3a" ) != NULL ) {
         Q3LightMaterial *m = static_cast<Q3LightMaterial*>( 
-                 glMaterialCache.Get( pp + ".l3a" ) );
+                 glMaterialCache.Get( pp + ".l3a" ).get() );
         imgName = m->GetImageName();
 
     } else if ( glMaterialCache.Get( pp + ".tga" ) != NULL ) {
         imgName = pp + ".tga";
 
     } else {
-        imgname = "images/checkerboard.tga";
+        imgName = "images/checkerboard.tga";
     }
 
+    std::string origImgName = imgName;
+
+    /* compressing */
+    if ( imgName.rfind( '/' ) != -1 ) {
+        imgName = "t/" + imgName.substr( imgName.rfind( '/' ) );
+    }
+
+    fprintf( stderr, "`%s' -> `%s'\n", origImgName.c_str(), imgName.c_str() );
+
     if ( imgName.length() > 32 ) {
-        assert( 0 );
         msg_failure( "`%s' is longer than 32 symbols\n", imgName.c_str() );
     }
 
-    memcpy( tex.texture, imgName.c_str(), imgName.size() );
+    memcpy( texname, imgName.c_str(), imgName.size() );
 }
 
 /* return offset in bytes */
 template <typename T>
-static int PushItem(std::string &m, T *v) { 
+static int PushItem(std::string &m, const T &v) { 
     int sz = m.size();
     m.resize(sz + sizeof(T));
     T *vt = (T*)&m[sz];
@@ -1556,16 +1585,16 @@ static int PushItem(std::string &m, T *v) {
 }
 
 /* == 0 - not found, offset in bytes in edges array */
-int FindEdgeInMap( std::map<unsigned int, int> &m, 
+static int FindEdgeInMap( std::map<unsigned int, int> &m, 
         unsigned int v1, unsigned int v2 ) 
 {
-    unsigned long long ind = v1 << 16 + v2;
+    unsigned int ind = v1 << 16 + v2;
     if ( m.find( ind ) != m.end() ) {
         assert( m[ind] > 0 );
         return m[ind];
     }
 
-    ind = v2 << 15 + v1;
+    ind = v2 << 16 + v1;
     if ( m.find( ind ) != m.end() ) {
         assert( m[ind] > 0 );
         return -m[ind];
@@ -1574,7 +1603,7 @@ int FindEdgeInMap( std::map<unsigned int, int> &m,
     return 0;
 }
 
-void Q3Map::PushEdge( LumpsTypes &lumps,
+void Q3Map::PushEdge( LumpsType &lumps,
         std::map<unsigned int, int> &m, unsigned int v1, unsigned int v2 )
 {
     int offset = FindEdgeInMap( m, v1, v2 );
@@ -1583,8 +1612,8 @@ void Q3Map::PushEdge( LumpsTypes &lumps,
         q2_dedge_t edge;
         edge.v[0] = v1;
         edge.v[1] = v2;
-        offset = PushItem( lumps[Q2_LUMP_EDGES], &edge );
-        m.insert( std::make_pair( v1 << 16 + v2, offset / sizeof(edge) ) );
+        offset = PushItem( lumps[Q2_LUMP_EDGES], edge );
+        m.insert( std::make_pair( v1 << 16 + v2, offset ) );
     }
 
     assert( offset != 0 );
@@ -1593,6 +1622,10 @@ void Q3Map::PushEdge( LumpsTypes &lumps,
 
 void Q3Map::Q2StoreSurfaces( LumpsType &lumps ) {
     surfaceMap.clear();
+
+    /* fake edge */
+    PushItem( lumps[Q2_LUMP_EDGES], q2_dedge_t() );
+
     for ( int i = 0; i < m_world.numsurfaces; ++i ) {
         msurface_t *m = m_world.surfaces + i;
         surfaceType_t *type = (surfaceType_t *)m->data;
@@ -1604,22 +1637,21 @@ void Q3Map::Q2StoreSurfaces( LumpsType &lumps ) {
         // key (idx1<<16 + idx2, value - edge-offset-int)
         std::map<unsigned int, int> edgesMap; 
 
-        srfSurfaceFace_t *face = (srfSurfaceFace_t *)s->data;
+        srfSurfaceFace_t *face = (srfSurfaceFace_t *)m->data;
 
-        dvertex_t q2vertex;
+        q2_dvertex_t q2vertex;
 
-        int voffset = lumps[Q2_LUMP_VERTEXES].size() / sizeof(dvertex_t);
-        int eoffset = lumps[Q2_LUMP_EDGES].size() / sizeof(dedge_t);
+        int voffset = lumps[Q2_LUMP_VERTEXES].size() / sizeof(q2_dvertex_t);
+        int eoffset = lumps[Q2_LUMP_EDGES].size() / sizeof(q2_dedge_t);
 
         float *point = face->points[0];
         for ( int j = 0; j < face->numPoints; ++j, point += 8 ) {
             VectorCopy( point, q2vertex.point );
-            PushItem( lumps[Q2_LUMP_VERTEXES], &q2vertex );
+            PushItem( lumps[Q2_LUMP_VERTEXES], q2vertex );
         }
 
         /* generating edges */
-        unsigned *indices 
-            = (unsigned *)( ( ( char * ) face ) + face->ofsIndices );
+        unsigned int *indices = (unsigned int *)( ( ( char * ) face ) + face->ofsIndices );
 
         for ( int j = 0; j < face->numIndices; j += 3 ) {
             assert( voffset+indices[j+0] < 65536 );
@@ -1634,17 +1666,16 @@ void Q3Map::Q2StoreSurfaces( LumpsType &lumps ) {
                     voffset+indices[j+0] );
         }
 
-        int neweoffset = lumps[Q2_LUMP_EDGES].size() / sizeof(dedge_t);
+        int neweoffset = lumps[Q2_LUMP_EDGES].size() / sizeof(q2_dedge_t);
 
         q2_dface_t q2face = {0};
 
         q2_dplane_t plane;
-        VectorCopy( &face->plane->normal, plane.normal );
+        VectorCopy( face->plane.normal, plane.normal );
         plane.dist = face->plane.dist;
         plane.type = 3;
         
-        q2face.planenum = PushItem( lumps[Q2_LUMP_PLANES], &plane ) 
-            / sizeof(dplane_t);
+        q2face.planenum = PushItem( lumps[Q2_LUMP_PLANES], plane ) / sizeof(plane);
         q2face.side = 0;
         q2face.firstedge = eoffset;
         q2face.numedges = neweoffset - eoffset;
@@ -1654,15 +1685,16 @@ void Q3Map::Q2StoreSurfaces( LumpsType &lumps ) {
             assert( face->numIndices >= 3 );
 
             point = face->points[0];
+
             vec3_t d1, d2, sdir, tdir, ndir;
             vec3_t s0, s1, s2, ds, dt;
 
             VectorSubtract( &point[8*indices[1]], &point[8*indices[0]], d1 );
             VectorSubtract( &point[8*indices[2]], &point[8*indices[0]], d2 );
-            VectorCopy( point[8*indices[0]]+5, ndir );
-            VectorCopy( point[8*indices[0]]+3, s0 );
-            VectorCopy( point[8*indices[1]]+3, s1 );
-            VectorCopy( point[8*indices[2]]+3, s2 );
+            VectorCopy( &point[8*indices[0]+5], ndir );
+            VectorCopy( &point[8*indices[0]+3], s0 );
+            VectorCopy( &point[8*indices[1]+3], s1 );
+            VectorCopy( &point[8*indices[2]+3], s2 );
             VectorSubtract( s1, s0, ds );
             VectorSubtract( s2, s0, dt );
 
@@ -1688,33 +1720,33 @@ void Q3Map::Q2StoreSurfaces( LumpsType &lumps ) {
             pd = DotProduct( tdir, sdir );
             VectorMA( tdir, -pd, sdir, tdir );
 
-            texinfo_t tex;
+            q2_texinfo_t tex;
             VectorCopy( sdir, tex.vecs[0] );
             VectorCopy( tdir, tex.vecs[1] );
+
+            tex.vecs[0][3] = tex.vecs[1][3] = 0;
             tex.flags = 0;
             tex.value = 0;
-            Q3ToQ2Texture( m->shader, tex );
+            Q3ToQ2Texture( m->shader, tex.texture );
             tex.nexttexinfo = -1;
 
             q2face.texinfo = PushItem( 
-                    lumps[Q2_LUMP_TEXINFO], &tex ) / sizeof(tex);
+                    lumps[Q2_LUMP_TEXINFO], tex ) / sizeof(tex);
         }
 
         surfaceMap.insert( std::make_pair( m,
-            PushItem( lumps[Q2_LUMP_FACES], &q2face ) / sizeof(q2_dface_t) ) );
+            PushItem( lumps[Q2_LUMP_FACES], q2face ) / sizeof(q2_dface_t) ) );
     }
 }
 
 void Q3Map::Q2StoreNodesAndLeafs( LumpsType &lumps ) {
-    std::map<mnode_t*,int> nodeMap; // value is offset
-
     std::string &nodesLump = lumps[ Q2_LUMP_NODES ];
     std::string &leafsLump = lumps[ Q2_LUMP_LEAFS ];
     std::string &markLump = lumps[ Q2_LUMP_LEAFFACES ];
 
     /* leaves first */
     for ( int i = 0; i < m_world.numnodes; ++i ) {
-        mnode_t *n = m_world.nodes[i];
+        mnode_t *n = &m_world.nodes[i];
 
         if ( n->contents == -1 ) { 
             continue;
@@ -1739,8 +1771,8 @@ void Q3Map::Q2StoreNodesAndLeafs( LumpsType &lumps ) {
         int c;
         msurface_t *surf, **mark;
 
-        mark = node->firstmarksurface;
-        c = node->nummarksurfaces;
+        mark = n->firstmarksurface;
+        c = n->nummarksurfaces;
 
 
         while (c--) {
@@ -1756,13 +1788,12 @@ void Q3Map::Q2StoreNodesAndLeafs( LumpsType &lumps ) {
             mark++;
         }
 
-        nodeMap.insert( std::make_pair( n, 
-            PushItem( lumps[ Q2_LUMP_LEAFS ], &leaf ) ) / sizeof( dleaf_t ) );
+        PushItem( lumps[ Q2_LUMP_LEAFS ], leaf );
     }
 
     /* nodes are next */
     for ( int i = 0; i < m_world.numnodes; ++i ) {
-        mnode_t *n = m_world.nodes[i];
+        mnode_t *n = &m_world.nodes[i];
 
         if ( n->contents != -1 ) { 
             continue;
@@ -1772,21 +1803,21 @@ void Q3Map::Q2StoreNodesAndLeafs( LumpsType &lumps ) {
         q2_dnode_t dnode;
 
         q2_dplane_t plane;
-        VectorCopy( &n->plane->normal, plane.normal );
-        plane.dist = n->plane.dist;
+        VectorCopy( n->plane->normal, plane.normal );
+        plane.dist = n->plane->dist;
         plane.type = 3;
 
-        dnode.planenum = PushItem( lumps[Q2_LUMP_PLANES], &plane ) 
+        dnode.planenum = PushItem( lumps[Q2_LUMP_PLANES], plane )
             / sizeof(q2_dplane_t);
 
         if ( n->children[0] >= &m_world.nodes[m_world.numDecisionNodes]) {
-            dnode.children[0] = -(nodeMap[n->children[0]]+1);
+            dnode.children[0] = -((n->children[0] - &m_world.nodes[m_world.numDecisionNodes]) + 1);
         } else {
             dnode.children[0] = n->children[0] - m_world.nodes;
         }
 
         if ( n->children[1] >= &m_world.nodes[m_world.numDecisionNodes]) {
-            dnode.children[1] = -(nodeMap[n->children[1]]+1);
+            dnode.children[1] = -((n->children[1] - &m_world.nodes[m_world.numDecisionNodes]) + 1);
         } else {
             dnode.children[1] = n->children[1] - m_world.nodes;
         }
@@ -1802,7 +1833,7 @@ void Q3Map::Q2StoreNodesAndLeafs( LumpsType &lumps ) {
         dnode.firstface = 0; /* ??? is correct */
         dnode.numfaces = 0;
 
-        PushItem( lumps[ Q2_LUMP_NODES ], &dnode );
+        PushItem( lumps[ Q2_LUMP_NODES ], dnode );
     }
 }
 
@@ -1828,7 +1859,7 @@ void Q3Map::ConvertToQ2( const std::string &q2file ) {
         header.lumps[i].filelen = lumps[i].size();
     }
 
-    ofs.write( &header, sizeof( header ));
+    ofs.write( (const char *)&header, sizeof( header ));
 
     for ( int i = 0; i < Q2_HEADER_LUMPS; ++i ) {
         if ( !lumps[i].empty() ) {

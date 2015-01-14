@@ -43,5 +43,7 @@ public:
 };
 
 
+bool ConvertTgaToWal( const std::string &tganame, const std::string &walname );
+
 #endif
 

@@ -22,6 +22,8 @@ public:
     virtual void Think( int ms );
     virtual void Render( void );
 
+    void ConvertToQ2( const std::string &q2file );
+
 private:
     void FromQ3( float in[3], float out[3] ) const;
     void FromQ3Plane( cplane_t &p ) const;
@@ -58,7 +60,15 @@ private:
     bool CullSurfaceAgainstFrustum( const idBounds &bounds ) const;
 
     typedef std::vector<std::string> LumpsType;
-    void ConvertToQ2( const std::string &q2file );
+    void Q2StoreVisibility( LumpsType &lumps );
+    void Q2StoreSurfaces( LumpsType &lumps );
+    void Q2StoreNodesAndLeafs( LumpsType &lumps );
+
+    struct q2_texinfo_s;
+    void Q3ToQ2Texture( int shader, char *texname );
+
+     void PushEdge( LumpsType &lumps,
+        std::map<unsigned int, int> &m, unsigned int v1, unsigned int v2 );
 
     q3world_t m_world;
     byte *m_fileBase;

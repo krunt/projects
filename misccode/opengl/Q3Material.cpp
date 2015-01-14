@@ -1409,7 +1409,7 @@ bool Q3LightMaterial::Init( const std::string &name ) {
     return true;
 }
 
-std::string Q3Lightmaterial::GetImageName() const {
+std::string Q3LightMaterial::GetImageName() const {
     if ( !m_stage ) {
         return "";
     }

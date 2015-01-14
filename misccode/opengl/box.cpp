@@ -1022,11 +1022,7 @@ int main() {
     gl_game.AddEntity( flag );
     */
 
-    dict.clear();
-    dict["map"] = "maps/q3dm1.bsp";
-
     /*
-    Q3Map q3map( dict );
     gl_game.AddEntity( q3map );
     */
 
@@ -1039,6 +1035,14 @@ int main() {
     gl_game.AddEntity( quad );
 
     InitVideo();
+
+    dict.clear();
+    dict["map"] = "maps/q3dm1.bsp";
+
+    Q3Map q3map( dict );
+    q3map.Spawn();
+    q3map.ConvertToQ2( "myq2dm1.bsp" );
+    return 0;
 
     gl_render.Init( gl_camera.GetPlayerView() );
 

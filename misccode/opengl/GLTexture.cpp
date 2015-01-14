@@ -1,5 +1,6 @@
 
 #include <stdio.h>
+#include <fstream>
 
 #include "GLTexture.h"
 #include "Utils.h"
@@ -315,6 +316,204 @@ void R_ResampleTexture( const byte *in, byte *out, int inwidth, int inheight,
 		}
 	}
 }
+
+typedef struct
+{
+    char	manufacturer;
+    char	version;
+    char	encoding;
+    char	bits_per_pixel;
+    unsigned short	xmin,ymin,xmax,ymax;
+    unsigned short	hres,vres;
+    unsigned char	palette[48];
+    char	reserved;
+    char	color_planes;
+    unsigned short	bytes_per_line;
+    unsigned short	palette_type;
+    char	filler[58];
+    unsigned char	data;			// unbounded
+} pcx_t;
+
+void LoadPCX (const char *filename, byte **pic, byte **palette, int *width, int *height)
+{
+	byte	*raw;
+	pcx_t	*pcx;
+	int		x, y;
+	int		len;
+	int		dataByte, runLength;
+	byte	*out, *pix;
+    std::string contents;
+
+	*pic = NULL;
+
+    BloatFile( filename, contents );
+
+    if ( contents.empty() ) {
+		msg_failure ("no pcx found %s\n", filename);
+        return;
+    }
+
+    len = contents.size();
+    raw = (byte *)&contents[0];
+
+	//
+	// parse the PCX file
+	//
+	pcx = (pcx_t *)raw;
+
+    pcx->xmin = LittleShort(pcx->xmin);
+    pcx->ymin = LittleShort(pcx->ymin);
+    pcx->xmax = LittleShort(pcx->xmax);
+    pcx->ymax = LittleShort(pcx->ymax);
+    pcx->hres = LittleShort(pcx->hres);
+    pcx->vres = LittleShort(pcx->vres);
+    pcx->bytes_per_line = LittleShort(pcx->bytes_per_line);
+    pcx->palette_type = LittleShort(pcx->palette_type);
+
+	raw = &pcx->data;
+
+	if (pcx->manufacturer != 0x0a
+		|| pcx->version != 5
+		|| pcx->encoding != 1
+		|| pcx->bits_per_pixel != 8
+		|| pcx->xmax >= 640
+		|| pcx->ymax >= 480)
+	{
+		msg_failure ("Bad pcx file %s\n", filename);
+		return;
+	}
+
+	out = (byte *)malloc ( (pcx->ymax+1) * (pcx->xmax+1) );
+
+	*pic = out;
+
+	pix = out;
+
+	if (palette)
+	{
+		*palette = (byte*)malloc(768);
+		memcpy (*palette, (byte *)pcx + len - 768, 768);
+	}
+
+	if (width)
+		*width = pcx->xmax+1;
+	if (height)
+		*height = pcx->ymax+1;
+
+	for (y=0 ; y<=pcx->ymax ; y++, pix += pcx->xmax+1)
+	{
+		for (x=0 ; x<=pcx->xmax ; )
+		{
+			dataByte = *raw++;
+
+			if((dataByte & 0xC0) == 0xC0)
+			{
+				runLength = dataByte & 0x3F;
+				dataByte = *raw++;
+			}
+			else
+				runLength = 1;
+
+			while(runLength-- > 0)
+				pix[x++] = dataByte;
+		}
+
+	}
+
+	if ( raw - (byte *)pcx > len)
+	{
+		msg_failure("PCX file %s was malformed", filename);
+		free (*pic);
+		*pic = NULL;
+	}
+}
+
+#define	MIPLEVELS	4
+typedef struct miptex_s
+{
+	char		name[32];
+	unsigned	width, height;
+	unsigned	offsets[MIPLEVELS];		// four mip maps stored
+	char		animname[32];			// next frame in animation chain
+	int			flags;
+	int			contents;
+	int			value;
+} miptex_t;
+
+byte *d_24to8table = NULL;
+bool ConvertTgaToWal( const std::string &tganame, const std::string &walname )
+{
+    if (!d_24to8table) {
+        d_24to8table = (byte*)malloc(1<<24);
+        memset(d_24to8table, 0, 1<<24);
+
+        byte *colormap, *pal;
+	    LoadPCX ("pics/colormap.pcx", &colormap, &pal, NULL, NULL);
+
+        for ( int i = 0; i < 256; ++i ) {
+            d_24to8table[ pal[3*i+0] << 16 | pal[3*i+1] << 8 | pal[3*i+2] ] = i;
+        }
+
+        for ( int i = 0, last_v = 0; i < (1<<24); ++i ) {
+            if ( !d_24to8table[i] ) {
+                d_24to8table[i] = last_v;
+            } else {
+                last_v = d_24to8table[i];
+            }
+        }
+    }
+
+    byte *pic, *picCopy, *outPic;
+    int width, height, format;
+    pic = R_LoadTGA( tganame, width, height, format );
+    if (!pic) {
+        return false;
+    }
+
+    picCopy = (byte *)malloc( width * height * 4 );
+    outPic = (byte *)malloc(width * height);
+
+    miptex_t miptex = {0};
+    memcpy( miptex.name, tganame.c_str(), tganame.size() );
+    miptex.width = width;
+    miptex.height = height;
+    miptex.offsets[0] = sizeof(miptex_t);
+
+    std::fstream fs( walname.c_str(),
+            std::ios_base::out | std::ios_base::binary );
+
+    fs.write( (const char *)&miptex, sizeof(miptex) );
+
+    for (int j = 0; j < 4; ++j ) {
+        int oldWidth, oldHeight;
+
+        oldWidth = width;
+        oldHeight = height;
+
+        if ( width > 1 ) {
+            width >>= 1;
+        }
+
+        if ( height > 1 ) {
+            height >>= 1;
+        }
+
+        /* convert */
+        for (int k = 0; k < oldWidth * oldHeight; ++k ) {
+            outPic[k] = d_24to8table[ pic[4*k] << 16 | pic[4*k+1] << 8 | pic[4*k+2] ];
+        }
+        fs.write( (const char *)outPic, oldWidth * oldHeight );
+
+        R_ResampleTexture( pic, picCopy, oldWidth, oldHeight, width, height );
+
+        std::swap( pic, picCopy );
+    }
+
+    free(picCopy);
+    free(pic);
+    free(outPic);
+}
+
 
 GLTexture::~GLTexture() {
     if ( IsOk() ) {
