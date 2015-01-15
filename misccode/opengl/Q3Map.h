@@ -3,6 +3,7 @@
 
 #include "Common.h"
 #include "q3_map_common.h"
+#include "aas_common.h"
 #include "MyEntity.h"
 
 #define MAX_FACE_POINTS 64
@@ -23,6 +24,7 @@ public:
     virtual void Render( void );
 
     void ConvertToQ2( const std::string &q2file );
+    bool MoveToPosition( const idVec3 &from, const idVec3 &to );
 
 private:
     void FromQ3( float in[3], float out[3] ) const;
@@ -59,6 +61,7 @@ private:
     void ConstructFrustum( const playerView_t &view );
     bool CullSurfaceAgainstFrustum( const idBounds &bounds ) const;
 
+    /* Q2-Part */
     typedef std::vector<std::string> LumpsType;
     void Q2StoreVisibility( LumpsType &lumps );
     void Q2StoreSurfaces( LumpsType &lumps );
@@ -67,8 +70,49 @@ private:
     struct q2_texinfo_s;
     void Q3ToQ2Texture( int shader, char *texname );
 
-     void PushEdge( LumpsType &lumps,
+    void PushEdge( LumpsType &lumps,
         std::map<unsigned int, int> &m, unsigned int v1, unsigned int v2 );
+
+    /* AAS-Part */
+    bool AASLoadFile( const std::string &filename );
+    aas_moveresult_t AASTravel_Walk(aas_movestate_t *ms,
+        aas_reachability_t *reach);
+    int AASGetReachabilityToGoal(
+        vec3_t origin, int areanum, int lastgoalareanum, int lastareanum,
+    	int *avoidreach, float *avoidreachtimes, int *avoidreachtries,
+        aas_goal_t *goal, int travelflags, int movetravelflags,
+    	void *avoidspots, int numavoidspots, int *flags );
+    int AAS_AreaTravelTimeToGoalArea(int areanum, vec3_t origin, 
+            int goalareanum, int travelflags);
+    int AAS_AreaRouteToGoalArea(int areanum, vec3_t origin, 
+            int goalareanum, int travelflags, int *traveltime, int *reachnum);
+    unsigned short int AAS_AreaTravelTime(int areanum, vec3_t start, vec3_t end);
+    int AAS_ClusterAreaNum(int clusternum, int areanum);
+    int AAS_NextAreaReachability(int areanum, int reachnum);
+    void AASMoveToGoal( aas_goal_t *goal );
+    int AASReachabilityTime(aas_reachability_t *reach);
+    int AAS_Time() const;
+    aas_moveresult_t AASMoveInGoalArea(aas_movestate_t *ms, aas_goal_t *goal);
+    void AASClearMoveResult(aas_moveresult_t *result);
+    int AASFuzzyPointReachabilityArea(vec3_t origin);
+    int AAS_TraceAreas(vec3_t start, vec3_t end, 
+        int *areas, vec3_t *points, int maxareas);
+    int AAS_PointAreaNum(vec3_t point);
+    int AAS_AreaReachability(int areanum);
+    void AAS_ReachabilityFromNum(int num, struct aas_reachability_s *reach);
+    void AASResetMoveState();
+    void AASInitMoveState( aas_initmove_t *state );
+    byte *AAS_LoadAASLump(int offset, int length, int *lastoffset, int size);
+    void AAS_LinkCache(aas_routingcache_t *cache);
+    void AAS_UnlinkCache(aas_routingcache_t *cache);
+    aas_routingcache_t *AAS_AllocRoutingCache(int numtraveltimes);
+    aas_routingcache_t *AAS_GetAreaRoutingCache(int clusternum, int areanum, int travelflags);
+    void AAS_UpdatePortalRoutingCache(aas_routingcache_t *portalcache);
+    aas_routingcache_t *AAS_GetPortalRoutingCache(int clusternum, 
+            int areanum, int travelflags);
+    void AAS_EA_Move(vec3_t dir, float speed);
+    void AAS_UpdateAreaRoutingCache(aas_routingcache_t *cache);
+
 
     q3world_t m_world;
     byte *m_fileBase;
@@ -90,6 +134,10 @@ private:
     idPlane m_frustumPlanes[6];
 
     std::map<msurface_t*, int> surfaceMap; // value is offset
+
+    aas_t m_aasworld;
+    aas_movestate_t m_movestate;
+    aas_moveresult_t m_moveresult;
 };
 
 #endif 
