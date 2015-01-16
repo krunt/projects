@@ -4,7 +4,7 @@ sources = $(wildcard *.cpp)
 headers = $(wildcard *.h)
 object_files = $(filter-out box.o tga2wal.o,$(patsubst %.cpp,%.o,$(sources)))
 libs = -lm -Ld3lib -lidlib -lglut -lGL -lSDL -lGLEW -lGLU -lode -lboost_system -lboost_filesystem
-flags = -g -O2
+flags = -g -O0
 compiler = g++
 
 all: box tga2wal

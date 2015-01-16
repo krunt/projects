@@ -1555,22 +1555,26 @@ void Q3Map::Q3ToQ2Texture( int shader, char *texname ) {
         imgName = pp + ".tga";
 
     } else {
-        imgName = "images/checkerboard.tga";
+        //imgName = "images/checkerboard.tga";
+        imgName = "t/pitted_rust3.wal";
     }
 
     std::string origImgName = imgName;
 
     /* compressing */
     if ( imgName.rfind( '/' ) != -1 ) {
-        imgName = "t/" + imgName.substr( imgName.rfind( '/' ) );
+        int from = imgName.rfind( '/' );
+        int to = imgName.rfind( '.' );
+        imgName = "t/" + imgName.substr( from + 1, to - from - 1 );
     }
 
-    fprintf( stderr, "`%s' -> `%s'\n", origImgName.c_str(), imgName.c_str() );
+    fprintf( stderr, "%s %s\n", origImgName.c_str(), imgName.c_str() );
 
-    if ( imgName.length() > 32 ) {
+    if ( imgName.length() > 31 ) {
         msg_failure( "`%s' is longer than 32 symbols\n", imgName.c_str() );
     }
 
+    memset( texname, 0, 32 );
     memcpy( texname, imgName.c_str(), imgName.size() );
 }
 
@@ -1617,7 +1621,7 @@ void Q3Map::PushEdge( LumpsType &lumps,
     }
 
     assert( offset != 0 );
-    PushItem( lumps[Q2_LUMP_SURFEDGES], offset / sizeof(q2_dedge_t) );
+    PushItem( lumps[Q2_LUMP_SURFEDGES], offset / (int)sizeof(q2_dedge_t) );
 }
 
 void Q3Map::Q2StoreSurfaces( LumpsType &lumps ) {
@@ -1639,10 +1643,22 @@ void Q3Map::Q2StoreSurfaces( LumpsType &lumps ) {
 
         srfSurfaceFace_t *face = (srfSurfaceFace_t *)m->data;
 
+        /*
+        if ( face->numIndices != 6 || face->numPoints != 4 ) {
+            fprintf(stderr, "%d/%d\n", face->numIndices, face->numPoints);
+            continue;
+        }
+        */
+
+        if ( face->numPoints > 256 ) {
+            msg_warning0( "numPoints > 256\n" );
+            continue;
+        }
+
         q2_dvertex_t q2vertex;
 
         int voffset = lumps[Q2_LUMP_VERTEXES].size() / sizeof(q2_dvertex_t);
-        int eoffset = lumps[Q2_LUMP_EDGES].size() / sizeof(q2_dedge_t);
+        int eoffset = lumps[Q2_LUMP_SURFEDGES].size() / sizeof(int);
 
         float *point = face->points[0];
         for ( int j = 0; j < face->numPoints; ++j, point += 8 ) {
@@ -1653,6 +1669,81 @@ void Q3Map::Q2StoreSurfaces( LumpsType &lumps ) {
         /* generating edges */
         unsigned int *indices = (unsigned int *)( ( ( char * ) face ) + face->ofsIndices );
 
+        /*
+        int vind[4] = {0};
+        int iind[4] = { 0, 1, 2, 3 };
+        for ( int j = 0; j < face->numIndices; ++j ) {
+            vind[indices[j]]++;
+        }
+
+        if ( vind[0] == 2 && vind[1] == 2 ) { 
+            std::swap( iind[1], iind[2] );
+        } else if ( vind[0] == 1 && vind[1] == 2 ) { 
+            if ( vind[2] == 2 ) {
+                std::swap( iind[2], iind[3] );
+            }
+        } else if ( vind[0] == 2 && vind[1] == 1 ) { 
+            if ( vind[3] == 2 ) {
+                std::swap( iind[2], iind[3] );
+            }
+        } else if ( vind[0] == 1 && vind[1] == 1 ) { 
+            std::swap( iind[1], iind[2] );
+        }
+
+        for ( int j = 0; j < 4; ++j ) {
+            PushEdge( lumps, edgesMap, voffset+iind[j], 
+                    voffset+iind[(j+1)&3] );
+        }
+        */
+
+
+        int edgeMap[65536] = {0};
+        memset(edgeMap, 0x00, 65536*4);
+        for ( int j = 0; j < face->numIndices; j += 3 ) {
+            for ( int k = 0; k < 3; ++k ) {
+                int mn = std::min( indices[j+k], indices[j+((k+1)%3)] );
+                int mx = std::max( indices[j+k], indices[j+((k+1)%3)] );
+                edgeMap[(mx<<8)|mn]++;
+            }
+        }
+
+        int vertexIndex = -1;
+        int vertexMap[256]; 
+        memset(vertexMap, 0xff, 256*4);
+        for ( int j = 0; j < face->numIndices; j += 3 ) {
+            for ( int k = 0; k < 3; ++k ) {
+                int mn = std::min( indices[j+k], indices[j+((k+1)%3)] );
+                int mx = std::max( indices[j+k], indices[j+((k+1)%3)] );
+                if ( edgeMap[(mx<<8)|mn] == 1 ) {
+                    vertexMap[indices[j+k]] = indices[j+((k+1)%3)];
+                    if ( vertexIndex == -1 ) {
+                        vertexIndex = indices[j+k];
+                    }
+                }
+            }
+        }
+
+        if ( vertexIndex == -1 ) {
+            msg_warning0( "vertexIndex must be != -1\n" );
+            continue;
+        }
+
+        int cnt = 0;
+        int origVertexIndex = vertexIndex;
+        do { 
+            int prevIndex = vertexIndex;
+            vertexIndex = vertexMap[prevIndex];
+
+            assert(vertexIndex != -1);
+
+            ++cnt;
+
+            PushEdge( lumps, edgesMap, voffset + prevIndex, voffset + vertexIndex );
+        } while ( vertexIndex != origVertexIndex );
+
+        fprintf( stderr, "generated convex hull with %d edges\n", cnt );
+
+            /*
         for ( int j = 0; j < face->numIndices; j += 3 ) {
             assert( voffset+indices[j+0] < 65536 );
             assert( voffset+indices[j+1] < 65536 );
@@ -1665,8 +1756,9 @@ void Q3Map::Q2StoreSurfaces( LumpsType &lumps ) {
             PushEdge( lumps, edgesMap, voffset+indices[j+2], 
                     voffset+indices[j+0] );
         }
+                    */
 
-        int neweoffset = lumps[Q2_LUMP_EDGES].size() / sizeof(q2_dedge_t);
+        int neweoffset = lumps[Q2_LUMP_SURFEDGES].size() / sizeof(int);
 
         q2_dface_t q2face = {0};
 
@@ -1720,9 +1812,24 @@ void Q3Map::Q2StoreSurfaces( LumpsType &lumps ) {
             pd = DotProduct( tdir, sdir );
             VectorMA( tdir, -pd, sdir, tdir );
 
+            idVec3 left, up;
+            idVec3 norm( plane.normal[0], plane.normal[1], plane.normal[2] );
+            norm.OrthogonalBasis( left, up );
+
             q2_texinfo_t tex;
             VectorCopy( sdir, tex.vecs[0] );
             VectorCopy( tdir, tex.vecs[1] );
+
+            /*
+            VectorCopy( left.ToFloatPtr(), tex.vecs[0] );
+            VectorCopy( up.ToFloatPtr(), tex.vecs[1] );
+            */
+
+            /*
+            VectorClear( tex.vecs[0] ); tex.vecs[0][3] = 0;
+            VectorClear( tex.vecs[1] ); tex.vecs[1][3] = 0;
+            */
+
 
             tex.vecs[0][3] = tex.vecs[1][3] = 0;
             tex.flags = 0;
