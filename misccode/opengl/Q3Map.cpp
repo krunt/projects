@@ -2143,7 +2143,264 @@ bool Q3Map::AASLoadFile( const std::string &aasname ) {
 	//aas file is loaded
 	aasworld.loaded = qtrue;
 
+    AASInit();
+
     return true;
+}
+
+static byte *GetClearedMemory( int size ) {
+    byte *p = (byte *)malloc( size );
+    memset( p, 0, size );
+    return p;
+}
+
+void Q3Map::AAS_InitPortalCache(void) {
+	m_aasworld.portalcache = (aas_routingcache_t **) GetClearedMemory(
+        m_aasworld.numareas * sizeof(aas_routingcache_t *));
+}
+
+void Q3Map::AAS_InitRoutingUpdate(void)
+{
+	int i, maxreachabilityareas;
+
+	//free routing update fields if already existing
+	if (m_aasworld.areaupdate) free(m_aasworld.areaupdate);
+	//
+	maxreachabilityareas = 0;
+	for (i = 0; i < m_aasworld.numclusters; i++)
+	{
+		if (m_aasworld.clusters[i].numreachabilityareas > maxreachabilityareas)
+		{
+			maxreachabilityareas = m_aasworld.clusters[i].numreachabilityareas;
+		} //end if
+	} //end for
+	//allocate memory for the routing update fields
+	m_aasworld.areaupdate 
+        = (aas_routingupdate_t *) GetClearedMemory(
+		        maxreachabilityareas * sizeof(aas_routingupdate_t));
+	//
+	if (m_aasworld.portalupdate) free(m_aasworld.portalupdate);
+	//allocate memory for the portal update fields
+	m_aasworld.portalupdate = (aas_routingupdate_t *) GetClearedMemory(
+		(m_aasworld.numportals+1) * sizeof(aas_routingupdate_t));
+}
+
+void Q3Map::AAS_CreateReversedReachability(void)
+{
+	int i, n;
+	aas_reversedlink_t *revlink;
+	aas_reachability_t *reach;
+	aas_areasettings_t *settings;
+	char *ptr;
+	//free reversed links that have already been created
+	if (m_aasworld.reversedreachability) free(m_aasworld.reversedreachability);
+	//allocate memory for the reversed reachability links
+	ptr = (char *) GetClearedMemory(m_aasworld.numareas 
+            * sizeof(aas_reversedreachability_t) 
+            + m_aasworld.reachabilitysize * sizeof(aas_reversedlink_t));
+	//
+	m_aasworld.reversedreachability = (aas_reversedreachability_t *) ptr;
+	//pointer to the memory for the reversed links
+	ptr += m_aasworld.numareas * sizeof(aas_reversedreachability_t);
+	//check all reachabilities of all areas
+	for (i = 1; i < m_aasworld.numareas; i++)
+	{
+		//settings of the area
+		settings = &m_aasworld.areasettings[i];
+		//
+		if (settings->numreachableareas >= 128)
+			msg_warning( "area %d has more than 128 reachabilities\n", i);
+		//create reversed links for the reachabilities
+		for (n = 0; n < settings->numreachableareas && n < 128; n++)
+		{
+			//reachability link
+			reach = &m_aasworld.reachability[settings->firstreachablearea + n];
+			//
+			revlink = (aas_reversedlink_t *) ptr;
+			ptr += sizeof(aas_reversedlink_t);
+			//
+			revlink->areanum = i;
+			revlink->linknum = settings->firstreachablearea + n;
+			revlink->next = m_aasworld.reversedreachability[reach->areanum].first;
+			m_aasworld.reversedreachability[reach->areanum].first = revlink;
+			m_aasworld.reversedreachability[reach->areanum].numlinks++;
+		} //end for
+	} //end for
+}
+
+void Q3Map::AAS_InitClusterAreaCache(void)
+{
+	int i, size;
+	char *ptr;
+
+	//
+	for (size = 0, i = 0; i < m_aasworld.numclusters; i++)
+	{
+		size += m_aasworld.clusters[i].numareas;
+	} //end for
+	//two dimensional array with pointers for every cluster to routing cache
+	//for every area in that cluster
+	ptr = (char *) GetClearedMemory(
+				m_aasworld.numclusters * sizeof(aas_routingcache_t **) +
+				size * sizeof(aas_routingcache_t *));
+	m_aasworld.clusterareacache = (aas_routingcache_t ***) ptr;
+	ptr += m_aasworld.numclusters * sizeof(aas_routingcache_t **);
+	for (i = 0; i < m_aasworld.numclusters; i++)
+	{
+		m_aasworld.clusterareacache[i] = (aas_routingcache_t **) ptr;
+		ptr += m_aasworld.clusters[i].numareas * sizeof(aas_routingcache_t *);
+	} //end for
+}
+
+void Q3Map::AAS_InitReachabilityAreas(void)
+{
+	int i, j, numareas, areas[32];
+	int numreachareas;
+	aas_reachability_t *reach;
+	vec3_t start, end;
+
+    aas_t &aasworld = m_aasworld;
+
+	if (m_aasworld.reachabilityareas)
+		free(m_aasworld.reachabilityareas);
+	if (m_aasworld.reachabilityareaindex)
+		free(m_aasworld.reachabilityareaindex);
+
+	aasworld.reachabilityareas = (aas_reachabilityareas_t *)
+				GetClearedMemory(aasworld.reachabilitysize * sizeof(aas_reachabilityareas_t));
+	aasworld.reachabilityareaindex = (int *)
+				GetClearedMemory(aasworld.reachabilitysize * 32 * sizeof(int));
+	numreachareas = 0;
+	for (i = 0; i < aasworld.reachabilitysize; i++)
+	{
+		reach = &aasworld.reachability[i];
+		numareas = 0;
+		aasworld.reachabilityareas[i].firstarea = numreachareas;
+		aasworld.reachabilityareas[i].numareas = numareas;
+		for (j = 0; j < numareas; j++)
+		{
+			aasworld.reachabilityareaindex[numreachareas++] = areas[j];
+		} //end for
+	} //end for
+}
+
+void Q3Map::AAS_CalculateAreaTravelTimes(void)
+{
+	int i, l, n, size;
+	char *ptr;
+	vec3_t end;
+	aas_reversedreachability_t *revreach;
+	aas_reversedlink_t *revlink;
+	aas_reachability_t *reach;
+	aas_areasettings_t *settings;
+	int starttime;
+
+    aas_t &aasworld = m_aasworld;
+
+	starttime = idLib::Milliseconds();
+	//if there are still area travel times, free the memory
+	if (aasworld.areatraveltimes) free(aasworld.areatraveltimes);
+	//get the total size of all the area travel times
+	size = aasworld.numareas * sizeof(unsigned short **);
+	for (i = 0; i < aasworld.numareas; i++)
+	{
+		revreach = &aasworld.reversedreachability[i];
+		//settings of the area
+		settings = &aasworld.areasettings[i];
+		//
+		size += settings->numreachableareas * sizeof(unsigned short *);
+		//
+		size += settings->numreachableareas * revreach->numlinks * sizeof(unsigned short);
+	} //end for
+	//allocate memory for the area travel times
+	ptr = (char *) GetClearedMemory(size);
+	aasworld.areatraveltimes = (unsigned short ***) ptr;
+	ptr += aasworld.numareas * sizeof(unsigned short **);
+	//calcluate the travel times for all the areas
+	for (i = 0; i < aasworld.numareas; i++)
+	{
+		//reversed reachabilities of this area
+		revreach = &aasworld.reversedreachability[i];
+		//settings of the area
+		settings = &aasworld.areasettings[i];
+		//
+		aasworld.areatraveltimes[i] = (unsigned short **) ptr;
+		ptr += settings->numreachableareas * sizeof(unsigned short *);
+		//
+		for (l = 0; l < settings->numreachableareas; l++)
+		{
+			aasworld.areatraveltimes[i][l] = (unsigned short *) ptr;
+			ptr += revreach->numlinks * sizeof(unsigned short);
+			//reachability link
+			reach = &aasworld.reachability[settings->firstreachablearea + l];
+			//
+			for (n = 0, revlink = revreach->first; revlink; revlink = revlink->next, n++)
+			{
+				VectorCopy(aasworld.reachability[revlink->linknum].end, end);
+				//
+				aasworld.areatraveltimes[i][l][n] = AAS_AreaTravelTime(i, end, reach->start);
+			} //end for
+		} //end for
+	} //end for
+}
+
+int Q3Map::AAS_PortalMaxTravelTime(int portalnum)
+{
+	int l, n, t, maxt;
+	aas_portal_t *portal;
+	aas_reversedreachability_t *revreach;
+	aas_reversedlink_t *revlink;
+	aas_areasettings_t *settings;
+
+    aas_t &aasworld = m_aasworld;
+
+	portal = &aasworld.portals[portalnum];
+	//reversed reachabilities of this portal area
+	revreach = &aasworld.reversedreachability[portal->areanum];
+	//settings of the portal area
+	settings = &aasworld.areasettings[portal->areanum];
+	//
+	maxt = 0;
+	for (l = 0; l < settings->numreachableareas; l++)
+	{
+		for (n = 0, revlink = revreach->first; revlink; revlink = revlink->next, n++)
+		{
+			t = aasworld.areatraveltimes[portal->areanum][l][n];
+			if (t > maxt)
+			{
+				maxt = t;
+			} //end if
+		} //end for
+	} //end for
+	return maxt;
+}
+
+void Q3Map::AAS_InitPortalMaxTravelTimes(void)
+{
+	int i;
+
+    aas_t &aasworld = m_aasworld;
+
+	if (aasworld.portalmaxtraveltimes) free(aasworld.portalmaxtraveltimes);
+
+	aasworld.portalmaxtraveltimes = (int *) GetClearedMemory(aasworld.numportals * sizeof(int));
+
+	for (i = 0; i < aasworld.numportals; i++)
+	{
+		aasworld.portalmaxtraveltimes[i] = AAS_PortalMaxTravelTime(i);
+	} //end for
+}
+
+void Q3Map::AASInit() {
+    AAS_InitRoutingUpdate();
+    AAS_CreateReversedReachability();
+    AAS_InitClusterAreaCache();
+    AAS_InitPortalCache();
+    AAS_InitReachabilityAreas();
+    AAS_CalculateAreaTravelTimes();
+    AAS_InitPortalMaxTravelTimes();
+
+    m_aasworld.initialized = true;
 }
 
 void Q3Map::AASResetMoveState() {
@@ -2447,9 +2704,14 @@ void Q3Map::AASClearMoveResult(aas_moveresult_t *result) {
 void Q3Map::AAS_EA_Move(vec3_t dir, float speed) {
     aas_movestate_t *ms = &m_movestate;
 
-    VectorMA( ms->origin, speed / 10, dir, ms->origin );
+    VectorMA( ms->origin, speed / 4, dir, ms->origin );
 
     /* here is your logic to move */
+
+    fprintf( stderr, 
+        "pos=(%2.2f,%2.2f,%2.2f) dir=(%2.2f,%2.2f,%2.2f) speed=%2.2f\n", 
+         dir[0], dir[1], dir[2], 
+         ms->origin[0], ms->origin[1], ms->origin[2], speed );
 }
 
 aas_moveresult_t Q3Map::AASMoveInGoalArea(aas_movestate_t *ms, aas_goal_t *goal)
@@ -2468,7 +2730,7 @@ aas_moveresult_t Q3Map::AASMoveInGoalArea(aas_movestate_t *ms, aas_goal_t *goal)
 	dist = VectorNormalize(dir);
 	if (dist > 100) dist = 100;
 	speed = 4 * dist;
-	if (speed < 10) speed = 0;
+	if (speed < 10) speed = 5;
 	//
 	//elemantary action move in direction
 	AAS_EA_Move(dir, speed);
@@ -2509,7 +2771,22 @@ int Q3Map::AASReachabilityTime(aas_reachability_t *reach)
 	} //end switch
 }
 
-bool Q3Map::MoveToPosition( const idVec3 &from, const idVec3 &to ) {
+bool Q3Map::AASMoveToPosition( int fromarea, int toarea ) {
+    if ( fromarea < 0 || fromarea >= m_aasworld.numareas )
+        return false;
+
+    if ( toarea < 0 || toarea >= m_aasworld.numareas )
+        return false;
+
+    aas_area_t *fr = m_aasworld.areas + fromarea;
+    aas_area_t *to = m_aasworld.areas + toarea;
+
+    return AASMoveToPosition( 
+        idVec3( fr->center[0], fr->center[1], fr->center[2] ),
+        idVec3( to->center[0], to->center[1], to->center[2] ) );
+}
+
+bool Q3Map::AASMoveToPosition( const idVec3 &from, const idVec3 &to ) {
     aas_initmove_t initMove = {0};
     VectorCopy( from.ToFloatPtr(), initMove.origin );
 
@@ -3236,7 +3513,11 @@ aas_moveresult_t Q3Map::AASTravel_Walk(aas_movestate_t *ms,
 	hordir[0] = reach->start[0] - ms->origin[0];
 	hordir[1] = reach->start[1] - ms->origin[1];
 	hordir[2] = 0;
+
 	dist = VectorNormalize(hordir);
+	if (dist > 100) dist = 100;
+	speed = 4 * dist;
+
 	//
 	if (dist < 10)
 	{
@@ -3245,6 +3526,7 @@ aas_moveresult_t Q3Map::AASTravel_Walk(aas_movestate_t *ms,
 		hordir[1] = reach->end[1] - ms->origin[1];
 		hordir[2] = 0;
 		dist = VectorNormalize(hordir);
+        speed = 5;
 	} //end if
     AAS_EA_Move(hordir, speed);
 	VectorCopy(hordir, result.movedir);

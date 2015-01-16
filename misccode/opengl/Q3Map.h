@@ -24,7 +24,10 @@ public:
     virtual void Render( void );
 
     void ConvertToQ2( const std::string &q2file );
-    bool MoveToPosition( const idVec3 &from, const idVec3 &to );
+
+    bool AASLoadFile( const std::string &filename );
+    bool AASMoveToPosition( const idVec3 &from, const idVec3 &to );
+    bool AASMoveToPosition( int fromarea, int toarea );
 
 private:
     void FromQ3( float in[3], float out[3] ) const;
@@ -74,7 +77,6 @@ private:
         std::map<unsigned int, int> &m, unsigned int v1, unsigned int v2 );
 
     /* AAS-Part */
-    bool AASLoadFile( const std::string &filename );
     aas_moveresult_t AASTravel_Walk(aas_movestate_t *ms,
         aas_reachability_t *reach);
     int AASGetReachabilityToGoal(
@@ -112,6 +114,15 @@ private:
             int areanum, int travelflags);
     void AAS_EA_Move(vec3_t dir, float speed);
     void AAS_UpdateAreaRoutingCache(aas_routingcache_t *cache);
+    void AASInit();
+    void AAS_InitRoutingUpdate(void);
+    void AAS_CreateReversedReachability(void);
+    void AAS_InitClusterAreaCache(void);
+    void AAS_InitPortalCache(void);
+    void AAS_InitReachabilityAreas(void);
+    void AAS_CalculateAreaTravelTimes(void);
+    void AAS_InitPortalMaxTravelTimes(void);
+    int  AAS_PortalMaxTravelTime(int portalnum);
 
 
     q3world_t m_world;
