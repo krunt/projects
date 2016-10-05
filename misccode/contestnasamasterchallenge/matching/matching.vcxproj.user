@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LocalDebuggerEnvironment>PATH=C:\GDAL;E:\kuvizkit\thirdparty\opencv2.4.12\opencv\sources\build64\install\x64\vc11\bin</LocalDebuggerEnvironment>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <LocalDebuggerWorkingDirectory>E:\contestnasa\training\</LocalDebuggerWorkingDirectory>
+    <LocalDebuggerCommandArguments> Challenge1.kml indir rpc outdir</LocalDebuggerCommandArguments>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LocalDebuggerEnvironment>PATH=C:\GDAL;E:\kuvizkit\thirdparty\opencv2.4.12\opencv\sources\build64\install\x64\vc11\bin</LocalDebuggerEnvironment>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <LocalDebuggerCommandArguments> Challenge1.kml indir rpc outdir</LocalDebuggerCommandArguments>
+    <LocalDebuggerWorkingDirectory>E:\contestnasa\training\</LocalDebuggerWorkingDirectory>
+  </PropertyGroup>
+</Project>

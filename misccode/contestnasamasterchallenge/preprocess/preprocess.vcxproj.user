@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LocalDebuggerWorkingDirectory>E:\contestnasa\training\images</LocalDebuggerWorkingDirectory>
+    <LocalDebuggerEnvironment>PATH=E:\kuvizkit\thirdparty\opencv2.4.12\opencv\sources\build64\install\x64\vc11\bin</LocalDebuggerEnvironment>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <LocalDebuggerCommandArguments> -i=Challenge1_LowRiseBuildings_CROPPED_01SEP15WV031000015SEP01135603-P1BS-500497284040_01_P001_________AAE_0AAAAABPABP0.tif -o=test.jpg</LocalDebuggerCommandArguments>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LocalDebuggerCommandArguments> Challenge1.kml images rpc tempdir</LocalDebuggerCommandArguments>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <LocalDebuggerWorkingDirectory>E:\contestnasa\training</LocalDebuggerWorkingDirectory>
+    <LocalDebuggerEnvironment>PATH=E:\kuvizkit\thirdparty\opencv2.4.12\opencv\sources\build64\install\x64\vc11\bin</LocalDebuggerEnvironment>
+  </PropertyGroup>
+</Project>
