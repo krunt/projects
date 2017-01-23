@@ -1,0 +1,98 @@
+
+
+IAsyncReadFileHandle: FPakAsyncReadFileHandle
+FPakAsyncReadFileHandle::ReadRequest()
+
+
+FArchiveAsync2: FArchive
+
+FPakSizeRequest(
+
+FArchiveAsync2::FArchiveAsync2()
+{
+ FPakAsyncReadFileHandle->SizeRequest(&FArchiveAsync2::ReadCallbackFunction);
+}
+
+
+FLinkerLoad::Tick()
+{
+	1) FLinkerLoad::CreateLoader() {
+		FArchiveAsync2->ReadyToStartReadingHeader()-> {
+			WaitForInitialPhases() {
+				SizeRequestPtr->WaitCompletion();
+				SummaryRequestPtr->WaitCompletion();
+				SummaryPrecacheRequestPtr->WaitCompletion();
+			}
+		}
+	}
+}
+
+FArchiveAsync2::FArchiveAsync2()
+-> FPakSizeRequest() 
+-> FArchiveAsync2::ReadCallback()
+
+
+FLinkerLoad::Tick() -> {
+FLinkerLoad::CreateImport -> FLinkerLoad::Preload
+FLinkerLoad::CreateExport -> FLinkerLoad::Preload
+.. other places in FLinkerLoad::* call FlinkerLoad::Preload()
+}
+
+FLinkerLoad::Preload -> {
+FArchiveAsync2 *FAA2 = GetFArchiveAsync2Loader();
+FAA2->Precache();
+}
+
+FArchiveAsync2::Precache() -> {
+	FArchiveAsync2::PrecacheInternal() -> {
+		FPakAsyncReadFileHandle->ReadRequest()->PollCompletion() {
+			CompleteRead();
+			[ new FPakProcessedReadRequest(blocks) ]
+		}
+	}
+}
+
+FPakProcessedReadRequest -> splitted by block of type FPakReadRequest
+FPakReadRequest {
+	RawReadCallback() -> FAsyncIOCPUWorkTask::DoProcessing() (decompressing)
+}
+
+FPakReadRequest::FPakReadRequest() {
+	FPakPrecacher::Get().QueueRequest() -> FPakPrecacher::AddRequest()
+}
+
+
+FPakPrecacher::AddRequest() -> FPakPrecacher::StartNextRequest()
+FPakPrecacher::StartNextRequest() -> AddNewBlock() -> StartBlockTask(block)
+RequestsToLower[] = StartBlockTask(block) -> FPakData::Handle->ReadRequest()
+NewRequestsToLowerComplete -> FGenericAsyncReadFileHandle::ReadRequest()
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
